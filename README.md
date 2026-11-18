@@ -47,11 +47,11 @@ node --check dist/Restriction_Manager.user.js
    ```bash
    node scripts/configure-release-urls.mjs YOUR_GITHUB_USERNAME wme-restriction-manager
    node tests/validate.cjs
-   node scripts/check-release.cjs 3.1.0
+   node scripts/check-release.cjs 3.1.1
    ```
 
 3. Commit the files to `main` and enable **Actions** and **Issues**.
-4. Go to **Actions → Draft a tested release → Run workflow** and enter `3.1.0`.
+4. Go to **Actions → Draft a tested release → Run workflow** and enter `3.1.1`.
 5. The workflow verifies the script and creates a **draft** Release with the installable `.user.js` asset. Review and test it, then click **Publish release** (not *Pre-release* for stable distribution).
 6. Only after publication does GitHub's `/releases/latest/download/Restriction_Manager.user.js` URL point to that stable version. Tampermonkey checks for a newer `@version` using `@updateURL` / `@downloadURL` according to its settings.
 7. Publish subsequent stable updates by incrementing `@version`, updating `CHANGELOG.md`, testing, and manually publishing a new Release draft. Keep experimental versions as pre-releases or separate branches.

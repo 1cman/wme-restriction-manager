@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager (SDK)
 // @namespace    https://github.com/community-userscripts
-// @version      3.1.0
+// @version      3.1.1
 // @updateURL    https://github.com/1cman/wme-restriction-manager/releases/latest/download/Restriction_Manager.user.js
 // @downloadURL  https://github.com/1cman/wme-restriction-manager/releases/latest/download/Restriction_Manager.user.js
 // @supportURL   https://github.com/1cman/wme-restriction-manager/issues
@@ -32,7 +32,7 @@
 
     const SCRIPT_ID = "restriction-manager-sdk";
     const SCRIPT_NAME = "Restriction Manager";
-    const SCRIPT_VERSION = "3.1.0";
+    const SCRIPT_VERSION = "3.1.1";
     const STORAGE_PREFIX = "rtmgr:";
     const CAL_PREFIX = "rmcal:";
     const FORMAT = 5;
@@ -247,11 +247,37 @@
         renderDiagnostics();
     }
 
-    function safeSdkMethod(name, fallback = "n/a") {
-        try {
-            const value = sdk?.[name]?.();
-            return typeof value === "string" ? value.slice(0, 90) : typeof value === "boolean" ? String(value) : fallback;
-        } catch (_) { return fallback; }
+    // WME async SDK getters may return Promises, including version and environment.
+    // Keep capability checks synchronous; resolve display metadata separately.
+    let sdkMetadataRefresh = Promise.resolve();
+
+    function refreshSdkMetadata(report) {
+        const pending = [];
+        const read = (methodName, field, normalize) => {
+            try {
+                if (typeof sdk?.[methodName] !== "function") return;
+                const value = sdk[methodName]();
+                const accept = result => {
+                    if (sdkCompatibility !== report) return;
+                    const parsed = normalize(result);
+                    if (parsed !== null) report[field] = parsed;
+                };
+                if (value && typeof value.then === "function") {
+                    pending.push(Promise.resolve(value).then(accept, () => {}));
+                } else {
+                    accept(value);
+                }
+            } catch (_) { /* Metadata errors must not block editing. */ }
+        };
+        const version = value => typeof value === "string" && value.trim()
+            ? value.trim().slice(0, 90) : null;
+        read("getSDKVersion", "sdkVersion", version);
+        read("getWMEVersion", "wmeVersion", version);
+        read("isBetaEnvironment", "environment", value =>
+            typeof value === "boolean" ? (value ? "Beta" : "Standard") : null);
+        sdkMetadataRefresh = Promise.all(pending).then(() => {
+            if (sdkCompatibility === report) renderDiagnostics();
+        });
     }
 
     function inspectSdkCompatibility() {
@@ -274,12 +300,13 @@
         const internalMotorApi = typeof pageWindow.W?.model?.actionManager?.add === "function" && rawModelReady;
         sdkCompatibility = {
             scriptVersion: SCRIPT_VERSION,
-            sdkVersion: safeSdkMethod("getSDKVersion"),
-            wmeVersion: safeSdkMethod("getWMEVersion"),
-            environment: safeSdkMethod("isBetaEnvironment") === "true" ? "Beta" : "Standard",
+            sdkVersion: "n/a",
+            wmeVersion: "n/a",
+            environment: pageWindow.location?.hostname === "beta.waze.com" ? "Beta" : "Standard",
             missing, optionalMissing, internalMotorApi,
             ready: missing.length === 0
         };
+        refreshSdkMetadata(sdkCompatibility);
         recordDiagnostic(missing.length ? "error" : optionalMissing.length ? "warning" : "info",
             "sdk-check", {missing:missing.length, optionalMissing:optionalMissing.length});
         renderDiagnostics();
@@ -327,9 +354,10 @@
         }
     }
 
-    function exportDiagnostics() {
-        // Recalculate compatibility without exporting settings, URLs or map data.
+    async function exportDiagnostics() {
+        // Wait for async metadata so JSON includes actual SDK and WME versions.
         if (sdk) inspectSdkCompatibility();
+        try { await sdkMetadataRefresh; } catch (_) { /* Keep export available. */ }
         const report = sdkCompatibility;
         const payload = {
             format: "restriction-manager-diagnostics-v1",

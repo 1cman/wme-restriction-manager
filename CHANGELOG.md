@@ -5,7 +5,15 @@ Version numbers follow the `MAJOR.MINOR.PATCH` convention. This file summarizes 
 ## [Unreleased]
 - To be determined after WME production and Beta tests.
 
-## [3.1.0] — 2026-11-18 (candidate)
+## [3.1.1] — 2026-11-18 (candidate)
+### Fixed
+- Resolve asynchronous SDK and WME version getters in the compatibility panel.
+- Identify Beta/Standard environment with the async SDK.
+- Include resolved version data in JSON diagnostic exports.
+### Unchanged
+- Presets, calendars, preview, conflict checks, and multilingual UI.
+
+## [3.1.0] — 2026-11-18 (tested on WME production/Beta; diagnostics issue found)
 ### Added
 - SDK capability report (version, environment, required and optional functions).
 - Small local-only diagnostic log with bounded history, redacted counters and JSON export.
@@ -16,7 +24,7 @@ Version numbers follow the `MAJOR.MINOR.PATCH` convention. This file summarizes 
 ### Known limits
 - Private WME APIs for motorcycle engine conditions remain experimental.
 - Multi-segment operations are not atomic; an error may occur after earlier segments were updated locally.
-- The actual WME production/Beta run has not yet been verified for 3.1.0.
+- WME production/Beta editing was user-tested; async SDK metadata displayed n/a (fixed in 3.1.1).
 
 ## [3.0.2] — 2026-11-18 (user-tested)
 - Automatic country-based holiday selection and dynamic ISO subdivision choices.

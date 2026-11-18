@@ -78,4 +78,25 @@ assert.ok(!store.get('rm-maintenance-diagnostics:v1').includes('PRIVATE-PRESET')
 a.clearDiagnostics();
 assert.equal(a.getLog().length, 0);
 assert.equal(store.get('rm-maintenance-diagnostics:v1'), undefined);
-console.log(`PASS: source syntax, metadata, SDK checks, 6 languages, bounded and redacted diagnostic log — v${version}`);
+// Regression: async SDK getters return Promises, not immediate strings.
+sdk.getSDKVersion = () => Promise.resolve('2.230');
+sdk.getWMEVersion = () => Promise.resolve('frontend-beta');
+sdk.isBetaEnvironment = () => Promise.resolve(true);
+const asyncReport = a.inspectSdkCompatibility();
+assert.equal(asyncReport.ready, true);
+new Promise(resolve => setImmediate(resolve)).then(() => {
+  assert.equal(asyncReport.sdkVersion, '2.230');
+  assert.equal(asyncReport.wmeVersion, 'frontend-beta');
+  assert.equal(asyncReport.environment, 'Beta');
+  sdk.getSDKVersion = () => Promise.reject(new Error('metadata failure'));
+  sdk.getWMEVersion = () => Promise.resolve('frontend-production');
+  sdk.isBetaEnvironment = () => Promise.resolve(false);
+  const withFailure = a.inspectSdkCompatibility();
+  assert.equal(withFailure.ready, true);
+  return new Promise(resolve => setImmediate(resolve)).then(() => {
+    assert.equal(withFailure.sdkVersion, 'n/a');
+    assert.equal(withFailure.wmeVersion, 'frontend-production');
+    assert.equal(withFailure.environment, 'Standard');
+    console.log(`PASS: source syntax, sync+async SDK metadata, 6 languages, bounded and redacted diagnostic log — v${version}`);
+  });
+}).catch(err => { console.error(err); process.exitCode = 1; });
