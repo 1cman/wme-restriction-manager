@@ -1,4 +1,4 @@
-# Restriction Manager SDK for Waze Map Editor
+# Restriction Manager for Waze Map Editor
 
 Uno userscript indipendente per gli editor Waze: preset di restrizioni, calendari, festività, anteprima delle modifiche e controllo dei possibili conflitti. Interfaccia in **IT / EN / FR / ES / DE / PT**.
 
