@@ -1,0 +1,33 @@
+name: Draft a tested release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number, e.g. 3.1.0 (without v)'
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate userscript
+        run: node tests/validate.cjs
+      - name: Check metadata and release URLs
+        run: node scripts/check-release.cjs "${{ inputs.version }}"
+      - name: Create release draft with versioned asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v${RELEASE_VERSION}" \
+            dist/Restriction_Manager.user.js \
+            --title "Restriction Manager v${RELEASE_VERSION}" \
+            --target "${GITHUB_SHA}" \
+            --generate-notes \
+            --draft

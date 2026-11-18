@@ -1,0 +1,46 @@
+name: "Bug report / Segnalazione bug"
+description: "Report unexpected behavior in Restriction Manager"
+title: "[Bug] "
+body:
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "WME environment / Ambiente"
+      options:
+        - "WME production"
+        - "WME Beta"
+        - "Both / Entrambi"
+    validations:
+      required: true
+  - type: input
+    id: script_version
+    attributes:
+      label: "Restriction Manager version / Versione"
+      placeholder: "3.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce / Passaggi per riprodurre"
+      description: "Please do not include coordinates, private user data or confidential map details."
+      placeholder: "1. Select a test segment...\n2. Open Restriction Manager..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected result / Risultato atteso"
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: "Actual result / Risultato osservato"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Diagnostic report / Diagnosi"
+      description: "Export from Tools > Diagnostics; review the file before sharing. Never paste credentials."
