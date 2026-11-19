@@ -1,8 +1,9 @@
 # Changelog
 
-Version numbers follow the `MAJOR.MINOR.PATCH` convention. Stable builds are published through GitHub Releases.
-
-- To be determined after WME production and Beta tests.
+### Fixed
+- Version numbers follow the `MAJOR.MINOR.PATCH` convention. Stable builds are published through GitHub Releases.
+### Unchanged
+- All restriction, calendar, holiday, preview, diagnostics and multilingual behaviors.
 
 ## [3.1.2] — 2026-11-19 (released)
 ### Fixed
