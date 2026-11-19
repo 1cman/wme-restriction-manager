@@ -8,6 +8,10 @@ const source = fs.readFileSync(file, 'utf8');
 const version = /^\/\/ @version\s+(\S+)/m.exec(source)?.[1];
 assert.match(version || '', /^\d+\.\d+\.\d+$/);
 assert.ok(source.includes(`const SCRIPT_VERSION = "${version}";`), 'Header and runtime versions must match.');
+assert.ok(source.includes('<div class="rm-version-chip">v${SCRIPT_VERSION}</div>'),
+  'Sidebar version badge must use SCRIPT_VERSION dynamically.');
+assert.ok(!/<div class="rm-version-chip">v\d+\.\d+\.\d+<\/div>/.test(source),
+  'Sidebar version badge must never hardcode a version.');
 assert.match(source, /@grant\s+GM_xmlhttpRequest/);
 assert.match(source, /@grant\s+unsafeWindow/);
 assert.match(source, /@connect\s+nagerholidays\.com/);
