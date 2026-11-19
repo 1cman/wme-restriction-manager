@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager (SDK)
 // @namespace    https://github.com/community-userscripts
-// @version      3.1.1
+// @version      3.1.2
 // @updateURL    https://github.com/1cman/wme-restriction-manager/releases/latest/download/Restriction_Manager.user.js
 // @downloadURL  https://github.com/1cman/wme-restriction-manager/releases/latest/download/Restriction_Manager.user.js
 // @supportURL   https://github.com/1cman/wme-restriction-manager/issues
@@ -32,7 +32,7 @@
 
     const SCRIPT_ID = "restriction-manager-sdk";
     const SCRIPT_NAME = "Restriction Manager";
-    const SCRIPT_VERSION = "3.1.1";
+    const SCRIPT_VERSION = "3.1.2";
     const STORAGE_PREFIX = "rtmgr:";
     const CAL_PREFIX = "rmcal:";
     const FORMAT = 5;
@@ -2998,7 +2998,7 @@
                     <p class="rm-subtitle">Preset, calendari e restrizioni in un pannello più semplice e moderno.</p>
                   </div>
                 </div>
-                <div class="rm-version-chip">v2.9.0</div>
+                <div class="rm-version-chip">v${SCRIPT_VERSION}</div>
               </div>
               <div class="rm-hero-metrics">
                 <div class="rm-metric"><div class="rm-metric-label">Preset</div><div class="rm-metric-value" id="rm-metric-presets">—</div></div>
