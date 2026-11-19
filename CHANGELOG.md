@@ -2,10 +2,9 @@
 
 Version numbers follow the `MAJOR.MINOR.PATCH` convention. Stable builds are published through GitHub Releases.
 
-## [Unreleased]
 - To be determined after WME production and Beta tests.
 
-## [3.1.2] — 2026-11-19 (candidate)
+## [3.1.2] — 2026-11-19 (released)
 ### Fixed
 - The sidebar header version badge now reads the runtime SCRIPT_VERSION instead of a hardcoded older number.
 - New tests guard against static version badges, so future releases keep the label in sync.
