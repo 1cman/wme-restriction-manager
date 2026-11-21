@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager (SDK)
 // @namespace    https://github.com/community-userscripts
-// @version      3.1.2
+// @version      3.2.0
 // @updateURL    https://github.com/1cman/wme-restriction-manager/releases/latest/download/Restriction_Manager.user.js
 // @downloadURL  https://github.com/1cman/wme-restriction-manager/releases/latest/download/Restriction_Manager.user.js
 // @supportURL   https://github.com/1cman/wme-restriction-manager/issues
@@ -32,7 +32,7 @@
 
     const SCRIPT_ID = "restriction-manager-sdk";
     const SCRIPT_NAME = "Restriction Manager";
-    const SCRIPT_VERSION = "3.1.2";
+    const SCRIPT_VERSION = "3.2.0";
     const STORAGE_PREFIX = "rtmgr:";
     const CAL_PREFIX = "rmcal:";
     const FORMAT = 5;
@@ -43,6 +43,11 @@
     const EXPIRY_WARNING_DAYS = 30;
     const MAX_CALENDAR_FRAMES = 100;
     const MAX_SPECIAL_YEARS = 10;
+    // A monthly window covers at most twelve calendar months, across all rules.
+    // This cap applies to the combined set of generated special occurrences.
+    const MAX_MONTHLY_MONTHS = 12;
+    const MAX_SPECIAL_OCCURRENCES = 12;
+    const MAX_TOTAL_RESTRICTIONS = 12; // Absolute limit for every calendar, segment and operation.
     const DIR = Object.freeze({
         A_TO_B: "A_TO_B", B_TO_A: "B_TO_A",
         TWO_WAY: "TWO_WAY", UNKNOWN: "UNKNOWN"
@@ -107,6 +112,25 @@
     ];
     for (const row of MAINTENANCE_TRANSLATIONS) {
         ["it", "en", "fr", "es", "de", "pt"].forEach((language, index) => {
+            TRANSLATIONS[language][row[0]] = row[index];
+        });
+    }
+
+    // Safety messages are translated in each of the six supported languages.
+    const LIMIT_TRANSLATION_ROWS = [
+        ["Massimo 12 restrizioni e 12 definizioni temporali per operazione, sommando tutte le regole e i segmenti selezionati. Oltre il limite l'applicazione viene bloccata.", "Maximum 12 restrictions and 12 time-frame definitions per operation across all rules and selected segments. Larger operations are blocked.", "Maximum 12 restrictions et 12 définitions horaires par opération, sur tous les segments et toutes les règles. Au-delà, l'opération est bloquée.", "Máximo 12 restricciones y 12 definiciones temporales por operación, sumando todas las reglas y segmentos seleccionados. Si se supera, la operación se bloquea.", "Maximal 12 Beschränkungen und 12 Zeitregeldefinitionen pro Vorgang über alle Regeln und ausgewählten Segmente. Größere Vorgänge werden blockiert.", "Máximo de 12 restrições e 12 definições temporais por operação, incluindo todas as regras e segmentos selecionados. Operações maiores são bloqueadas."],
+        ["Con le ricorrenze speciali, «Ripeti ogni anno» non è disponibile. Scegli un intervallo limitato (massimo 12 restrizioni).", "Repeat every year is unavailable for special occurrences. Choose a bounded period (maximum 12 restrictions).", "La répétition annuelle n’est pas disponible avec les dates spéciales. Définissez une période limitée (12 restrictions maximum).", "No se puede repetir cada año con recurrencias especiales. Elige un período limitado (máximo 12 restricciones).", "Jährliche Wiederholung ist mit Sonderterminen nicht verfügbar. Wählen Sie einen begrenzten Zeitraum (maximal 12 Beschränkungen).", "A repetição anual não está disponível com ocorrências especiais. Escolha um período limitado (máximo de 12 restrições)."],
+        ["Limite di sicurezza: {count} restrizioni previste, massimo {limit}. Riduci fasce, ricorrenze, preset o segmenti selezionati.", "Safety limit: {count} projected restrictions, maximum {limit}. Reduce slots, occurrences, presets or selected segments.", "Limite de sécurité : {count} restrictions prévues, maximum {limit}. Réduisez les créneaux, récurrences, préréglages ou segments.", "Límite de seguridad: {count} restricciones previstas, máximo {limit}. Reduce franjas, recurrencias, ajustes o segmentos.", "Sicherheitslimit: {count} vorgesehene Beschränkungen, maximal {limit}. Zeitfenster, Wiederholungen, Vorlagen oder Segmente reduzieren.", "Limite de segurança: {count} restrições previstas, máximo {limit}. Reduza horários, recorrências, predefinições ou segmentos."],
+        ["Con le ricorrenze speciali, «Ripeti ogni anno» è disattivato: usa anni espliciti o una finestra mensile limitata.", "For special occurrences, Repeat every year is disabled: use explicit years or a bounded monthly window.", "Avec des dates spéciales, la répétition annuelle est désactivée : utilisez des années définies ou une période mensuelle limitée.", "Con recurrencias especiales se desactiva Repetir cada año: usa años concretos o un período mensual limitado.", "Bei Sonderterminen ist Jährlich wiederholen deaktiviert: konkrete Jahre oder einen begrenzten Monatszeitraum verwenden.", "Com ocorrências especiais, Repetir todos os anos fica desativado: utilize anos explícitos ou uma janela mensal limitada."]
+    ];
+    // Additional six-language strings for monthly recurrence controls.
+    const MONTHLY_TRANSLATION_ROWS = [["Ogni mese: N-esimo giorno della settimana","Every month: Nth weekday","Chaque mois : Nième jour de la semaine","Cada mes: N.º día de la semana","Jeden Monat: N-ter Wochentag","Todos os meses: N.º dia da semana"],["Ogni mese: giorno numerico","Every month: calendar day","Chaque mois : jour du mois","Cada mes: día del mes","Jeden Monat: Kalendertag","Todos os meses: dia do mês"],["Giorno del mese (1–31)","Day of month (1–31)","Jour du mois (1–31)","Día del mes (1–31)","Tag des Monats (1–31)","Dia do mês (1–31)"],["Ricorrenze mensili: fino a 12 mesi","Monthly occurrences: up to 12 months","Récurrences mensuelles : jusqu’à 12 mois","Recurrencias mensuales: hasta 12 meses","Monatliche Termine: bis zu 12 Monate","Recorrências mensais: até 12 meses"],["Primo mese della finestra","First month of the window","Premier mois de la période","Primer mes del período","Erster Monat des Zeitraums","Primeiro mês do período"],["Le ricorrenze mensili coprono massimo 12 mesi. Il rinnovo non modifica segmenti WME.","Monthly occurrences cover at most 12 months. Renewal never updates WME segments.","Les récurrences mensuelles couvrent 12 mois. Le renouvellement ne modifie aucun segment WME.","Las recurrencias mensuales abarcan 12 meses. La renovación no modifica segmentos WME.","Monatliche Termine gelten für 12 Monate. Die Verlängerung ändert keine WME-Segmente.","As recorrências mensais abrangem 12 meses. A renovação não altera segmentos WME."],["Prepara il rinnovo mensile","Prepare monthly renewal","Préparer le renouvellement mensuel","Preparar la renovación mensual","Monatliche Verlängerung vorbereiten","Preparar a renovação mensal"],["Ricorrenze mensili in scadenza: {name} ({date})","Monthly occurrences expiring: {name} ({date})","Récurrences mensuelles bientôt expirées : {name} ({date})","Recurrencias mensuales próximas a vencer: {name} ({date})","Monatliche Termine laufen bald ab: {name} ({date})","Recorrências mensais a expirar: {name} ({date})"],["Ricorrenze mensili scadute: {name} ({date})","Monthly occurrences expired: {name} ({date})","Récurrences mensuelles expirées : {name} ({date})","Recurrencias mensuales vencidas: {name} ({date})","Monatliche Termine abgelaufen: {name} ({date})","Recorrências mensais expiradas: {name} ({date})"],["La finestra mensile deve essere un mese valido tra 2000-01 e 2099-01.","The monthly window must start in a valid month between 2000-01 and 2099-01.","La période mensuelle doit commencer entre 2000-01 et 2099-01.","El período mensual debe comenzar entre 2000-01 y 2099-01.","Der Monatszeitraum muss zwischen 2000-01 und 2099-01 beginnen.","O período mensal deve começar entre 2000-01 e 2099-01."],["La ricorrenza mensile richiede un giorno del mese da 1 a 31.","Monthly recurrence requires a calendar day from 1 to 31.","La récurrence mensuelle nécessite un jour du mois entre 1 et 31.","La recurrencia mensual requiere un día del mes del 1 al 31.","Die monatliche Wiederholung erfordert einen Kalendertag von 1 bis 31.","A recorrência mensal exige um dia do mês de 1 a 31."],["Troppe ricorrenze: {count} occorrenze speciali complessive, massimo {limit}. Riduci le regole o il periodo.","Too many occurrences: {count} special occurrences in total, limit {limit}. Reduce rules or dates.","Trop de récurrences : {count} occurrences au total, maximum {limit}. Réduisez les règles ou la période.","Demasiadas recurrencias: {count} en total, máximo {limit}. Reduce las reglas o el período.","Zu viele Wiederholungen: {count} insgesamt, Maximum {limit}. Regeln oder Zeitraum reduzieren.","Demasiadas recorrências: {count} no total, máximo {limit}. Reduza regras ou período."],["Il calendario mensile genera {count} restrizioni complessive per segmento (massimo {limit}). Riduci regole, fasce o modelli.","The monthly calendar generates {count} restrictions per segment (maximum {limit}). Reduce rules, slots or templates.","Le calendrier mensuel crée {count} restrictions par segment (maximum {limit}). Réduisez les règles ou les créneaux.","El calendario mensual genera {count} restricciones por segmento (máximo {limit}). Reduce reglas o franjas.","Der Monatskalender erstellt {count} Beschränkungen pro Segment (Maximum {limit}). Regeln oder Zeitfenster reduzieren.","O calendário mensal gera {count} restrições por segmento (máximo {limit}). Reduza regras ou horários."],["Calendario mensile: {start} → {end} (fino a 12 mesi)","Monthly calendar: {start} → {end} (up to 12 months)","Calendrier mensuel : {start} → {end} (12 mois maximum)","Calendario mensual: {start} → {end} (máximo 12 meses)","Monatskalender: {start} → {end} (maximal 12 Monate)","Calendário mensal: {start} → {end} (máximo 12 meses)"],["Ogni mese, giorno {day}","Every month, day {day}","Chaque mois, jour {day}","Cada mes, día {day}","Jeden Monat, Tag {day}","Todos os meses, dia {day}"],["Ogni mese, {ordinal} {weekday}","Every month, {ordinal} {weekday}","Chaque mois, {ordinal} {weekday}","Cada mes, {ordinal} {weekday}","Jeden Monat, {ordinal} {weekday}","Todos os meses, {ordinal} {weekday}"],["Mesi senza il giorno richiesto vengono saltati.","Months without the selected day are skipped.","Les mois sans le jour demandé sont ignorés.","Se omiten los meses sin el día elegido.","Monate ohne den gewählten Tag werden übersprungen.","Os meses sem o dia selecionado são ignorados."],["Preparare il rinnovo di «{name}» per {start}–{end}? Verifica date, festività ed esclusioni prima di salvare. I segmenti WME NON saranno modificati.","Prepare renewal of “{name}” for {start}–{end}? Check dates, holidays and exclusions before saving. WME segments will NOT change.","Préparer «{name}» pour {start}–{end} ? Vérifiez les dates, jours fériés et exclusions avant de sauvegarder. Aucun segment WME ne sera modifié.","¿Preparar «{name}» para {start}–{end}? Revisa fechas, festivos y exclusiones antes de guardar. NO se modificarán segmentos WME.","„{name}“ für {start}–{end} vorbereiten? Daten, Feiertage und Ausnahmen vor dem Speichern prüfen. WME-Segmente bleiben unverändert.","Preparar «{name}» para {start}–{end}? Verifique datas, feriados e exclusões antes de guardar. Segmentos WME NÃO serão alterados."],["Rinnovo preparato. Controlla validità, festività ed esclusioni; quindi premi «Salva calendario». Nessuna modifica WME.","Renewal prepared. Review validity dates, holidays and exclusions, then click “Save calendar”. No WME changes.","Renouvellement préparé. Vérifiez les dates, jours fériés et exclusions, puis enregistrez. Aucun changement WME.","Renovación preparada. Revisa fechas, festivos y exclusiones y guarda el calendario. Ningún cambio en WME.","Verlängerung vorbereitet. Gültigkeit, Feiertage und Ausnahmen prüfen und Kalender speichern. Keine WME-Änderungen.","Renovação preparada. Verifique datas, feriados e exclusões e guarde o calendário. Sem alterações WME."],["Seleziona un calendario mensile salvato per rinnovarlo.","Select a saved monthly calendar to renew.","Sélectionnez un calendrier mensuel enregistré à renouveler.","Selecciona un calendario mensual guardado para renovarlo.","Zum Verlängern einen gespeicherten Monatskalender auswählen.","Selecione um calendário mensal guardado para renovar."],["Non è possibile rinnovare oltre dicembre 2099.","Cannot renew beyond December 2099.","Renouvellement impossible après décembre 2099.","No se puede renovar después de diciembre de 2099.","Keine Verlängerung über Dezember 2099 hinaus möglich.","Não é possível renovar para além de dezembro de 2099."]];
+    MONTHLY_TRANSLATION_ROWS.push(["Numero di mesi (1–12)","Number of months (1–12)","Nombre de mois (1–12)","Número de meses (1–12)","Anzahl Monate (1–12)","Número de meses (1–12)"]);
+    MONTHLY_TRANSLATION_ROWS.push(["Nessuna ricorrenza mensile valida nella finestra: controlla date ed esclusioni.","No active monthly occurrences in this window: check validity dates and exclusions.","Aucune récurrence mensuelle valide : vérifiez les dates et exclusions.","No hay recurrencias mensuales válidas: revisa fechas y exclusiones.","Keine gültigen Monatstermine im Zeitraum: Daten und Ausnahmen prüfen.","Sem recorrências mensais válidas: verifique datas e exclusões."]);
+    MONTHLY_TRANSLATION_ROWS.push(["Ricorrenze speciali e mensili","Special and monthly occurrences","Récurrences spéciales et mensuelles","Recurrencias especiales y mensuales","Besondere und monatliche Termine","Recorrências especiais e mensais"]);
+    MONTHLY_TRANSLATION_ROWS.push(["Ogni ricorrenza genera una restrizione distinta. Sono consentite al massimo 12 occorrenze speciali complessive per calendario.","Each occurrence generates a separate restriction. Maximum 12 special occurrences across the entire calendar.","Chaque occurrence crée une restriction distincte. Maximum 12 occurrences spéciales pour tout le calendrier.","Cada ocurrencia genera una restricción. Máximo 12 ocurrencias especiales en todo el calendario.","Jeder Termin erzeugt eine eigene Beschränkung. Maximal 12 besondere Termine pro Kalender.","Cada ocorrência gera uma restrição própria. Máximo de 12 ocorrências especiais por calendário."]);
+    for (const row of [...MONTHLY_TRANSLATION_ROWS, ...LIMIT_TRANSLATION_ROWS]) {
+        ["it","en","fr","es","de","pt"].forEach((language,index) => {
             TRANSLATIONS[language][row[0]] = row[index];
         });
     }
@@ -247,8 +271,8 @@
         renderDiagnostics();
     }
 
-    // WME async SDK getters may return Promises, including version and environment.
-    // Keep capability checks synchronous; resolve display metadata separately.
+    // WME async SDK methods may return Promises, including version getters.
+    // Keep capability checks synchronous, but resolve metadata without blocking WME.
     let sdkMetadataRefresh = Promise.resolve();
 
     function refreshSdkMetadata(report) {
@@ -258,6 +282,7 @@
                 if (typeof sdk?.[methodName] !== "function") return;
                 const value = sdk[methodName]();
                 const accept = result => {
+                    // A later SDK recheck may have replaced this report.
                     if (sdkCompatibility !== report) return;
                     const parsed = normalize(result);
                     if (parsed !== null) report[field] = parsed;
@@ -267,7 +292,7 @@
                 } else {
                     accept(value);
                 }
-            } catch (_) { /* Metadata errors must not block editing. */ }
+            } catch (_) { /* Metadata failure must never block editing. */ }
         };
         const version = value => typeof value === "string" && value.trim()
             ? value.trim().slice(0, 90) : null;
@@ -355,7 +380,7 @@
     }
 
     async function exportDiagnostics() {
-        // Wait for async metadata so JSON includes actual SDK and WME versions.
+        // Wait for async SDK metadata so the export includes the actual versions.
         if (sdk) inspectSdkCompatibility();
         try { await sdkMetadataRefresh; } catch (_) { /* Keep export available. */ }
         const report = sdkCompatibility;
@@ -822,9 +847,19 @@
             specialEndYear - specialStartYear + 1 > MAX_SPECIAL_YEARS) {
             throw new Error(t("Anni delle ricorrenze non validi (massimo {count} annualità, dal 2000 al 2099).", {count:MAX_SPECIAL_YEARS}));
         }
+        const hasMonthly = specialRules.some(rule => ["monthly_nth_weekday", "monthly_day"].includes(rule?.kind));
+        const monthlyWindowStart = hasMonthly ? String(value.monthlyWindowStart || "").trim() : null;
+        const monthlyWindowMonths = hasMonthly ? Number(value.monthlyWindowMonths ?? MAX_MONTHLY_MONTHS) : null;
+        if (hasMonthly && (!Number.isInteger(monthlyWindowMonths) || monthlyWindowMonths < 1 ||
+            monthlyWindowMonths > MAX_MONTHLY_MONTHS || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthlyWindowStart) ||
+            Number(monthlyWindowStart.slice(0,4)) < 2000 ||
+            Number(monthlyWindowStart.slice(0,4)) > 2099 ||
+            Number(monthlyWindowStart.slice(0,4)) * 12 + Number(monthlyWindowStart.slice(5,7)) - 1 + monthlyWindowMonths - 1 > 2099*12 + 11)) {
+            throw new Error(t("La finestra mensile deve essere un mese valido tra 2000-01 e 2099-01."));
+        }
         const normalizedSpecial = specialRules.map((rule, index) => {
             const kind = rule?.kind;
-            if (!["nth_weekday", "easter"].includes(kind)) {
+            if (!["nth_weekday", "easter", "monthly_nth_weekday", "monthly_day"].includes(kind)) {
                 throw new Error(t("Ricorrenza {index}: tipo non valido.", {index:index+1}));
             }
             const allDay = Boolean(rule.allDay);
@@ -833,20 +868,24 @@
             if (!allDay && (minutes(fromTime) >= minutes(toTime))) {
                 throw new Error(t("Ricorrenza {index}: usa orari crescenti nello stesso giorno (notturni non supportati).", {index:index+1}));
             }
-            const ordinal = kind === "nth_weekday" ? Number(rule.ordinal) : 2;
+            const ordinal = ["nth_weekday", "monthly_nth_weekday"].includes(kind) ? Number(rule.ordinal) : 2;
             const month = kind === "nth_weekday" ? Number(rule.month) : 3;
-            const weekday = kind === "nth_weekday" ? rule.weekday : "SUNDAY";
+            const dayOfMonth = kind === "monthly_day" ? Number(rule.dayOfMonth) : 1;
+            const weekday = ["nth_weekday", "monthly_nth_weekday"].includes(kind) ? rule.weekday : "SUNDAY";
             const offsetDays = kind === "easter" ? Number(rule.offsetDays ?? 0) : 0;
-            if (kind === "nth_weekday" &&
+            if (["nth_weekday", "monthly_nth_weekday"].includes(kind) &&
                 (![-1, 1, 2, 3, 4, 5].includes(ordinal) ||
-                 !Number.isInteger(month) || month < 1 || month > 12 ||
+                 (kind === "nth_weekday" && (!Number.isInteger(month) || month < 1 || month > 12)) ||
                  !WEEK_KEYS.includes(weekday))) {
                 throw new Error(t("Ricorrenza {index}: mese, settimana o giorno non validi.", {index:index+1}));
+            }
+            if (kind === "monthly_day" && (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31)) {
+                throw new Error(t("La ricorrenza mensile richiede un giorno del mese da 1 a 31."));
             }
             if (!Number.isInteger(offsetDays) || Math.abs(offsetDays) > 60) {
                 throw new Error(t("Ricorrenza {index}: scostamento dalla Pasqua non valido (-60 a +60 giorni).", {index:index+1}));
             }
-            return { kind, ordinal, month, weekday, offsetDays, allDay, fromTime, toTime };
+            return { kind, ordinal, month, weekday, dayOfMonth, offsetDays, allDay, fromTime, toTime };
         });
         return {
             id: (typeof value.id === "string" && /^cal-[\w-]{6,100}$/.test(value.id))
@@ -854,7 +893,7 @@
             name, timeZone, startDate, endDate, repeatYearly, slots,
             holidaySelectionEnabled:Boolean(holidayCountry), excludedRanges,
             holidayCountry, holidayRegion, holidayLocality, holidaySnapshot, localAnnualHolidays,
-            specialRules: normalizedSpecial, specialStartYear, specialEndYear
+            specialRules: normalizedSpecial, specialStartYear, specialEndYear, monthlyWindowStart, monthlyWindowMonths
         };
     }
 
@@ -893,6 +932,30 @@
             day = 1 + (wanted - firstWeekday + 7) % 7 + 7 * (ordinal - 1);
         }
         return day > lastDay ? null : ymdUTC(year, month, day);
+    }
+
+    function shiftMonth(monthKey, amount) {
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) throw new Error("Invalid month key");
+        const year = Number(monthKey.slice(0,4)), month = Number(monthKey.slice(5,7));
+        const d = new Date(Date.UTC(year, month - 1 + amount, 1));
+        return ymdUTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1).slice(0,7);
+    }
+
+    function monthlyWindowEnd(start, months = MAX_MONTHLY_MONTHS) {
+        return addDays(shiftMonth(start, months) + "-01", -1);
+    }
+
+    function isMonthlyRule(rule) {
+        return rule.kind === "monthly_nth_weekday" || rule.kind === "monthly_day";
+    }
+
+    function monthlyRuleDate(rule, monthKey) {
+        const year = Number(monthKey.slice(0,4)), month = Number(monthKey.slice(5,7));
+        if (rule.kind === "monthly_nth_weekday") {
+            return nthWeekdayDate(year, month, rule.weekday, rule.ordinal);
+        }
+        const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        return rule.dayOfMonth <= last ? ymdUTC(year, month, rule.dayOfMonth) : null;
     }
 
     // Meeus/Jones/Butcher: data della Pasqua gregoriana.
@@ -1013,6 +1076,11 @@
 
     function calendarFrames(calendar) {
         const cal = normalizeCalendar(calendar);
+        // Legacy calendars may contain the incompatible combination; they can be opened
+        // and corrected, but they must never be expanded or applied as-is.
+        if (cal.repeatYearly && cal.specialRules.length) {
+            throw new Error(t("Con le ricorrenze speciali, «Ripeti ogni anno» non è disponibile. Scegli un intervallo limitato (massimo 12 restrizioni)."));
+        }
         const excluded = exclusionSet(cal);
         const hasExclusions = Boolean(cal.holidayCountry) || cal.excludedRanges.length > 0 || cal.localAnnualHolidays.length > 0;
         const frames = [];
@@ -1032,13 +1100,32 @@
                 });
             }
         }
+        let totalSpecialOccurrences = 0;
+        const hasMonthly = cal.specialRules.some(isMonthlyRule);
         for (const rule of cal.specialRules) {
-            for (let year = cal.specialStartYear; year <= cal.specialEndYear; year++) {
-                const date = specialDate(rule, year);
+            const dates = [];
+            if (isMonthlyRule(rule)) {
+                for (let monthIndex = 0; monthIndex < cal.monthlyWindowMonths; monthIndex++) {
+                    const month = shiftMonth(cal.monthlyWindowStart, monthIndex);
+                    const date = monthlyRuleDate(rule, month);
+                    if (date) dates.push(date);
+                }
+            } else {
+                for (let year = cal.specialStartYear; year <= cal.specialEndYear; year++) {
+                    const date = specialDate(rule, year);
+                    if (date) dates.push(date);
+                }
+            }
+            for (const date of dates) {
                 if (!date) continue;
                 // Le esclusioni hanno precedenza anche sulle ricorrenze mobili.
                 if (excluded.has(date)) continue;
-                if (hasExclusions && (date < cal.startDate || date > cal.endDate)) continue;
+                if (isMonthlyRule(rule) && cal.startDate && !cal.repeatYearly && (date < cal.startDate || date > cal.endDate)) continue;
+                totalSpecialOccurrences++;
+                if (totalSpecialOccurrences > MAX_SPECIAL_OCCURRENCES) {
+                    throw new Error(t("Troppe ricorrenze: {count} occorrenze speciali complessive, massimo {limit}. Riduci le regole o il periodo.",
+                        {count:totalSpecialOccurrences, limit:MAX_SPECIAL_OCCURRENCES}));
+                }
                 const actual = dateUTC(date);
                 frames.push({
                     dayAlternation: null,
@@ -1052,9 +1139,9 @@
                 });
             }
         }
-        if (frames.length > MAX_CALENDAR_FRAMES) {
-            throw new Error(t("Calendario troppo grande: {count} restrizioni per modello (limite {limit}). Riduci periodo o fasce.", {count:frames.length, limit:MAX_CALENDAR_FRAMES}));
-        }
+        // Cap ALL calendar types: monthly, annual, weekly and holidays/exclusions.
+        // Never truncate silently; blocking keeps map data intact and reviewable.
+        assertRestrictionLimit(frames.length);
         if (!frames.length) throw new Error(t("Il calendario non ha date attive: controlla le esclusioni e il periodo."));
         return frames;
     }
@@ -1077,6 +1164,41 @@
         return JSON.stringify({ data, motors: item.motors || [] });
     }
 
+    function assertRestrictionLimit(count) {
+        if (!Number.isSafeInteger(count) || count < 0 || count > MAX_TOTAL_RESTRICTIONS) {
+            throw new Error(t("Limite di sicurezza: {count} restrizioni previste, massimo {limit}. Riduci fasce, ricorrenze, preset o segmenti selezionati.",
+                {count, limit:MAX_TOTAL_RESTRICTIONS}));
+        }
+    }
+
+    function assertRestrictionPayload(items) {
+        if (!Array.isArray(items)) throw new Error("Invalid restriction payload.");
+        assertRestrictionLimit(items.length);
+        let frameCount = 0;
+        for (const item of items) {
+            // Guard against a single saved preset carrying dozens of timeFrames
+            // inside one WME restriction object.
+            if (!Array.isArray(item?.data?.timeFrames)) throw new Error("Invalid restriction timeFrames.");
+            frameCount += item.data.timeFrames.length;
+            assertRestrictionLimit(frameCount);
+        }
+        return frameCount;
+    }
+
+    function assertOperationLimit(updates) {
+        // Hard stop on the entire selected batch, not just per segment.
+        if (!Array.isArray(updates)) throw new Error("Invalid update plan.");
+        let totalItems = 0;
+        let totalFrames = 0;
+        for (const update of updates) {
+            const itemFrames = assertRestrictionPayload(update?.items);
+            totalItems += update.items.length;
+            totalFrames += itemFrames;
+            assertRestrictionLimit(totalItems);
+            assertRestrictionLimit(totalFrames);
+        }
+    }
+
     function expandCalendarItems(items, calendar) {
         const frames = calendarFrames(calendar);
         const seen = new Set();
@@ -1086,9 +1208,7 @@
             seen.add(key);
             return true;
         });
-        if (templates.length * frames.length > MAX_CALENDAR_FRAMES) {
-            throw new Error(t("Troppe restrizioni generate ({templates} × {frames}). Riduci annualità o fasce.", {templates:templates.length,frames:frames.length}));
-        }
+        assertRestrictionLimit(templates.length * frames.length);
         return templates.flatMap(item => frames.map(frame => applyFramesToItem(item, frame)));
     }
 
@@ -1101,7 +1221,11 @@
             segmentId: segment.id,
             invert: false,
             calendarApplied: true,
-            items: expandCalendarItems(original, calendar)
+            items: (() => {
+                const items = expandCalendarItems(original, calendar);
+                assertRestrictionPayload(items);
+                return items;
+            })()
         };
     }
 
@@ -1203,6 +1327,8 @@
             <label>Ricorrenza <select class="rm-special-kind">
               <option value="nth_weekday">N-esimo giorno del mese</option>
               <option value="easter">Pasqua gregoriana (± giorni)</option>
+              <option value="monthly_nth_weekday">Ogni mese: N-esimo giorno della settimana</option>
+              <option value="monthly_day">Ogni mese: giorno numerico</option>
             </select></label>
           </div>
           <div class="rm-special-nth rm-time-row">
@@ -1212,7 +1338,10 @@
               <option value="5">Quinta</option><option value="-1">Ultima</option>
             </select></label>
             <label>Giorno <select class="rm-special-weekday"></select></label>
-            <label>Mese <select class="rm-special-month"></select></label>
+            <label class="rm-special-month-wrap">Mese <select class="rm-special-month"></select></label>
+          </div>
+          <div class="rm-special-day rm-time-row" hidden>
+            <label>Giorno del mese (1–31) <input type="number" class="rm-special-day-number" min="1" max="31" step="1" value="15"></label>
           </div>
           <div class="rm-special-easter rm-time-row" hidden>
             <label>Giorni da Pasqua <input type="number" min="-60" max="60" step="1"
@@ -1239,19 +1368,25 @@
         q(".rm-special-weekday").value = data.weekday;
         q(".rm-special-month").value = String(data.month);
         q(".rm-special-offset").value = String(data.offsetDays ?? 0);
+        q(".rm-special-day-number").value = String(data.dayOfMonth ?? 15);
         q(".rm-special-allday").checked = data.allDay;
         q(".rm-special-from").value = data.fromTime || "08:00";
         q(".rm-special-to").value = data.toTime || "09:00";
         const toggle = () => {
             const easter = q(".rm-special-kind").value === "easter";
             q(".rm-special-easter").hidden = !easter;
-            q(".rm-special-nth").hidden = easter;
+            const numericDay = q(".rm-special-kind").value === "monthly_day";
+            const monthlyWeekday = q(".rm-special-kind").value === "monthly_nth_weekday";
+            q(".rm-special-nth").hidden = easter || numericDay;
+            q(".rm-special-day").hidden = !numericDay;
+            q(".rm-special-month-wrap").hidden = monthlyWeekday;
+            updateMonthlyWindowVisibility();
             q(".rm-special-from").disabled = q(".rm-special-to").disabled = q(".rm-special-allday").checked;
             previewCalendar();
         };
         q(".rm-special-kind").addEventListener("change", toggle);
         q(".rm-special-allday").addEventListener("change", toggle);
-        q(".rm-special-remove").addEventListener("click", () => { box.remove(); previewCalendar(); });
+        q(".rm-special-remove").addEventListener("click", () => { box.remove(); updateMonthlyWindowVisibility(); previewCalendar(); });
         box.addEventListener("input", previewCalendar);
         box.addEventListener("change", previewCalendar);
         $("#rm-special-rows").appendChild(box);
@@ -1592,6 +1727,7 @@
         if (calendar.endDate && !calendar.repeatYearly) return calendar.endDate;
         // A mixed calendar still has active weekly slots after special recurrences end.
         // Do not mark the whole calendar as expired in that case.
+        if (calendar.specialRules?.some(isMonthlyRule) && !calendar.slots?.length) return null;
         if (calendar.specialRules?.length && !calendar.slots?.length) return ymdUTC(calendar.specialEndYear,12,31);
         return null;
     }
@@ -1607,24 +1743,111 @@
         }
     }
 
+    function activeMonthlyOccurrenceDates(calendar) {
+        const excluded = exclusionSet(calendar);
+        const dates = [];
+        for (const rule of calendar.specialRules.filter(isMonthlyRule)) {
+            for (let i = 0; i < calendar.monthlyWindowMonths; i++) {
+                const date = monthlyRuleDate(rule, shiftMonth(calendar.monthlyWindowStart, i));
+                if (!date || excluded.has(date)) continue;
+                if (calendar.startDate && !calendar.repeatYearly &&
+                    (date < calendar.startDate || date > calendar.endDate)) continue;
+                dates.push(date);
+            }
+        }
+        return dates.sort();
+    }
+
+    function countActiveMonthlyOccurrences(calendar) {
+        return activeMonthlyOccurrenceDates(calendar).length;
+    }
+
+    function latestMonthlyOccurrence(calendar) {
+        return activeMonthlyOccurrenceDates(calendar).at(-1) || null;
+    }
+
     function refreshExpirationAlerts() {
         const banner = $("#rm-expiry-banner");
         if (!banner) return;
         const messages = [];
+        const monthlyAlerts = [];
         try {
             for (const cal of allCalendars()) {
+                const today = currentCivilDate(cal.timeZone);
+                if (cal.specialRules.some(isMonthlyRule)) {
+                    const monthEnd = latestMonthlyOccurrence(cal);
+                    if (!monthEnd) continue;
+                    const delta = daysBetween(today,monthEnd);
+                    if (delta <= EXPIRY_WARNING_DAYS) {
+                        monthlyAlerts.push({id:cal.id, message: delta < 0
+                            ? t("Ricorrenze mensili scadute: {name} ({date})",{name:cal.name,date:monthEnd})
+                            : t("Ricorrenze mensili in scadenza: {name} ({date})",{name:cal.name,date:monthEnd})});
+                    }
+                }
                 const end = expirationDate(cal);
                 if (!end) continue;
-                const delta = daysBetween(currentCivilDate(cal.timeZone),end);
+                const delta = daysBetween(today,end);
                 if (delta < 0) messages.push(t("Scaduto: {name} ({date})",{name:cal.name,date:end}));
                 else if (delta <= EXPIRY_WARNING_DAYS) messages.push(t("In scadenza: {name} — {days} giorni ({date})",{name:cal.name,days:delta,date:end}));
             }
         } catch (e) { errorLog("Calendar expiry",e); }
-        banner.hidden = messages.length === 0;
+        banner.hidden = messages.length === 0 && monthlyAlerts.length === 0;
         const items = $("#rm-expiry-messages");
         items.replaceChildren();
         for (const message of messages) {
             const div = document.createElement("div"); div.textContent = message; items.appendChild(div);
+        }
+        for (const alert of monthlyAlerts) {
+            const row = document.createElement("div");
+            const label = document.createElement("span");
+            label.textContent = alert.message + " ";
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = t("Prepara il rinnovo mensile");
+            button.addEventListener("click", () => prepareMonthlyRenewal(alert.id));
+            row.append(label,button);
+            items.appendChild(row);
+        }
+    }
+
+    function updateMonthlyWindowVisibility() {
+        const panel = $("#rm-monthly-window-settings");
+        if (!panel) return;
+        panel.hidden = ![...$("#rm-special-rows").querySelectorAll(".rm-special-kind")]
+            .some(select => ["monthly_nth_weekday", "monthly_day"].includes(select.value));
+        updateAnnualRepeatAvailability();
+    }
+
+    function updateAnnualRepeatAvailability() {
+        const repeat = $("#rm-cal-repeat");
+        const specialRows = $("#rm-special-rows");
+        if (!repeat || !specialRows) return;
+        const hasSpecial = specialRows.children.length > 0;
+        if (hasSpecial) repeat.checked = false;
+        repeat.disabled = !$("#rm-cal-ranged").checked || hasSpecial;
+        const note = $("#rm-special-repeat-note");
+        if (note) note.hidden = !hasSpecial;
+    }
+
+    function prepareMonthlyRenewal(id = null) {
+        try {
+            const calId = id || $("#rm-cal-list").value;
+            const cal = getCalendar(calId);
+            if (!cal || !cal.specialRules.some(isMonthlyRule)) {
+                throw new Error(t("Seleziona un calendario mensile salvato per rinnovarlo."));
+            }
+            const start = shiftMonth(cal.monthlyWindowStart, cal.monthlyWindowMonths);
+            const end = monthlyWindowEnd(start,cal.monthlyWindowMonths);
+            if (Number(end.slice(0,4)) > 2099) throw new Error(t("Non è possibile rinnovare oltre dicembre 2099."));
+            if (!confirm(t("Preparare il rinnovo di «{name}» per {start}–{end}? Verifica date, festività ed esclusioni prima di salvare. I segmenti WME NON saranno modificati.",
+                {name:cal.name,start,end}))) return;
+            setPanel("rm-panel-calendars");
+            editCalendar(cal); // discard any unsaved form edits only after confirmation
+            $("#rm-monthly-window-start").value = start;
+            previewCalendar();
+            notify(t("Rinnovo preparato. Controlla validità, festività ed esclusioni; quindi premi «Salva calendario». Nessuna modifica WME."),"warning");
+        } catch (e) {
+            notify(msg(e),"error");
         }
     }
 
@@ -1642,6 +1865,7 @@
             weekday: box.querySelector(".rm-special-weekday").value,
             month: Number(box.querySelector(".rm-special-month").value),
             offsetDays: Number(box.querySelector(".rm-special-offset").value),
+            dayOfMonth: Number(box.querySelector(".rm-special-day-number").value),
             allDay: box.querySelector(".rm-special-allday").checked,
             fromTime: box.querySelector(".rm-special-from").value,
             toTime: box.querySelector(".rm-special-to").value
@@ -1670,7 +1894,9 @@
                 endDate: row.querySelector(".rm-exclusion-end").value
             })),
             specialStartYear: Number($("#rm-special-start-year").value),
-            specialEndYear: Number($("#rm-special-end-year").value)
+            specialEndYear: Number($("#rm-special-end-year").value),
+            monthlyWindowStart: $("#rm-monthly-window-start").value,
+            monthlyWindowMonths: Number($("#rm-monthly-window-months").value)
         };
     }
 
@@ -1688,10 +1914,19 @@
                 t(["", "Primo", "Secondo", "Terzo", "Quarto", "Quinto"][rule.ordinal]);
             const label = rule.kind === "nth_weekday"
                 ? `${ordinalLabel} ${localizedWeekday(rule.weekday)} ${new Intl.DateTimeFormat(localeTag(), {month:"long",timeZone:"UTC"}).format(new Date(Date.UTC(2024,rule.month-1,1)))}`
-                : t("Pasqua {offset} giorni", {offset:(rule.offsetDays >= 0 ? "+" : "") + rule.offsetDays});
+                : rule.kind === "monthly_nth_weekday"
+                    ? t("Ogni mese, {ordinal} {weekday}", {ordinal:ordinalLabel,weekday:localizedWeekday(rule.weekday)})
+                    : rule.kind === "monthly_day"
+                        ? t("Ogni mese, giorno {day}",{day:rule.dayOfMonth})
+                        : t("Pasqua {offset} giorni", {offset:(rule.offsetDays >= 0 ? "+" : "") + rule.offsetDays});
             rows.push(`${label}: ${rule.allDay ? t("tutto il giorno") : `${rule.fromTime}–${rule.toTime}`}`);
         }
-        if (c.specialRules.length) {
+        if (c.specialRules.some(isMonthlyRule)) {
+            rows.push(t("Calendario mensile: {start} → {end} (fino a 12 mesi)",
+                {start:c.monthlyWindowStart, end:monthlyWindowEnd(c.monthlyWindowStart,c.monthlyWindowMonths)}));
+            rows.push(t("Mesi senza il giorno richiesto vengono saltati."));
+        }
+        if (c.specialRules.some(rule => !isMonthlyRule(rule))) {
             rows.push(t("Occorrenze generate: anni {start}–{end} (non automatiche oltre la fine)",
                 {start:c.specialStartYear, end:c.specialEndYear}));
         }
@@ -1737,6 +1972,10 @@
         const currentYear = new Date().getFullYear();
         $("#rm-special-start-year").value = String(calendar?.specialStartYear ?? currentYear);
         $("#rm-special-end-year").value = String(calendar?.specialEndYear ?? currentYear + 4);
+        $("#rm-monthly-window-start").value = calendar?.monthlyWindowStart ||
+            ymdUTC(currentYear, new Date().getMonth()+1, 1).slice(0,7);
+        $("#rm-monthly-window-months").value = String(calendar?.monthlyWindowMonths ?? MAX_MONTHLY_MONTHS);
+        updateMonthlyWindowVisibility();
         $("#rm-cal-list").value = editingCalendarId || "";
         invalidateHolidayLoad();
         $("#rm-holiday-country").value = calendar?.holidayCountry || "";
@@ -1757,6 +1996,7 @@
             $(selector).disabled = !on;
         }
         if (!on) $("#rm-cal-repeat").checked = false;
+        updateAnnualRepeatAvailability();
         previewCalendar();
     }
 
@@ -1766,6 +2006,12 @@
             const others = allCalendars().filter(item => item.id !== editingCalendarId);
             if (others.some(item => item.name.toLocaleLowerCase("it") === cal.name.toLocaleLowerCase("it"))) {
                 throw new Error(t("Esiste già un calendario con questo nome."));
+            }
+            // Every calendar (monthly, annual or weekly) must pass the 12-item cap.
+            calendarFrames(cal);
+            if (cal.specialRules.some(isMonthlyRule)) {
+                const activeMonths = countActiveMonthlyOccurrences(cal);
+                if (!activeMonths) throw new Error(t("Nessuna ricorrenza mensile valida nella finestra: controlla date ed esclusioni."));
             }
             cal.id = editingCalendarId || newCalendarId();
             localStorage.setItem(CAL_PREFIX + cal.id, JSON.stringify(cal));
@@ -2139,6 +2385,8 @@
                 title = t("Anteprima del calendario «{name}»",{name:calendar.name});
                 sourceSnapshot = canonical(calendar);
             }
+            // Fail before showing a preview or writing anything if the entire batch exceeds 12.
+            assertOperationLimit(updates);
             const originalSegments = await getSegments(updates.map(u => u.segmentId));
             const entries = updates.map((update,i) => {
                 const original = pairedRestrictions(originalSegments[i]);
@@ -2195,6 +2443,8 @@
                     throw new Error(t("Anteprima scaduta: la selezione, il preset, il calendario o le restrizioni in WME sono cambiati. Genera una nuova anteprima."));
                 }
             }
+            // Recheck immutable projected output immediately before actions are sent to WME.
+            assertOperationLimit(chosen.map(entry => entry.update));
             if (chosen.some(e => e.update.items.some(item => item.motors.length)) && !$("#rm-experimental").checked) {
                 throw new Error(t("Per applicare condizioni motore, abilita prima la casella sperimentale."));
             }
@@ -2326,6 +2576,7 @@
                 motorcycleConditions: pairs.map(p => p.motors),
                 calendarId: savedCalendar
             };
+            assertRestrictionPayload(pairs);
             if (read(name) !== null && !confirm(t('Sovrascrivere il preset "{name}"?', {name}))) return;
             localStorage.setItem(STORAGE_PREFIX + name, JSON.stringify(preset));
             refreshPresets(name);
@@ -2354,11 +2605,14 @@
         const affected = new Set(source.map(item => item.data.direction));
         const retained = pairedRestrictions(segment)
             .filter(item => !affected.has(item.data.direction));
+        const items = [...retained, ...source];
+        // Includes retained restrictions: 12 generated + 1 retained must be blocked.
+        assertRestrictionPayload(items);
         return {
             segmentId: segment.id,
             invert,
             calendarApplied: Boolean(calendar),
-            items: [...retained, ...source]
+            items
         };
     }
 
@@ -2388,12 +2642,18 @@
     }
 
     async function verifyCalendarApplied(update) {
-        if (!update.calendarApplied) return;
+        // Verify every SDK write, not just calendar mode: third-party WME code
+        // must not silently expand the set beyond our 12-item safety cap.
         const segment = await sdk.DataModel.Segments.getById({ segmentId: update.segmentId });
-        const current = segment?.restrictions || [];
+        if (!segment || !Array.isArray(segment.restrictions)) {
+            throw new Error(t("Verifica post-applicazione non disponibile: controlla e annulla la modifica in WME."));
+        }
+        const current = segment.restrictions;
+        assertRestrictionPayload(current.map(data => ({data: {timeFrames: data.timeFrames ?? []}})));
         if (current.length !== update.items.length) {
             throw new Error(t("Numero restrizioni inatteso: {actual} anziché {expected}.", {actual:current.length, expected:update.items.length}));
         }
+        if (!update.calendarApplied) return;
         // I frame sono attesi nella stessa posizione dell'azione SDK, con un
         // singolo frame per ogni restrizione prodotta dal calendario.
         for (let i = 0; i < current.length; i++) {
@@ -2410,6 +2670,9 @@
     // prodotta dalla chiamata SDK immediatamente seguente. Non costruisce
     // classi private né modifica lo stack delle azioni in autonomia.
     async function applyOne(update, rich) {
+        // Last line of defense, including the experimental motorcycle path.
+        if (!Array.isArray(update?.items)) throw new Error("Invalid restriction update.");
+        assertRestrictionPayload(update.items);
         const desired = update.items;
         const manager = pageWindow.W?.model?.actionManager;
         const beforeActions = manager?.getActions?.()?.slice() || [];
@@ -2585,7 +2848,11 @@
                 if (!name || name === "*Clipboard*") throw new Error(t("Nome preset non valido: {name}", {name}));
                 return [name, asPreset(value)];
             });
-            const calendars = bundle ? data.calendars.map(normalizeCalendar) : [];
+            const calendars = bundle ? data.calendars.map(value => {
+                const calendar = normalizeCalendar(value);
+                calendarFrames(calendar);
+                return calendar;
+            }) : [];
             const ids = new Set();
             for (const c of calendars) {
                 if (!c.id) throw new Error(t("Il calendario {name} non ha un identificativo valido.", {name:c.name}));
@@ -2979,6 +3246,7 @@
             font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
             max-height: 210px; overflow-y: auto;
           }
+          #rm-monthly-window-settings[hidden] { display: none !important; }
           #rm-sdk-compat[data-type="error"] { border-color: var(--rm-danger); }
           #rm-sdk-compat[data-type="warning"] { border-color: var(--rm-warning); }
           #rm-sdk-compat[data-type="success"] { border-color: var(--rm-success); }
@@ -3138,6 +3406,7 @@
                       <div class="rm-inline-toggle">
                         <label><input type="checkbox" id="rm-cal-ranged"> Limita a un intervallo di date</label>
                         <label class="rm-compact-check"><input type="checkbox" id="rm-cal-repeat" disabled> Ripeti ogni anno</label>
+                        <span id="rm-special-repeat-note" class="rm-info" hidden>Con le ricorrenze speciali, «Ripeti ogni anno» è disattivato: usa anni espliciti o una finestra mensile limitata.</span>
                       </div>
                     </div>
                   </div>
@@ -3223,8 +3492,9 @@
                   </div>
 
                   <div class="rm-subcard">
-                    <h4 class="rm-section-title">Ricorrenze annuali su date mobili</h4>
-                    <p class="rm-section-note">Ogni occorrenza genera una restrizione distinta e va rinnovata al termine delle annualità.</p>
+                    <h4 class="rm-section-title">Ricorrenze speciali e mensili</h4>
+                    <p class="rm-section-note">Ogni ricorrenza genera una restrizione distinta. Sono consentite al massimo 12 occorrenze speciali complessive per calendario.</p>
+                    <p class="rm-section-note">Massimo 12 restrizioni e 12 definizioni temporali per operazione, sommando tutte le regole e i segmenti selezionati. Oltre il limite l'applicazione viene bloccata.</p>
                     <div class="rm-form-grid">
                       <div class="rm-field">
                         <label for="rm-special-start-year">Anno iniziale</label>
@@ -3234,6 +3504,19 @@
                         <label for="rm-special-end-year">Anno finale</label>
                         <input type="number" id="rm-special-end-year" min="2000" max="2099" step="1">
                       </div>
+                    </div>
+                    <div id="rm-monthly-window-settings" class="rm-subcard" hidden>
+                      <h4 class="rm-section-title">Ricorrenze mensili: fino a 12 mesi</h4>
+                      <div class="rm-field">
+                        <label for="rm-monthly-window-start">Primo mese della finestra</label>
+                        <input type="month" id="rm-monthly-window-start" min="2000-01" max="2099-12">
+                      </div>
+                      <div class="rm-field">
+                        <label for="rm-monthly-window-months">Numero di mesi (1–12)</label>
+                        <input type="number" id="rm-monthly-window-months" min="1" max="12" step="1" value="12">
+                      </div>
+                      <p class="rm-section-note">Le ricorrenze mensili coprono massimo 12 mesi. Il rinnovo non modifica segmenti WME.</p>
+                      <button type="button" id="rm-monthly-renew" class="ghost">Prepara il rinnovo mensile</button>
                     </div>
                     <div id="rm-special-rows" class="rm-special-grid"></div>
                     <div class="rm-buttons one-col">
@@ -3426,6 +3709,9 @@
             $("#" + id).addEventListener("input", changedHolidayPeriod);
             $("#" + id).addEventListener("change", changedHolidayPeriod);
         }
+        $("#rm-monthly-renew").addEventListener("click", () => prepareMonthlyRenewal());
+        $("#rm-monthly-window-start").addEventListener("change", previewCalendar);
+        $("#rm-monthly-window-months").addEventListener("input", previewCalendar);
         $("#rm-special-add").addEventListener("click", () => {
             if ($("#rm-special-rows").children.length >= 8) {
                 notify(t("Massimo 8 ricorrenze speciali."), "warning");
