@@ -24,6 +24,8 @@ new vm.Script(source, {filename: 'Restriction_Manager.user.js'});
 const testingSource = source.replace(/\n    start\(\);\n\}\)\(\);\s*$/, `
     globalThis.__rmTest = {
       setSdk(value) { sdk = value; }, inspectSdkCompatibility,
+      normalizeCalendar, calendarFrames, monthlyWindowEnd, countActiveMonthlyOccurrences, latestMonthlyOccurrence,
+      assertRestrictionLimit, assertRestrictionPayload, assertOperationLimit,
       recordDiagnostic, getLog() { return diagnostics; }, clearDiagnostics,
       setLanguage(value) { currentLanguage = value; },
       translate(value) { return t(value); }
@@ -82,6 +84,68 @@ assert.ok(!store.get('rm-maintenance-diagnostics:v1').includes('PRIVATE-PRESET')
 a.clearDiagnostics();
 assert.equal(a.getLog().length, 0);
 assert.equal(store.get('rm-maintenance-diagnostics:v1'), undefined);
+
+// SAFE12 regression checks: all types and all selected segments count toward the cap.
+a.setLanguage('it'); // Keep safety error assertions independent of the preceding locale loop.
+const monthly = {
+  name:'Regression monthly', timeZone:'Europe/Rome', startDate:null, endDate:null,
+  repeatYearly:false, slots:[], specialStartYear:2026, specialEndYear:2026,
+  monthlyWindowStart:'2026-11', monthlyWindowMonths:12,
+  excludedRanges:[],localAnnualHolidays:[],
+  specialRules:[{kind:'monthly_nth_weekday',ordinal:2,weekday:'TUESDAY',
+    month:3,offsetDays:0,allDay:false,fromTime:'08:00',toTime:'10:00'}]
+};
+assert.equal(a.calendarFrames(monthly).length,12);
+assert.equal(a.monthlyWindowEnd('2026-11',12),'2027-10-31');
+assert.equal(a.countActiveMonthlyOccurrences(a.normalizeCalendar(monthly)),12);
+assert.equal(a.latestMonthlyOccurrence(a.normalizeCalendar(monthly)),'2027-10-12');
+const day31={...monthly, monthlyWindowStart:'2026-01',
+  specialRules:[{...monthly.specialRules[0],kind:'monthly_day',dayOfMonth:31}]};
+assert.equal(a.calendarFrames(day31).length,7);
+const pair={...monthly,monthlyWindowMonths:7,
+  specialRules:[monthly.specialRules[0],
+    {...monthly.specialRules[0],weekday:'MONDAY'}]};
+assert.throws(()=>a.calendarFrames(pair),/12/);
+const annual={...monthly,monthlyWindowMonths:12,specialStartYear:2026,specialEndYear:2035,
+  specialRules:[{...monthly.specialRules[0],kind:'nth_weekday',month:11}]};
+assert.equal(a.calendarFrames(annual).length,10);
+assert.throws(()=>a.calendarFrames({...annual,
+  specialRules:[annual.specialRules[0],{...annual.specialRules[0],weekday:'MONDAY'}]}),/12/);
+assert.throws(()=>a.calendarFrames({...monthly,repeatYearly:true, startDate:'2026-01-01', endDate:'2027-12-31'}),/12/);
+const mondaySlots=Array.from({length:13},(_,h)=>({
+  weekdays:['MONDAY'],allDay:false,
+  fromTime:String(h).padStart(2,'0')+':00',
+  toTime:String(h+1).padStart(2,'0')+':00'
+}));
+assert.throws(()=>a.calendarFrames({...monthly,specialRules:[],slots:mondaySlots}),/12/);
+const one={data:{direction:'FWD',timeFrames:[{}]},motors:[],raw:null};
+assert.throws(()=>a.assertRestrictionPayload(Array(13).fill(one)),/12/);
+assert.throws(()=>a.assertRestrictionPayload([{...one,
+  data:{...one.data,timeFrames:Array(13).fill({})}}]),/12/);
+assert.throws(()=>a.assertOperationLimit([
+  {segmentId:11,items:Array(7).fill(one)},
+  {segmentId:12,items:Array(6).fill(one)}
+]),/12/);
+assert.equal(a.assertRestrictionPayload(Array(12).fill(one)),12);
+for(const marker of ['assertOperationLimit(updates);',
+  'assertOperationLimit(chosen.map(entry => entry.update));',
+  'assertRestrictionPayload(update.items);',
+  'if (hasSpecial) repeat.checked = false;']) {
+  assert.ok(source.includes(marker), 'Missing safety check: '+marker);
+}
+// Exhaustive month/day/month-count boundary scan.
+let cases=0;
+for(let day=1;day<=31;day++) for(let month=1;month<=12;month++)
+  for(let duration=1;duration<=12;duration++) {
+    const candidate={...day31,monthlyWindowStart:'2026-'+String(month).padStart(2,'0'),
+      monthlyWindowMonths:duration,
+      specialRules:[{...day31.specialRules[0],dayOfMonth:day}]};
+    try { assert.ok(a.calendarFrames(candidate).length<=12); }
+    catch(err) { assert.match(String(err),/non ha date attive|12/); }
+    cases++;
+  }
+assert.equal(cases,31*12*12);
+
 // Regression: async SDK getters return Promises, not immediate strings.
 sdk.getSDKVersion = () => Promise.resolve('2.230');
 sdk.getWMEVersion = () => Promise.resolve('frontend-beta');

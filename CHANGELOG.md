@@ -1,9 +1,19 @@
 # Changelog
 
-### Fixed
-- Version numbers follow the `MAJOR.MINOR.PATCH` convention. Stable builds are published through GitHub Releases.
-### Unchanged
-- All restriction, calendar, holiday, preview, diagnostics and multilingual behaviors.
+Version numbers follow the MAJOR.MINOR.PATCH convention. Stable builds are distributed via GitHub Releases.
+
+## [3.2.0] — 2026-11-21
+### Added
+- Monthly nth-weekday and numerical day-of-month occurrences, with a configurable 1–12 month window.
+- Renewal preparation and expiry reminder; the editor must confirm changes to the saved local calendar and separately reapply them to WME segments.
+### Safety
+- Limit all restrictions and time-frame definitions to 12 for an entire operation, including retained restrictions and all selected segments.
+- Disable yearly repetition when special occurrences are configured; reject incompatible legacy configurations on application.
+- Validate calendar expansion, import, preview and the SDK write path; never silently truncate results over the cap.
+- Expand automated regression coverage for calendar, recurrence and batch edge cases.
+### Notes
+- No automatic updates to WME segments on calendar renewal.
+- Use JSON backup before installing. Always review previews, WME pending changes, and official local schedules.
 
 ## [3.1.2] — 2026-11-19 (released)
 ### Fixed
