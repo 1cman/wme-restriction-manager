@@ -86,6 +86,7 @@ assert.equal(a.getLog().length, 0);
 assert.equal(store.get('rm-maintenance-diagnostics:v1'), undefined);
 
 // SAFE12 regression checks: all types and all selected segments count toward the cap.
+a.setLanguage('it'); // Keep safety error assertions independent of the preceding locale loop.
 const monthly = {
   name:'Regression monthly', timeZone:'Europe/Rome', startDate:null, endDate:null,
   repeatYearly:false, slots:[], specialStartYear:2026, specialEndYear:2026,
