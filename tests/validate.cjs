@@ -110,7 +110,7 @@ const annual={...monthly,monthlyWindowMonths:12,specialStartYear:2026,specialEnd
 assert.equal(a.calendarFrames(annual).length,10);
 assert.throws(()=>a.calendarFrames({...annual,
   specialRules:[annual.specialRules[0],{...annual.specialRules[0],weekday:'MONDAY'}]}),/12/);
-assert.throws(()=>a.calendarFrames({...monthly,repeatYearly:true}),/12|ann|year/i);
+assert.throws(()=>a.calendarFrames({...monthly,repeatYearly:true, startDate:'2026-01-01', endDate:'2027-12-31'}),/12/);
 const mondaySlots=Array.from({length:13},(_,h)=>({
   weekdays:['MONDAY'],allDay:false,
   fromTime:String(h).padStart(2,'0')+':00',
