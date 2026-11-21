@@ -25,6 +25,30 @@ The stable userscript includes **@updateURL** and **@downloadURL**, pointing to 
 
 Lo script stabile contiene **@updateURL** e **@downloadURL** verso l'ultima Release stabile pubblicata. Tampermonkey verifica gli aggiornamenti secondo le proprie impostazioni. Le vecchie installazioni prive di questi metadati potrebbero richiedere una reinstallazione.
 
+## 🆕 Monthly recurrences and SAFE12 / Ricorrenze mensili e limite SAFE12 (v3.2.0)
+
+**🇮🇹 Italiano**
+
+- Crea ricorrenze come **il secondo martedì di ogni mese**, **l'ultimo venerdì** o **il giorno 15 di ogni mese**, scegliendo la finestra iniziale e da 1 a 12 mesi.
+- La generazione è **limitata a 12 restrizioni e 12 definizioni temporali complessive per singola operazione**, sommando tutte le regole, i preset, le restrizioni conservate e **tutti i segmenti selezionati**. Una selezione di due segmenti con 7 restrizioni ciascuno viene bloccata (7 + 7 = 14).
+- Il limite viene controllato durante la preparazione del calendario, l'anteprima e prima dell'aggiornamento WME. Se la configurazione supera il limite, **l'operazione viene bloccata**: non viene ridotta automaticamente.
+- L'opzione **Ripeti ogni anno** non è disponibile per le ricorrenze speciali (mensili, giorno della settimana in un mese specifico, Pasqua). I calendari settimanali ordinari possono continuare a ripetersi.
+- Prima della scadenza delle ricorrenze mensili viene proposto **Prepara il rinnovo mensile**. Il rinnovo sposta la finestra nel **calendario salvato localmente**, dopo conferma dell'editor; **non modifica i segmenti WME**. L'editor deve verificare festività e esclusioni, salvare e applicare separatamente le modifiche ai segmenti corretti.
+- Per le ricorrenze numeriche, i mesi che non contengono il giorno scelto sono saltati (ad esempio il 31 febbraio). Si consiglia di salvare un permalink dei segmenti interessati.
+- Prima di aggiornare, **esporta un backup JSON**. Un calendario preesistente con più di 12 restrizioni generate deve essere corretto prima di essere riapplicato con la nuova versione.
+
+**🇬🇧 English**
+
+- Create monthly rules such as the **second Tuesday of every month**, **last Friday**, or **day 15 of each month** over a configurable 1–12-month window.
+- A strict **12-restriction and 12-time-frame maximum per operation** applies across all rules, templates, retained restrictions and **selected segments combined**. Two selected segments with 7 restrictions each are blocked (7 + 7 = 14).
+- Limits are checked at calendar preparation, preview and immediately before WME writes. Exceeding a limit **blocks the operation**, without silently truncating it.
+- **Repeat every year** is disabled for special occurrences (monthly rules, nth weekday in a given month, Easter), while ordinary weekly recurrences remain available.
+- As monthly occurrences near expiration, **Prepare monthly renewal** proposes the next window, but updates **only the local saved calendar** after editor confirmation. **No WME segments are changed**. The editor must check holidays/exclusions, save and explicitly reapply the calendar to the intended segments.
+- Months without the chosen numerical date are skipped (for example, February 31). Editors should keep a permalink to the affected segments.
+- **Export a JSON backup before upgrading.** Older calendars generating more than 12 restrictions must be revised before they can be reapplied.
+
+> **Safety note / Nota di sicurezza:** Automated tests validate our userscript's limits, not the behavior of WME servers or private editor APIs. Review the preview and pending edits. / I test automatici verificano i limiti dello script, non il comportamento dei server WME o delle API interne. Controlla sempre anteprima e modifiche in sospeso.
+
 ## Quick start / Guida rapida
 
 ### 🇮🇹 Italiano
