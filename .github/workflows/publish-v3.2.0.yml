@@ -1,0 +1,35 @@
+name: Publish Restriction Manager v3.2.0 (one-time)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dist/Restriction_Manager.user.js'
+      - '.github/workflows/publish-v3.2.0.yml'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run source and regression tests
+        run: |
+          node --check dist/Restriction_Manager.user.js
+          node tests/validate.cjs
+          node scripts/check-release.cjs 3.2.0
+      - name: Publish stable release, once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v3.2.0 >/dev/null 2>&1; then
+            echo "v3.2.0 already exists; no action necessary."
+            exit 0
+          fi
+          gh release create v3.2.0 dist/Restriction_Manager.user.js \
+            --title "Restriction Manager v3.2.0" \
+            --target "$GITHUB_SHA" \
+            --notes-file docs/RELEASE_NOTES_3.2.0.md \
+            --latest
