@@ -443,6 +443,12 @@
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
         const advanced={minPassengers:null,permitIds:[]};
         const vehicleRules=Object.create(null);
+        const motorDraft={enabled:false,engineType:""};
+        const redSchedule={
+            startDate:"",endDate:"",weekdays:[...WEEKDAYS],allDay:true,
+            slots:[{fromTime:"08:00",toTime:"18:00"}]
+        };
+        const motorSuggestions=observedMotorTypes(page,current.segment.id);
         const emptyRule=()=>({
             requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
         });
@@ -474,9 +480,14 @@
             try {
                 if(draft.restrictionType==="ALLOWED")
                     normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);
+                else if(draft.restrictionType==="BLOCKED")
+                    normalizeMotorDraft(motorDraft,draft.vehicleTypes.includes("MOTORCYCLE"));
                 else normalizeAdvanced(advanced,current.permits);
                 return true;
             }catch(_){return false;}
+        }
+        function isScheduleValid(){
+            try {normalizeRedSchedule(redSchedule);return true;}catch(_){return false;}
         }
         function refreshNext(){
             const next=dialog.querySelector('[data-guided-next="true"]');
@@ -601,9 +612,14 @@
                 try{
                     if(draft.restrictionType==="ALLOWED")
                         normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);
+                    else if(draft.restrictionType==="BLOCKED")
+                        normalizeMotorDraft(motorDraft,draft.vehicleTypes.includes("MOTORCYCLE"));
                     else normalizeAdvanced(advanced,current.permits);
                     normalizeDraft(draft,current.segment);
                 }catch(_){return;}
+            }
+            if(step===7){
+                try{normalizeRedSchedule(redSchedule);}catch(_){return;}
             }
             let fresh;
             try {fresh=await readContext(sdk);} catch (_) {}
@@ -613,7 +629,9 @@
                  !availableDirections(fresh.segment).includes(draft.direction)) {
                 dialog.replaceChildren(node("p",tr("changed")),button(tr("close"),()=>dialog.close()));return;
             }
-            step++;
+            const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);
+            if(destination===null)return;
+            step=destination;
             render();
         }
         function render(){
@@ -637,6 +655,10 @@
                         draft.vehicleTypes=[];
                         advanced.minPassengers=null;
                         advanced.permitIds=[];
+                        motorDraft.enabled=false;motorDraft.engineType="";
+                        redSchedule.startDate="";redSchedule.endDate="";
+                        redSchedule.weekdays=[...WEEKDAYS];redSchedule.allDay=true;
+                        redSchedule.slots=[{fromTime:"08:00",toTime:"18:00"}];
                         for(const key of Object.keys(vehicleRules))delete vehicleRules[key];
                     }),node("p",tr("pending")));
             }
@@ -656,6 +678,9 @@
                             draft.vehicleTypes.filter(value=>value!==type);
                         if(input.checked)vehicleRules[type]=emptyRule();
                         else delete vehicleRules[type]; // Never retain hidden conditions on deselection.
+                        if(type==="MOTORCYCLE"&&!input.checked){
+                            motorDraft.enabled=false;motorDraft.engineType="";
+                        }
                         render();
                     });
                     label.style.cssText="display:flex;align-items:start;gap:6px;font-size:12px;padding:5px 0;";
@@ -671,7 +696,43 @@
                 dialog.append(node("p",tr("vehicles_unknown")));
             }
             if(step===5) {
-                if(draft.restrictionType==="ALLOWED"){
+                if(draft.restrictionType==="BLOCKED"){
+                    dialog.append(node("h3",tr("motorcycle_step")),node("p",tr("motorcycle_intro")));
+                    const toggleLabel=node("label"),toggle=node("input");
+                    toggle.type="checkbox";toggle.checked=motorDraft.enabled;
+                    toggleLabel.style.cssText="display:flex;align-items:center;gap:8px;margin:10px 0;";
+                    toggle.addEventListener("change",()=>{
+                        motorDraft.enabled=toggle.checked;
+                        if(!motorDraft.enabled)motorDraft.engineType="";
+                        render();
+                    });
+                    toggleLabel.append(toggle,document.createTextNode(tr("motorcycle_enable")));
+                    dialog.append(toggleLabel);
+                    if(motorDraft.enabled){
+                        const nameLabel=node("label",tr("motorcycle_engine"));
+                        nameLabel.style.cssText="display:block;font-weight:600;";
+                        const input=node("input");
+                        input.type="text";input.maxLength=64;
+                        input.value=motorDraft.engineType;
+                        input.autocomplete="off";
+                        input.setAttribute("list",ID+"-observed-engine-types");
+                        input.style.cssText="display:block;margin:6px 0;padding:8px;"+
+                            "width:100%;box-sizing:border-box;border:1px solid #9ca3af;border-radius:6px;";
+                        input.addEventListener("input",()=>{
+                            motorDraft.engineType=input.value;
+                            refreshNext();
+                        });
+                        const suggestions=node("datalist");
+                        suggestions.id=ID+"-observed-engine-types";
+                        for(const value of motorSuggestions){
+                            const option=node("option");option.value=value;suggestions.append(option);
+                        }
+                        nameLabel.append(input,suggestions);
+                        dialog.append(nameLabel,node("p",tr("motorcycle_engine_hint")));
+                        if(!motorDraft.engineType.trim())
+                            dialog.append(node("p",tr("motorcycle_engine_error")));
+                    }else dialog.append(node("p",tr("motorcycle_unchecked")));
+                }else if(draft.restrictionType==="ALLOWED"){
                     dialog.append(node("h3",tr("advanced")),node("p",tr("advanced_allowed_intro")));
                     for(const type of selectedVehicleTypes(draft.vehicleTypes)){
                         const rule=vehicleRules[type]??(vehicleRules[type]=emptyRule());
