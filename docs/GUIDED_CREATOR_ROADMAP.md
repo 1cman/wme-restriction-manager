@@ -1,10 +1,21 @@
 # Restriction Manager 4.0 — Guided Creator roadmap
 
-## Alpha 1 (isolated, read-only)
+## Alpha 2 (isolated, read-only)
 
 Install the separate userscript in alpha/Restriction_Manager_Guided_Alpha.user.js alongside stable Restriction Manager. The script namespace and SDK ID differ. It does not write map data, save presets, access storage or connect to cloud services. It is not a stable release.
 
 Select exactly one segment in WME Standard or Beta. Open RM Guided Alpha in the scripts sidebar. Check country, existing restriction count and native button detection. If the native Add restrictions control is uniquely detectable by its exact localized label, a separate Create guided restriction button is inserted alongside it. Otherwise use the sidebar fallback. Walk through direction, full segment or lane scope, and lane design choice. Scope and lane choices are **proposals only**, not validated SDK enum values or country-specific permissions. No writes can be made at the summary.
+
+## WME native UI evidence — Italian editor, 2026-11-23
+
+Initial live testing confirmed the read-only Alpha starts successfully and the guided controls work. The editor supplied screenshots from WME of two **separate** native dropdowns:
+
+- **Ambito / disposizione:** `Corsia di sinistra`, `Corsia centrale`, `Nessuna`, `Corsia di destra`, `Intero Segmento`.
+- **Tipologia:** `Nessuno`, `Express`, `Fast`, `HOV`, `Mezzi Pubblici`, `No pedaggio per Carpool`.
+
+**Do not conflate** `Nessuna` (scope) with `Intero Segmento` or `Nessuno` (lane type). Their exact SDK values and availability by country are not yet verified; these labels are evidence for an Italian WME context only.
+
+Alpha 2 presents all five scope labels and all six type labels as *distinct, independent read-only options* in the wizard. This is a UI parity prototype, **not** an authorization to write them into WME. The next phase must verify the typed enum values for the native panel, and country/user permissions before enabling edits.
 
 ## Acceptance criteria before real editing
 
