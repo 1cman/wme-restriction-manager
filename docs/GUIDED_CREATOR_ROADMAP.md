@@ -131,6 +131,28 @@ Official user-facing help: [Navigate in license plate restricted zones](https://
 
 No change to active Alpha 4.0.0-alpha.9 scripting behavior is authorized by this reference alone.
 
+## Native WME plate-suffix condition — direct editor screenshot (2026-11-23)
+
+The editor supplied an image of the **Portuguese native WME restriction rule** displaying:
+
+> Qualquer veículo com Placa do veículo com final 0
+
+Meaning: "Any vehicle with a license plate ending in 0." This is **direct interface evidence** that the WME native restriction panel can represent an end-of-plate digit condition. The image shows a green rule chip and a single digit `0`. It does **not** show the segment's country, municipality, time frame, complete condition picker, or SDK payload.
+
+The editor further reports from their sources that in the seven countries listed in [official Waze app help](https://support.google.com/waze/answer/7666525?hl=it), WME allows editors to enter a last license-plate digit in restrictions for **specific dates and times**. Preserve this as **editor-provided evidence that still needs location-specific validation**; the screenshot alone does not prove identical WME authoring capabilities across all cities. The app's last **two** digits setting and the shown WME **last digit** condition must not be conflated.
+
+The current WME SDK API index lists `LicensePlateRule` as a type alias / variable; earlier published `DriveProfileAttributes` includes `licensePlateNumber`. This indicates an SDK-level concept but does not establish exact enum values or the write schema. Reference: [WME SDK module](https://web-assets.waze.com/wme_sdk_docs/production/latest/modules/index.SDK.html), [WME SDK beta DriveProfileAttributes](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.DriveProfileAttributes.html).
+
+**Updated implementation plan, not yet in the active Alpha:**
+
+1. Add a third optional criterion under **each individually selected vehicle type**: license-plate **final digit**. It must not automatically apply to other selected vehicle types. Directly authorized classes must remain unconditional unless explicitly configured.
+2. Draft UI may offer a choice of final digits from `0` through `9`, but check in native WME whether multiple digits are supported in the same rule or require multiple rules; never assume a list can be serialized as one SDK rule.
+3. Couple these authorizations to a **per-rule schedule** covering applicable dates, weekdays and local time ranges. Do not apply a vehicle-specific date restriction to all types; reuse the existing SAFE12 scheduling logic only after native compatibility validation.
+4. Derive real eligibility from the **selected segment geography and native editor capabilities**, not the editor's language. When locality/permissions cannot be verified, keep the feature read-only or unavailable.
+5. Before any WME writes: inspect actual `LicensePlateRule` SDK schema and native WME rule output, determine interaction with pass and occupancy conditions, test precedence and overlapping vehicle classes, preview before/after, enforce SAFE12 guardrails, and require explicit editor confirmation.
+
+**Status**: native WME single final-digit rule is **observed**; country/city coverage and schedule details are **reported** but not fully independently confirmed for WME; SDK serialization and write eligibility are **not yet verified**. Alpha `4.0.0-alpha.9` stays unchanged and read-only.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
