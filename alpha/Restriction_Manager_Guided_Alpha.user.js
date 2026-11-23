@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.2
+// @version      4.0.0-alpha.3
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,10 +18,10 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.2";
+    const VERSION = "4.0.0-alpha.3";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
-    const SCOPES = ["scope_none", "left", "center", "right", "segment"];
+    const SCOPES = ["left", "center", "right", "segment"];
     const LANES = ["lane_none", "express", "fast", "hov", "public_transport", "carpool_toll_free"];
     const LANGS = ["it", "en", "fr", "es", "de", "pt"];
     const labels = {
@@ -39,7 +39,7 @@
         REV:["Da B verso A","B to A","De B vers A","De B a A","B nach A","De B para A"],
         BOTH:["Entrambe le direzioni","Both directions","Les deux sens","Ambos sentidos","Beide Richtungen","Ambos os sentidos"],
         scope:["A cosa si applica?","What does it apply to?","À quoi s'applique-t-elle ?","¿A qué se aplica?","Worauf gilt sie?","A que se aplica?"],
-        scope_none:["Nessuna","None","Aucune","Ninguna","Keine","Nenhuma"],
+        choose_scope:["Seleziona una corsia o l’intero segmento per applicare la restrizione.","Select a lane or the entire segment before continuing.","Sélectionnez une voie ou le segment entier avant de continuer.","Selecciona un carril o el segmento completo antes de continuar.","Wähle einen Fahrstreifen oder das gesamte Segment, bevor du fortfährst.","Seleciona uma via ou o segmento inteiro antes de continuar."],
         segment:["Intero Segmento","Entire segment","Segment entier","Segmento completo","Gesamtes Segment","Segmento inteiro"],
         left:["Corsia sinistra","Left lane","Voie gauche","Carril izquierdo","Linker Fahrstreifen","Via esquerda"],
         center:["Corsia centrale","Center lane","Voie centrale","Carril central","Mittlerer Fahrstreifen","Via central"],
@@ -76,8 +76,9 @@
         if (!availableDirections(segment).includes(draft.direction)) throw new Error("Direction unavailable");
         if (!SCOPES.includes(draft.scope)) throw new Error("Invalid scope");
         if (!LANES.includes(draft.lane)) throw new Error("Invalid lane design option");
-        // Never collapse the native None vs Entire segment, or None lane type.
-        // Both dropdowns are independent, even when designing whole-segment restrictions.
+        // WME displays 'None' for scope as an invalid placeholder, not a valid target.
+        // The lane type's 'None' remains a distinct, valid design choice.
+        // These labels are still unverified as SDK enum values or country capabilities.
         return {direction:draft.direction, scope:draft.scope, lane:draft.lane, verified:false};
     }
     async function readContext(sdk) {
@@ -162,7 +163,7 @@
         dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
         document.body.append(dialog);
         let step=0;
-        const draft={direction:availableDirections(current.segment).at(-1),scope:"scope_none",lane:"lane_none"};
+        const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none"};
         const options = (keys,value,onChange) => {
             const box=node("div");
             for(const k of keys) {
@@ -175,6 +176,9 @@
             return box;
         };
         async function advance() {
+            // Guard progress here as well as in the button state: no implicit scope.
+            if (step === 1 && !SCOPES.includes(draft.scope)) return;
+            if (step === 2 && !LANES.includes(draft.lane)) return;
             let fresh;
             try {fresh=await readContext(sdk);} catch (_) {}
             if (!fresh || fresh.segment.id!==current.segment.id ||
@@ -188,7 +192,16 @@
         function render(){
             dialog.replaceChildren(node("h2",tr("launch")),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
             if(step===0) dialog.append(node("h3",tr("direction")),options(availableDirections(current.segment),draft.direction,v=>draft.direction=v));
-            if(step===1) dialog.append(node("h3",tr("scope")),options(SCOPES,draft.scope,v=>{draft.scope=v;}),node("p",tr("pending")));
+            if(step===1) {
+                dialog.append(node("h3",tr("scope")),options(SCOPES,draft.scope,v=>{draft.scope=v;}));
+                if (!SCOPES.includes(draft.scope)) {
+                    const warning=node("p",tr("choose_scope"));
+                    warning.setAttribute("role","alert");
+                    warning.style.cssText="color:#c62828;font-weight:600;margin:10px 0;";
+                    dialog.append(warning);
+                }
+                dialog.append(node("p",tr("pending")));
+            }
             if(step===2) dialog.append(node("h3",tr("lane")),options(LANES,draft.lane,v=>draft.lane=v),node("p",tr("pending")));
             if(step===3) {
                 const checked=normalizeDraft(draft,current.segment);
@@ -197,7 +210,7 @@
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
             if(step>0)footer.append(button(tr("back"),()=>{step--;render();}));
-            if(step<3){const next=button(tr("next"),advance);next.disabled=step===2&&!draft.lane;footer.append(next);}
+            if(step<3){const next=button(tr("next"),advance);next.disabled=(step===1&&!SCOPES.includes(draft.scope))||(step===2&&!LANES.includes(draft.lane));footer.append(next);}
             dialog.append(footer);
         }
         render();
