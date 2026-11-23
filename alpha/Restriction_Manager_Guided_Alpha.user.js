@@ -343,6 +343,10 @@
         let step=0;
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
         const advanced={minPassengers:null,permitIds:[]};
+        const vehicleRules=Object.create(null);
+        const emptyRule=()=>({
+            requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
+        });
         const options = (keys,value,onChange) => {
             const box=node("div");
             for(const k of keys) {
@@ -367,6 +371,18 @@
             }
             return box;
         };
+        function isAdvancedValid(){
+            try {
+                if(draft.restrictionType==="ALLOWED")
+                    normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);
+                else normalizeAdvanced(advanced,current.permits);
+                return true;
+            }catch(_){return false;}
+        }
+        function refreshNext(){
+            const next=dialog.querySelector('[data-guided-next="true"]');
+            if(next&&step===5)next.disabled=!isAdvancedValid();
+        }
         async function advance() {
             // Guard progress here as well as in the button state: no implicit scope.
             if (step === 1 && !SCOPES.includes(draft.scope)) return;
@@ -376,8 +392,10 @@
                 && !selectedVehicleTypes(draft.vehicleTypes).length)return;
             if(step===5){
                 try{
-                    const conditions=normalizeAdvanced(advanced,current.permits);
-                    normalizeDraft(draft,current.segment,conditions);
+                    if(draft.restrictionType==="ALLOWED")
+                        normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);
+                    else normalizeAdvanced(advanced,current.permits);
+                    normalizeDraft(draft,current.segment);
                 }catch(_){return;}
             }
             let fresh;
@@ -412,6 +430,7 @@
                         draft.vehicleTypes=[];
                         advanced.minPassengers=null;
                         advanced.permitIds=[];
+                        for(const key of Object.keys(vehicleRules))delete vehicleRules[key];
                     }),node("p",tr("pending")));
             }
             if(step===4) {
@@ -428,6 +447,8 @@
                         draft.vehicleTypes=input.checked?
                             [...new Set([...draft.vehicleTypes,type])]:
                             draft.vehicleTypes.filter(value=>value!==type);
+                        if(input.checked)vehicleRules[type]=emptyRule();
+                        else delete vehicleRules[type]; // Never retain hidden conditions on deselection.
                         render();
                     });
                     label.style.cssText="display:flex;align-items:start;gap:6px;font-size:12px;padding:5px 0;";
@@ -600,13 +621,11 @@
             if(step>0)footer.append(button(tr("back"),()=>{step--;render();}));
             if(step<6){
                 const next=button(tr("next"),advance);
+                next.dataset.guidedNext="true";
                 next.disabled=(step===1&&!SCOPES.includes(draft.scope))||
                     (step===2&&!LANES.includes(draft.lane))||
                     (step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length) ||
-                    (step===5&&(
-                        (advanced.minPassengers!==null&&
-                         (!Number.isSafeInteger(advanced.minPassengers)||advanced.minPassengers<2)) ||
-                        (draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft))));
+                    (step===5&&!isAdvancedValid());
                 footer.append(next);
             }
             dialog.append(footer);
