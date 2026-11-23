@@ -1,7 +1,7 @@
 name: Validate userscript
 on:
   push:
-    branches: [main]
+    branches: [main, develop/v4-guided-restrictions]
   pull_request:
 permissions:
   contents: read
