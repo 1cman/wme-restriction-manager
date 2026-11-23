@@ -91,6 +91,23 @@ The Advanced conditions step now offers a **searchable pass list with autocomple
 
 **Test:** choose green and confirm Next stays disabled with no selected vehicle even if previously selected pass/occupancy exists; select a vehicle and continue. On the pass screen inspect alphabetical names, type a substring or an accent-free version of an accented name, use autocomplete by mouse and Enter, select multiple passes, clear search and confirm selections persist. Validate Standard and Beta WME.
 
+## Alpha 9: independent conditions per authorized vehicle (2026-11-23)
+
+The green `ALLOWED` (permit-only / whitelist) intent still requires selecting **at least one vehicle type**. On the **next step**, each selected vehicle receives its own independent controls:
+
+- **Requires a permit**: only this vehicle needs a selected permit; that vehicle gets an independent country-permit checklist with alphabetical ordering and accent-insensitive autocomplete. Enabling this requirement without choosing a pass blocks Next.
+- **Requires minimum occupancy**: only this vehicle needs an integer minimum of at least 2; an enabled requirement without a valid number blocks Next.
+- **Neither checkbox enabled**: this vehicle is **directly authorized**, without inheriting a permit or occupancy rule selected for another vehicle.
+- Both checked: both conditions are recorded for this vehicle as a **design proposal**, but combinations / AND-OR semantics and native WME eligibility remain unverified.
+
+Example: select `PRIVATE`, `MOTORCYCLE`, `EV` and `HYBRID`. Enable *Requires a permit* with a chosen pass **only** for `PRIVATE` and `MOTORCYCLE`. Leave `EV` and `HYBRID` without additional requirements. The summary must show the first two as **CONDITIONAL** and the other two as **DIRECT**, and must not display a shared permit applying to all four. The default underlying restriction model remains `BLOCKED` with proposed `FREE` exceptions for authorized traffic.
+
+The per-vehicle draft has independent `requiresPass`, `permitIds`, `requiresOccupancy`, and `minPassengers` state. Deselecting a vehicle discards its conditions, so reselecting it creates a clean direct-authorization state. Changing the restriction intent clears all per-vehicle conditions. Pure validation rejects unselected/stale vehicle rules, unrecognized country passes, required passes with no selection, and invalid or inactive occupancy requirements. The read-only summary now displays requirements **per vehicle**; red `BLOCKED` and blue `TOLL` retain their prior Advanced conditions UI.
+
+**Important limitation:** This is a UI and read-only draft model, not proof that WME's routing engine can represent the example through independent rules without overlap. Categories such as private, electric and hybrid may have intersecting real-world interpretations; exact semantics, rule precedence, SDK serialization and supported country combinations must be verified in WME before enabling any write. No map changes or presets are saved.
+
+**Manual testing:** Use the exact four-type example above. Verify no condition is inherited by EV/HYBRID, Next blocks only when a requirement was enabled without a valid value, the independent pass autocomplete works, returning to earlier steps preserves matching vehicle conditions, and deselect/reselect clears stale conditions. Check WME Standard and Beta.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
