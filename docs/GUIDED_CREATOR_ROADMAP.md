@@ -153,6 +153,27 @@ The current WME SDK API index lists `LicensePlateRule` as a type alias / variabl
 
 **Status**: native WME single final-digit rule is **observed**; country/city coverage and schedule details are **reported** but not fully independently confirmed for WME; SDK serialization and write eligibility are **not yet verified**. Alpha `4.0.0-alpha.9` stays unchanged and read-only.
 
+## Alpha 10: separate red BLOCKED pathway, optional motorcycle engine, date/time schedule (2026-11-23)
+
+The red **Transito vietato** intent now has a different guided flow from green and blue:
+
+- Direction → scope → lane → restriction type → **vehicles exempt from prohibition**.
+- **Without MOTORCYCLE in the exempt vehicles:** go **directly to red dates and time ranges**, **never** to the green-style occupancy/permits/plate-conditions step.
+- **With MOTORCYCLE among the exempt vehicles:** first show an **optional experimental engine type** step, then red dates and time ranges.
+- Finish with a **read-only summary** showing default BLOCKED, optional FREE vehicle exemptions, optional motor type and the proposed schedule. Back navigation follows the same conditional path.
+
+The experimental motorcycle step is deliberately limited. The real stable **3.2.0** script uses private WME model methods `getDriveProfileList("BLOCKED")`, `getEngineCapacities()` and their `engineType`, `operator`, `capacityThreshold` fields to **preserve and reapply existing complete motorcycle engine conditions**. It does **not** document a complete list of supported engine-type enum values nor establish that an arbitrary new value may be written. The Alpha offers an opt-in **read-only engineType code draft** (free text), with autocomplete suggestions **only from engine types already observed on the selected segment**. The input must be nonempty when the opt-in is enabled; disabling it keeps the exemption unqualified by engine type. No new engine rule, operator or threshold is serialized. This is a navigation/design prototype; it is not equivalent to v3.2.0's complete experimental restore path.
+
+The red schedule step offers:
+- Optional ISO start/end dates, validated chronologically; days of the week (at least one required).
+- An **all-day** switch or one or more explicit non-overnight time ranges with start earlier than end.
+- A read-only time-frame preview. Draft slots are limited to **12**, matching the numeric ceiling of stable SAFE12, but *without* running the stable's full per-operation counts across segments, retained restrictions, calendars and generated occurrences. The limit must be rechecked by that full engine before any future application.
+- The selected segment's actual time zone, holiday exclusions, monthly recurrences and support for overnight windows remain unverified; the draft marks `timeZone:null` and `verified:false`. No WME modifications or preset writes occur.
+
+The **green ALLOWED** path retains independent per-vehicle pass/occupancy conditions; the **blue TOLL** path currently retains its existing Advanced conditions step. Neither is routed through the red-only time scheduling at this stage.
+
+**Regression tests:** red with no exempt vehicles; red with non-motorcycle exemptions; red with MOTORCYCLE (opt-in off/on), invalid engine code, weekday/date/time errors, multiple slots and >12 draft slots; Back path; green/blue unaffected. Check the corresponding UI in WME Standard and Beta.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
