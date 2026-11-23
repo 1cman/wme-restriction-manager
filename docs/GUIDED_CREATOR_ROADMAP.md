@@ -42,7 +42,7 @@ Sources consulted:
 
 ### Test protocol
 
-Select a segment and enter the wizard, explicitly select direction and lane, choose `BLOCKED`, `FREE`, or `TOLL`, then choose zero or more vehicle categories. Check that `FREE` and `TOLL` require at least one override vehicle. Check that the summary correctly preserves your selections when going backward and forward. No save/apply action should exist.
+Select a segment and enter the wizard, explicitly select direction and lane, choose `BLOCKED`, `FREE`, or `TOLL`, then choose zero or more vehicle categories. For Alpha 7, test the green whitelist `ALLOWED` intent with explicit authorizations and a `BLOCKED` default; the blue `TOLL` intent still requires at least one exempt vehicle. Check that the summary correctly preserves your selections when going backward and forward. No save/apply action should exist.
 
 ## Alpha 5–6: restriction colors and advanced draft (2026-11-23)
 
@@ -59,6 +59,24 @@ Sources:
 - [SDK DriveProfileAttributes](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.DriveProfileAttributes.html)
 
 **Manual test:** Select a single segment and traverse the guided wizard. In Advanced conditions, leave occupancy blank, enter 2 (then 3), try an invalid fractional value, and inspect the available passes. All choices must appear in the read-only summary. Confirm that the pass list belongs to the segment country rather than the editor language and that no Save/Apply action appears. Validate both WME Standard and Beta.
+
+## Alpha 7: ALLOWED means whitelist, not default allow (2026-11-23)
+
+The earlier Alpha 6 erroneously represented **Transito consentito** with SDK `defaultType: FREE` and `BLOCKED` vehicle rules: that model permits **all traffic except selected vehicle types**. The expected WME **Permesso / Driving is Allowed for** behavior is the opposite: the base must be **`BLOCKED`** and the explicitly authorized criteria receive **`FREE`** overrides. See [official Waze editor guide](https://www.waze.com/discuss/t/restrizioni-orarie/376323), [SDK SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.SegmentRestriction.html), and [Waze restrictions training discussion](https://www.waze.com/discuss/t/level-up-your-editing-advanced-training-on-segment-restrictions-now-live/382923).
+
+Alpha 7 separates **wizard intents** from **SDK defaultType enum values**:
+
+| Wizard card / intent | Proposed SDK default | Proposed SDK override | Draft validation |
+| --- | --- | --- | --- |
+| Red: `BLOCKED`, Transito vietato | `BLOCKED` | optional `FREE` exceptions | Can omit exceptions |
+| Green: `ALLOWED`, Transito consentito *solo agli autorizzati* | `BLOCKED` | `FREE` for allowed criteria | Must specify at least one authorized vehicle type, country permit or valid minimum occupant count |
+| Blue: `TOLL`, Transito a pedaggio | `TOLL` | `FREE` exemptions | Existing vehicle-exemption requirement retained |
+
+`ALLOWED` **is an internal wizard intent, not an SDK RESTRICTION_TYPE**. Never submit it or mistake it for SDK `FREE`. Green and red currently share a BLOCKED base but have different draft intent and validation; the green flow is an explicit whitelist. The green vehicle step says **choose vehicles to authorize**, not vehicles to prohibit. Other traffic remains blocked. If no vehicle types are selected, the user can proceed to advanced conditions, but a permit or valid minimum occupancy must then be specified before reaching the summary. Changing the intent clears existing vehicle and advanced draft selections to avoid accidental authorizations.
+
+In the summary, show the SDK `BLOCKED` base and `FREE` exemptions, plus a prominent note that all other traffic is blocked. Because the current draft does not model native AND/OR groups, combining vehicle types, permits and passenger counts **does not yet establish the exact eligibility logic in WME**. Country-specific license plate options remain unavailable pending native verification. There is still **no WME write, apply, save or preset creation** in this Alpha. The stable script is untouched.
+
+Testing: select the green intent, choose PRIVATE and EV, and confirm the summary shows a BLOCKED default and FREE authorizations (not a FREE default with BLOCKED exceptions). Also test the green intent without vehicle selection: next step permits or occupancy can satisfy the whitelist, but leaving all criteria empty must block the summary. Test red and blue flows for regression and both WME Standard and Beta. Waze editors have reported routing risks if e.g. PRIVATE is allowed but EV is omitted from whitelist; use native restrictions with care.
 
 ## Acceptance criteria before real editing
 
