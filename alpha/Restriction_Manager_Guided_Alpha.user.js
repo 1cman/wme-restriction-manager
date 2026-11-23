@@ -383,6 +383,114 @@
             const next=dialog.querySelector('[data-guided-next="true"]');
             if(next&&step===5)next.disabled=!isAdvancedValid();
         }
+        // Separate picker instance for each vehicle that actually requires a pass.
+        // It keeps the same alphabetic, accent-insensitive autocomplete semantics.
+        function vehiclePermitPicker(type,rule){
+            const wrapper=node("div");
+            if(current.permits===null){
+                wrapper.append(node("p",tr("permits_missing")));
+            }else if(!current.permits.length){
+                wrapper.append(node("p",tr("permits_empty")));
+            }else{
+                const searchLabel=node("label",tr("permit_search"));
+                searchLabel.style.cssText="display:block;font-weight:600;margin-top:8px;";
+                const search=node("input");
+                search.type="search";search.autocomplete="off";
+                search.placeholder=tr("permit_search_placeholder");
+                search.id=ID+"-pass-query-"+type;
+                search.style.cssText="display:block;width:100%;box-sizing:border-box;"+
+                    "padding:7px;margin:6px 0;border:1px solid #9ca3af;border-radius:6px;";
+                search.setAttribute("role","combobox");
+                search.setAttribute("aria-autocomplete","list");
+                search.setAttribute("aria-controls",ID+"-pass-suggest-"+type);
+                search.setAttribute("aria-expanded","false");
+                searchLabel.append(search);
+                const suggestions=node("div");
+                suggestions.id=ID+"-pass-suggest-"+type;
+                suggestions.setAttribute("role","listbox");
+                suggestions.style.cssText="max-height:130px;overflow:auto;"+
+                    "border:1px solid #cbd5e1;border-radius:6px;display:none;";
+                const list=node("div");
+                list.style.cssText="max-height:120px;overflow:auto;"+
+                    "border:1px solid #cbd5e1;border-radius:6px;padding:4px;";
+                const count=node("p");
+                count.setAttribute("aria-live","polite");
+                count.style.cssText="font-size:12px;margin:5px 0;";
+                const warning=node("p");
+                warning.setAttribute("role","alert");
+                warning.style.cssText="font-size:12px;color:#b91c1c;font-weight:600;";
+                let matches=[],active=-1;
+                const togglePermit=id=>{
+                    rule.permitIds=rule.permitIds.includes(id)?
+                        rule.permitIds.filter(value=>value!==id):
+                        [...rule.permitIds,id];
+                    draw();
+                    refreshNext();
+                };
+                function draw(){
+                    matches=filterPermits(current.permits,search.value,lang);
+                    if(active>=Math.min(matches.length,8))active=-1;
+                    warning.textContent=rule.permitIds.length?"":tr("missing_vehicle_pass");
+                    warning.hidden=!!rule.permitIds.length;
+                    count.textContent=tr("permit_selected_count")+": "+rule.permitIds.length;
+                    list.replaceChildren();
+                    if(!matches.length)list.append(node("p",tr("permit_search_empty")));
+                    for(const permit of matches){
+                        const item=node("label"),check=node("input");
+                        item.style.cssText="display:flex;align-items:center;gap:7px;"+
+                            "padding:4px;cursor:pointer;";
+                        check.type="checkbox";check.checked=rule.permitIds.includes(permit.id);
+                        check.addEventListener("change",()=>togglePermit(permit.id));
+                        item.append(check,document.createTextNode(permit.name));
+                        list.append(item);
+                    }
+                    suggestions.replaceChildren();
+                    const top=normalizePermitSearch(search.value)?matches.slice(0,8):[];
+                    suggestions.style.display=top.length?"block":"none";
+                    search.setAttribute("aria-expanded",top.length?"true":"false");
+                    search.removeAttribute("aria-activedescendant");
+                    top.forEach((permit,index)=>{
+                        const option=button(
+                            (rule.permitIds.includes(permit.id)?"✓ ":"+ ")+permit.name,
+                            ()=>{togglePermit(permit.id);search.focus();}
+                        );
+                        option.id=ID+"-pass-option-"+type+"-"+index;
+                        option.setAttribute("role","option");
+                        option.setAttribute("aria-selected",String(rule.permitIds.includes(permit.id)));
+                        option.style.cssText="display:block;width:100%;text-align:left;"+
+                            "background:"+(active===index?"#dbeafe":"#fff")+";"+
+                            "color:#202938;border:0;padding:6px 8px;cursor:pointer;";
+                        suggestions.append(option);
+                    });
+                    if(active>=0&&top.length)
+                        search.setAttribute("aria-activedescendant",ID+"-pass-option-"+type+"-"+active);
+                }
+                search.addEventListener("input",()=>{active=-1;draw();});
+                search.addEventListener("keydown",event=>{
+                    if(event.key==="Escape"&&search.value){
+                        search.value="";active=-1;draw();event.preventDefault();
+                        return;
+                    }
+                    if(!normalizePermitSearch(search.value)||!matches.length)return;
+                    const n=Math.min(matches.length,8);
+                    if(event.key==="ArrowDown"||event.key==="ArrowUp"){
+                        active=event.key==="ArrowDown"?(active+1)%n:
+                            (active<=0?n-1:active-1);
+                        draw();event.preventDefault();
+                    }else if(event.key==="Enter"){
+                        togglePermit(matches[active<0?0:active].id);
+                        event.preventDefault();
+                    }
+                });
+                wrapper.append(searchLabel,suggestions,count,list,warning);
+                draw();
+                return wrapper;
+            }
+            const missing=node("p",tr("missing_vehicle_pass"));
+            missing.style.color="#b91c1c";
+            wrapper.append(missing);
+            return wrapper;
+        }
         async function advance() {
             // Guard progress here as well as in the button state: no implicit scope.
             if (step === 1 && !SCOPES.includes(draft.scope)) return;
