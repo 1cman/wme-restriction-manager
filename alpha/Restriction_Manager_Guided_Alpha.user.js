@@ -572,6 +572,71 @@
                 dialog.append(node("p",tr("vehicles_unknown")));
             }
             if(step===5) {
+                if(draft.restrictionType==="ALLOWED"){
+                    dialog.append(node("h3",tr("advanced")),node("p",tr("advanced_allowed_intro")));
+                    for(const type of selectedVehicleTypes(draft.vehicleTypes)){
+                        const rule=vehicleRules[type]??(vehicleRules[type]=emptyRule());
+                        const card=node("div");
+                        card.style.cssText="border:1px solid #cbd5e1;border-radius:9px;"+
+                            "padding:12px;margin:10px 0;background:#f8fafc;";
+                        const title=node("h4",vehicleLabels[type]?.[LANGS.indexOf(lang)]||type);
+                        title.style.cssText="margin:0 0 8px;color:#243447;";
+                        card.append(title);
+                        function toggleRequirement(key,text){
+                            const label=node("label"),check=node("input");
+                            label.style.cssText="display:flex;align-items:center;gap:8px;"+
+                                "margin:7px 0;cursor:pointer;";
+                            check.type="checkbox";check.checked=rule[key];
+                            check.addEventListener("change",()=>{
+                                rule[key]=check.checked;
+                                if(key==="requiresPass")rule.permitIds=[];
+                                if(key==="requiresOccupancy")rule.minPassengers=null;
+                                render();
+                            });
+                            label.append(check,document.createTextNode(text));
+                            return label;
+                        }
+                        card.append(
+                            toggleRequirement("requiresPass",tr("requires_pass")),
+                            toggleRequirement("requiresOccupancy",tr("requires_occupancy"))
+                        );
+                        if(!rule.requiresPass&&!rule.requiresOccupancy){
+                            const info=node("p",tr("direct_access"));
+                            info.style.cssText="color:#17603c;font-weight:600;margin:8px 0;";
+                            card.append(info);
+                        }
+                        if(rule.requiresPass){
+                            const subTitle=node("h5",tr("country_permits"));
+                            subTitle.style.cssText="margin:10px 0 5px;";
+                            card.append(subTitle,vehiclePermitPicker(type,rule));
+                        }
+                        if(rule.requiresOccupancy){
+                            const label=node("label",tr("vehicle_occupancy"));
+                            label.style.cssText="display:block;margin-top:10px;font-weight:600;";
+                            const input=node("input");
+                            input.type="number";input.min="2";input.step="1";
+                            input.value=rule.minPassengers===null?"":String(rule.minPassengers);
+                            input.style.cssText="display:block;width:115px;padding:7px;"+
+                                "margin:5px 0;border:1px solid #9ca3af;border-radius:6px;";
+                            input.addEventListener("change",()=>{
+                                rule.minPassengers=input.value.trim()===""?null:Number(input.value);
+                                render();
+                            });
+                            label.append(input);card.append(label);
+                            if(!Number.isSafeInteger(rule.minPassengers)||rule.minPassengers<2){
+                                const warning=node("p",tr("missing_vehicle_occupancy"));
+                                warning.style.cssText="color:#b91c1c;font-weight:600;";
+                                warning.setAttribute("role","alert");
+                                card.append(warning);
+                            }
+                        }
+                        if(rule.requiresPass&&rule.requiresOccupancy)
+                            card.append(node("p",tr("both_conditions")));
+                        dialog.append(card);
+                    }
+                    dialog.append(node("p",tr("permit_note")),node("p",tr("plate_note")),
+                        node("p",tr("criteria_unverified")));
+                }else{
                 dialog.append(node("h3",tr("advanced")));
                 const occ=node("label",tr("occupancy")),number=node("input");
                 occ.style.cssText="display:block;font-weight:600;margin:12px 0;";
@@ -701,6 +766,7 @@
                     (!Number.isSafeInteger(advanced.minPassengers)||advanced.minPassengers<2)){
                     const error=node("p",tr("occupancy_error"));
                     error.style.color="#c62828";error.setAttribute("role","alert");dialog.append(error);
+                }
                 }
             }
             if(step===6) {
