@@ -31,6 +31,9 @@
     const RESTRICTION_TYPES = ["BLOCKED", "ALLOWED", "TOLL"];
     const WEEKDAYS = ["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"];
     const MAX_DRAFT_TIME_FRAMES = 12; // Stable 3.2 SAFE12 guardrail, for read-only draft only.
+    // Draft UI identifiers, not verified native SDK enum values.
+    const MOTOR_ENGINE_TYPES = ["FUEL","ELECTRIC"];
+    const MOTOR_COMPARATORS = ["ALL","LT","LTE"];
     // BLOCKED without selected types = all blocked. With selected types, default
     // changes to FREE, with explicit BLOCKED rules for the targeted types.
     const DEFAULT_TYPES = Object.freeze({BLOCKED:"BLOCKED",ALLOWED:"BLOCKED",TOLL:"TOLL"});
@@ -129,6 +132,16 @@
         plate_note:["Regole sulle targhe: non selezionabili in questa Alpha; verificare disponibilità per Paese e opzioni native.","License plate rules: unavailable in this Alpha pending country and native WME verification.","Plaques : indisponibles avant vérification par pays dans WME.","Matrículas: no disponibles hasta verificar el país en WME.","Kennzeichenregeln: bis zur Prüfung des Landes in WME nicht verfügbar.","Regras de matrícula: indisponíveis até verificação por país no WME."],
         no_condition:["Nessuna","None","Aucune","Ninguna","Keine","Nenhuma"],
         motorcycle_step:["Condizioni sperimentali per motociclette","Experimental motorcycle engine conditions","Conditions moteur expérimentales pour motos","Condiciones experimentales para motocicletas","Experimentelle Motorrad-Motorbedingungen","Condições experimentais de motor para motos"],
+        motor_select_fuel:["Carburante","Fuel powered","À carburant","Combustible","Verbrennungsmotor","Combustível"],
+        motor_select_electric:["Completamente elettrico","Fully electric","Entièrement électrique","Completamente eléctrico","Rein elektrisch","Completamente elétrico"],
+        motor_limit_cc:["Cilindrata (cc)","Displacement (cc)","Cylindrée (cm³)","Cilindrada (cc)","Hubraum (cm³)","Cilindrada (cc)"],
+        motor_limit_kw:["Potenza erogata (kW)","Power output (kW)","Puissance (kW)","Potencia (kW)","Leistung (kW)","Potência (kW)"],
+        motor_compare_all:["Tutti","All","Tous","Todos","Alle","Todos"],
+        motor_compare_lt:["Inferiore a (<)","Less than (<)","Inférieur à (<)","Menor que (<)","Kleiner als (<)","Menor que (<)"],
+        motor_compare_lte:["Minore o uguale a (≤)","Less than or equal to (≤)","Inférieur ou égal à (≤)","Menor o igual que (≤)","Kleiner oder gleich (≤)","Menor ou igual a (≤)"],
+        motor_select_required:["Seleziona almeno una tipologia di motore.","Select at least one engine type.","Sélectionnez au moins un type de moteur.","Selecciona al menos un tipo de motor.","Wähle mindestens einen Motortyp.","Selecione pelo menos um tipo de motor."],
+        motor_threshold_required:["Inserisci un valore numerico positivo per la soglia selezionata.","Enter a positive number for the selected threshold.","Saisissez un nombre positif.","Introduce un número positivo.","Einen positiven Wert eingeben.","Introduza um número positivo."],
+        motor_experimental_note:["Questi tipi di motore e confronti riproducono l'interfaccia nativa come bozza. Codici interni e valori supportati da verificare prima di un'applicazione reale.","These engine types and comparisons are a draft of the native UI; SDK codes and supported combinations are unverified.","Types et comparateurs provisoires : vérifier les codes SDK.","Tipos y comparadores provisionales: verificar los códigos SDK.","Entwurf der nativen UI; SDK-Codes noch zu prüfen.","Tipos e comparações provisórios; códigos SDK por verificar."],
         motorcycle_intro:["Facoltativo, solo per le motociclette a cui vietare il transito. Senza condizioni motore, tutte le motociclette selezionate saranno vietate. Questa Alpha non crea ancora regole reali; la stabile 3.2.0 conserva le condizioni motore esistenti.","Optional, for prohibited motorcycles only. Without engine conditions, all selected motorcycles are blocked. Alpha is read-only; stable 3.2.0 preserves existing motor rules.","Facultatif, motos interdites uniquement. Sans condition moteur, toutes sont interdites. Alpha en lecture seule.","Opcional, solo motos prohibidas. Sin condiciones de motor, se prohíben todas. Alpha de solo lectura.","Optional nur für gesperrte Motorräder. Ohne Motorbedingung sind alle gesperrt. Alpha schreibgeschützt.","Opcional, apenas para motos proibidas. Sem condições do motor, todas ficam proibidas. Alpha de leitura."],
         motorcycle_enable:["Specifica il tipo di motore (sperimentale)","Specify engine type (experimental)","Préciser le type de moteur (expérimental)","Especificar tipo de motor (experimental)","Motortyp angeben (experimentell)","Especificar tipo de motor (experimental)"],
         motorcycle_engine:["Tipo di motore / codice WME","Engine type / WME code","Type de moteur / code WME","Tipo de motor / código WME","Motortyp / WME-Code","Tipo de motor / código WME"],
@@ -264,15 +277,30 @@
         return step>0?step-1:null;
     }
     function normalizeMotorDraft(value,hasMotorcycle) {
-        if(!hasMotorcycle) {
+        // Pure experimental draft. FUEL/ELECTRIC and ALL/LT/LTE are only UI
+        // design identifiers and must never be serialized as native SDK values.
+        if(!hasMotorcycle){
             if(value?.enabled)throw Error("Motorcycle type not selected");
-            return {engineType:null,verified:false};
+            return {mode:"ALL_MOTORCYCLES",conditions:[],verified:false};
         }
-        if(!value?.enabled)return {engineType:null,verified:false};
-        if(typeof value.engineType!=="string"||
-           !/^[a-z0-9][a-z0-9 _.-]{0,63}$/i.test(value.engineType.trim()))
-            throw Error("Invalid experimental engine type");
-        return {engineType:value.engineType.trim(),verified:false};
+        if(!value?.enabled)return {mode:"ALL_MOTORCYCLES",conditions:[],verified:false};
+        if(!Array.isArray(value.conditions)||!value.conditions.length)
+            throw Error("Select at least one motorcycle engine");
+        const unique=new Set();
+        const conditions=value.conditions.map(c=>{
+            if(!MOTOR_ENGINE_TYPES.includes(c?.engineType)||
+               !MOTOR_COMPARATORS.includes(c?.operator)||
+               unique.has(c.engineType))throw Error("Invalid motorcycle engine condition");
+            unique.add(c.engineType);
+            const threshold=c.capacityThreshold??null;
+            if(c.operator==="ALL"&&threshold!==null)
+                throw Error("ALL engine condition cannot have threshold");
+            if(c.operator!=="ALL"&&(!Number.isFinite(threshold)||
+               threshold<=0||(c.engineType==="FUEL"&&!Number.isSafeInteger(threshold))))
+                throw Error("Invalid motorcycle engine threshold");
+            return {engineType:c.engineType,operator:c.operator,capacityThreshold:threshold};
+        });
+        return {mode:"MATCHING_ENGINES",conditions,verified:false};
     }
     // Pure draft matching the stable v3.2 calendar's day/date/time vocabulary.
     // No native WME SDK serialization occurs in this prototype.
@@ -452,7 +480,7 @@
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
         const advanced={minPassengers:null,permitIds:[]};
         const vehicleRules=Object.create(null);
-        const motorDraft={enabled:false,engineType:""};
+        const motorDraft={enabled:false,conditions:[]};
         const redSchedule={
             startDate:"",endDate:"",weekdays:[...WEEKDAYS],allDay:true,
             slots:[{fromTime:"08:00",toTime:"18:00"}]
@@ -664,7 +692,7 @@
                         draft.vehicleTypes=[];
                         advanced.minPassengers=null;
                         advanced.permitIds=[];
-                        motorDraft.enabled=false;motorDraft.engineType="";
+                        motorDraft.enabled=false;motorDraft.conditions=[];
                         redSchedule.startDate="";redSchedule.endDate="";
                         redSchedule.weekdays=[...WEEKDAYS];redSchedule.allDay=true;
                         redSchedule.slots=[{fromTime:"08:00",toTime:"18:00"}];
@@ -689,7 +717,7 @@
                         if(input.checked)vehicleRules[type]=emptyRule();
                         else delete vehicleRules[type]; // Never retain hidden conditions on deselection.
                         if(type==="MOTORCYCLE"&&!input.checked){
-                            motorDraft.enabled=false;motorDraft.engineType="";
+                            motorDraft.enabled=false;motorDraft.conditions=[];
                         }
                         render();
                     });
@@ -713,7 +741,7 @@
                     toggleLabel.style.cssText="display:flex;align-items:center;gap:8px;margin:10px 0;";
                     toggle.addEventListener("change",()=>{
                         motorDraft.enabled=toggle.checked;
-                        if(!motorDraft.enabled)motorDraft.engineType="";
+                        if(!motorDraft.enabled)motorDraft.conditions=[];
                         render();
                     });
                     toggleLabel.append(toggle,document.createTextNode(tr("motorcycle_enable")));
