@@ -108,6 +108,29 @@ The per-vehicle draft has independent `requiresPass`, `permitIds`, `requiresOccu
 
 **Manual testing:** Use the exact four-type example above. Verify no condition is inherited by EV/HYBRID, Next blocks only when a requirement was enabled without a valid value, the independent pass autocomplete works, returning to earlier steps preserves matching vehicle conditions, and deselect/reselect clears stale conditions. Check WME Standard and Beta.
 
+## License plate restricted zones: official Waze app coverage (2026-11-23)
+
+Official user-facing help: [Navigate in license plate restricted zones](https://support.google.com/waze/answer/7666525?hl=it). The article explains that drivers enter the **last two digits** of a plate in the app. Listed availability is **seven countries, only in specified locations**:
+
+- Brazil: São Paulo
+- Colombia: Bogotá, Bucaramanga, Cali, Medellín, Popayán, Villavicencio
+- Costa Rica: San José
+- Ecuador: Quito
+- Philippines: Manila
+- Indonesia: Jakarta
+- Peru: Lima and Arequipa
+
+**Critical distinction**: this list describes **app navigation** availability, NOT independently verified permissions for WME segment restrictions or SDK write operations. The [WME SDK DriveProfileAttributes](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.DriveProfileAttributes.html) interface includes a `licensePlateNumber` field referencing the `LICENSE_PLATES` type; that proves a property exists but **does not verify its allowed values, rule operators, or geographic enablement**. Do not equate last-two-digits app input with a WME SDK rule without inspecting WME native UI / validated official SDK capabilities.
+
+**Proposed future Alpha behavior (not implemented):**
+1. Only consider license-plate options after the selected segment's **country and locality** are known and match the current source coverage; do not use UI locale or editor location as geographic proxies. City boundaries and metro coverage may differ; use an authoritative WME eligibility signal where available, not a brittle city-name-only gate.
+2. For a selected vehicle, offer a conditional plate criterion as a **separate per-vehicle rule**, not as a globally applied condition. Other selected vehicle classes may remain directly authorized, or require a permit/occupancy.
+3. Identify the exact native supported plate conditions (last digit, last two digits, parity, enumerated values, calendars) through the native WME UI and SDK docs before exposing choices. Do not invent a two-digit mask or infer an SDK enum from the app's user input.
+4. If data/eligibility is missing, display a clear unavailable/unverified note. Never write an unverified rule.
+5. Keep a read-only preview and add validation tests for mixed direct/conditional vehicles, excluded geographies, and missing city / unsupported countries.
+
+No change to active Alpha 4.0.0-alpha.9 scripting behavior is authorized by this reference alone.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
