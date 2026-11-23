@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.9
+// @version      4.0.0-alpha.10
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.9";
+    const VERSION = "4.0.0-alpha.10";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -29,6 +29,8 @@
     // Wizard intents are deliberately separate from SDK defaultType enums.
     // "ALLOWED" is an editor intent, NOT an SDK RESTRICTION_TYPE.
     const RESTRICTION_TYPES = ["BLOCKED", "ALLOWED", "TOLL"];
+    const WEEKDAYS = ["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"];
+    const MAX_DRAFT_TIME_FRAMES = 12; // Stable 3.2 SAFE12 guardrail, for read-only draft only.
     const DEFAULT_TYPES = Object.freeze({BLOCKED:"BLOCKED",ALLOWED:"BLOCKED",TOLL:"TOLL"});
     const VEHICLE_TYPES = [
         "BUS", "CAV", "CLEAN_FUEL", "EV", "HAZARDOUS_MATERIALS",
@@ -119,6 +121,32 @@
         permit_note:["La presenza nell'elenco non prova che il pass sia utilizzabile nella restrizione.","Listing does not prove the permit can be used here.","La liste ne garantit pas l'admissibilité.","La lista no garantiza compatibilidad.","Listeneintrag garantiert keine Verwendbarkeit.","A lista não garante elegibilidade."],
         plate_note:["Regole sulle targhe: non selezionabili in questa Alpha; verificare disponibilità per Paese e opzioni native.","License plate rules: unavailable in this Alpha pending country and native WME verification.","Plaques : indisponibles avant vérification par pays dans WME.","Matrículas: no disponibles hasta verificar el país en WME.","Kennzeichenregeln: bis zur Prüfung des Landes in WME nicht verfügbar.","Regras de matrícula: indisponíveis até verificação por país no WME."],
         no_condition:["Nessuna","None","Aucune","Ninguna","Keine","Nenhuma"],
+        motorcycle_step:["Condizioni sperimentali per motociclette","Experimental motorcycle engine conditions","Conditions moteur expérimentales pour motos","Condiciones experimentales para motocicletas","Experimentelle Motorrad-Motorbedingungen","Condições experimentais de motor para motos"],
+        motorcycle_intro:["Passaggio facoltativo, solo per le motociclette esentate. La versione stabile 3.2.0 conserva dati motore esistenti (engineType, operator, capacityThreshold); questa Alpha non genera regole motore reali.","Optional, for exempt motorcycles only. Stable 3.2.0 preserves existing engine data (engineType, operator, capacityThreshold); this Alpha cannot generate actual engine rules.","Facultatif, motos exemptées uniquement. Cette Alpha ne crée pas de règles moteur réelles.","Opcional, solo motos exentas. Esta Alpha no crea reglas de motor reales.","Optional nur für befreite Motorräder. Diese Alpha erstellt keine echten Motorregeln.","Opcional, apenas motos isentas. Esta Alpha não cria regras reais de motor."],
+        motorcycle_enable:["Specifica il tipo di motore (sperimentale)","Specify engine type (experimental)","Préciser le type de moteur (expérimental)","Especificar tipo de motor (experimental)","Motortyp angeben (experimentell)","Especificar tipo de motor (experimental)"],
+        motorcycle_engine:["Tipo di motore / codice WME","Engine type / WME code","Type de moteur / code WME","Tipo de motor / código WME","Motortyp / WME-Code","Tipo de motor / código WME"],
+        motorcycle_engine_hint:["Inserisci il codice rilevato nel pannello WME; se disponibile sono suggeriti i valori già presenti sul segmento. Nessun codice viene considerato automaticamente valido.","Enter the code shown in WME; existing values on the segment may be suggested. No code is presumed valid.","Saisissez le code WME; des valeurs existantes peuvent être proposées, sans validation.","Introduce el código WME; se sugieren valores existentes, sin validación.","WME-Code eingeben; vorhandene Werte werden vorgeschlagen, aber nicht validiert.","Introduza o código WME; são sugeridos valores existentes, sem validação."],
+        motorcycle_engine_error:["Indica un tipo di motore oppure disattiva la condizione sperimentale.","Enter an engine type or disable the experimental condition.","Indiquez un type de moteur ou désactivez l'option.","Introduce un tipo de motor o desactiva la opción.","Motortyp eingeben oder die Option deaktivieren.","Indique um tipo de motor ou desative a opção."],
+        motorcycle_unchecked:["Nessuna specifica sul motore","No engine type specified","Aucun type de moteur précisé","Sin tipo de motor","Kein Motortyp angegeben","Nenhum tipo de motor especificado"],
+        red_schedule:["Date e fasce orarie del divieto","Restriction dates and time ranges","Dates et plages horaires de l'interdiction","Fechas y horarios de la prohibición","Daten und Zeitfenster des Verbots","Datas e horários da proibição"],
+        red_schedule_intro:["Il calendario riguarda il divieto rosso e le sue esenzioni. È una bozza: fuso orario del segmento, ricorrenze speciali e festività andranno verificati prima di modificare WME.","This calendar applies to the red prohibition and its exemptions. Draft only: segment time zone, special recurrences and holidays require verification.","Ce calendrier s'applique à l'interdiction rouge. Fuseau horaire et jours fériés non vérifiés.","El calendario corresponde a la prohibición roja. Zona horaria y festivos pendientes de verificar.","Dieser Kalender gilt für das rote Verbot. Zeitzone und Feiertage noch ungeprüft.","O calendário aplica-se à proibição vermelha. Fuso horário e feriados por verificar."],
+        schedule_start:["Data di inizio (facoltativa)","Start date (optional)","Date de début (facultative)","Fecha de inicio (opcional)","Startdatum (optional)","Data de início (opcional)"],
+        schedule_end:["Data di fine (facoltativa)","End date (optional)","Date de fin (facultative)","Fecha de fin (opcional)","Enddatum (optional)","Data de fim (opcional)"],
+        schedule_days:["Giorni della settimana","Days of the week","Jours de la semaine","Días de la semana","Wochentage","Dias da semana"],
+        schedule_all_day:["Tutto il giorno","All day","Toute la journée","Todo el día","Ganztägig","Todo o dia"],
+        schedule_add_slot:["Aggiungi fascia oraria","Add time range","Ajouter une plage horaire","Añadir horario","Zeitfenster hinzufügen","Adicionar horário"],
+        schedule_remove_slot:["Rimuovi fascia","Remove time range","Supprimer la plage","Eliminar horario","Zeitfenster entfernen","Remover horário"],
+        schedule_from:["Dalle","From","De","Desde","Von","Das"],
+        schedule_to:["Alle","To","À","Hasta","Bis","Até"],
+        schedule_invalid:["Controlla le date, i giorni e gli orari: serve una fascia valida e non si può superare il limite di 12 fasce.","Check dates, days and time ranges; valid times and at most 12 ranges are required.","Vérifiez dates, jours et horaires ; maximum 12 plages.","Comprueba fechas, días y horarios; máximo 12 rangos.","Daten, Wochentage und Zeiten prüfen; höchstens 12 Zeitfenster.","Verifique datas, dias e horários; máximo 12 intervalos."],
+        schedule_summary:["Calendario proposto (sola lettura)","Proposed schedule (read-only)","Calendrier proposé (lecture seule)","Calendario propuesto (solo lectura)","Vorgeschlagener Zeitplan (nur lesbar)","Calendário proposto (só de leitura)"],
+        MONDAY:["Lun","Mon","Lun","Lun","Mo","Seg"],
+        TUESDAY:["Mar","Tue","Mar","Mar","Di","Ter"],
+        WEDNESDAY:["Mer","Wed","Mer","Mié","Mi","Qua"],
+        THURSDAY:["Gio","Thu","Jeu","Jue","Do","Qui"],
+        FRIDAY:["Ven","Fri","Ven","Vie","Fr","Sex"],
+        SATURDAY:["Sab","Sat","Sam","Sáb","Sa","Sáb"],
+        SUNDAY:["Dom","Sun","Dim","Dom","So","Dom"],
         changed:["La selezione è cambiata. Chiudi e riapri la procedura.","Selection changed. Close and reopen the wizard.","La sélection a changé. Rouvrez l'assistant.","La selección ha cambiado. Vuelve a abrir el asistente.","Auswahl geändert. Assistent erneut öffnen.","A seleção mudou. Reabre o assistente."],
         anchor:["Pulsante nel pannello WME","Button in WME panel","Bouton dans WME","Botón en WME","Schaltfläche in WME","Botão no WME"],
         found:["Rilevato","Detected","Détecté","Detectado","Erkannt","Detetado"],
@@ -215,6 +243,77 @@
     // Read-only whitelist draft: every selected vehicle has its own rules.
     // No conditions means directly allowed; conditions on a different vehicle
     // never imply a requirement for this one.
+    function nextWizardStep(step,intent,types=[]) {
+        if(step===4&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:7;
+        if(step===5&&intent==="BLOCKED")return 7;
+        if(step===7&&intent==="BLOCKED")return 6;
+        return step<6?step+1:null;
+    }
+    function previousWizardStep(step,intent,types=[]) {
+        if(step===6&&intent==="BLOCKED")return 7;
+        if(step===7&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:4;
+        return step>0?step-1:null;
+    }
+    function normalizeMotorDraft(value,hasMotorcycle) {
+        if(!hasMotorcycle) {
+            if(value?.enabled)throw Error("Motorcycle type not selected");
+            return {engineType:null,verified:false};
+        }
+        if(!value?.enabled)return {engineType:null,verified:false};
+        if(typeof value.engineType!=="string"||
+           !/^[a-z0-9][a-z0-9 _.-]{0,63}$/i.test(value.engineType.trim()))
+            throw Error("Invalid experimental engine type");
+        return {engineType:value.engineType.trim(),verified:false};
+    }
+    // Pure draft matching the stable v3.2 calendar's day/date/time vocabulary.
+    // No native WME SDK serialization occurs in this prototype.
+    function normalizeRedSchedule(schedule) {
+        if(!schedule||typeof schedule!=="object")throw Error("Invalid schedule");
+        const dateOk=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
+            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+        const start=schedule.startDate||null,end=schedule.endDate||null;
+        if((start&&!dateOk(start))||(end&&!dateOk(end))||(start&&end&&start>end))
+            throw Error("Invalid dates");
+        const days=schedule.weekdays;
+        if(!Array.isArray(days)||!days.length||
+            days.some(day=>!WEEKDAYS.includes(day))||new Set(days).size!==days.length)
+            throw Error("Invalid weekdays");
+        if(typeof schedule.allDay!=="boolean")throw Error("Invalid all-day setting");
+        if(!Array.isArray(schedule.slots))throw Error("Invalid time slots");
+        const raw=schedule.allDay?[{fromTime:null,toTime:null}]:schedule.slots;
+        if(!raw.length||raw.length>MAX_DRAFT_TIME_FRAMES)throw Error("SAFE12 draft limit");
+        const frames=raw.map(slot=>{
+            if(!schedule.allDay){
+                const re=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
+                if(!re.test(slot?.fromTime)||!re.test(slot?.toTime)||
+                   slot.fromTime>=slot.toTime)throw Error("Invalid time range");
+            }
+            return {startDate:start,endDate:end,weekdays:[...days],
+                fromTime:slot.fromTime,toTime:slot.toTime,
+                timeZone:null,verified:false};
+        });
+        return {timeFrames:frames,verified:false};
+    }
+    // Like v3.2, read engineType from the private model only when already present;
+    // this DOES NOT infer a complete list of supported engine enum values.
+    function observedMotorTypes(page,segmentId) {
+        try {
+            const segment=page?.W?.model?.segments?.getObjectById?.(segmentId);
+            const restrictions=segment?.attributes?.restrictions;
+            if(!Array.isArray(restrictions))return [];
+            const names=new Set();
+            for(const restriction of restrictions){
+                const profiles=restriction?.getDriveProfileList?.("BLOCKED")?.getDriveProfiles?.()||[];
+                for(const profile of profiles)
+                    for(const item of profile?.getEngineCapacities?.()||[]){
+                        const attr=item?.attributes||item;
+                        if(attr?.vehicleType==="MOTORCYCLE"&&typeof attr.engineType==="string"&&attr.engineType.trim())
+                            names.add(attr.engineType.trim());
+                    }
+            }
+            return [...names].sort((a,b)=>a.localeCompare(b));
+        }catch(_){return [];}
+    }
     function normalizeVehicleRules(types,rules,permits) {
         const chosen=selectedVehicleTypes(types);
         if(!chosen.length)throw Error("No authorized vehicle types");
@@ -270,7 +369,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
