@@ -1,6 +1,6 @@
 # Restriction Manager 4.0 — Guided Creator roadmap
 
-## Alpha 2 (isolated, read-only)
+## Alpha 3 (isolated, read-only)
 
 Install the separate userscript in alpha/Restriction_Manager_Guided_Alpha.user.js alongside stable Restriction Manager. The script namespace and SDK ID differ. It does not write map data, save presets, access storage or connect to cloud services. It is not a stable release.
 
@@ -15,7 +15,9 @@ Initial live testing confirmed the read-only Alpha starts successfully and the g
 
 **Do not conflate** `Nessuna` (scope) with `Intero Segmento` or `Nessuno` (lane type). Their exact SDK values and availability by country are not yet verified; these labels are evidence for an Italian WME context only.
 
-Alpha 2 presents all five scope labels and all six type labels as *distinct, independent read-only options* in the wizard. This is a UI parity prototype, **not** an authorization to write them into WME. The next phase must verify the typed enum values for the native panel, and country/user permissions before enabling edits.
+A subsequent editor screenshot confirmed WME's red validation message **«Seleziona una corsia per applicare la restrizione»** when the scope remains **Nessuna**. In Alpha 3 the `Nessuna` scope is therefore **hidden** from the wizard: no scope is preselected, a red accessible warning appears and the **Next** button is disabled until the editor explicitly chooses `Intero Segmento` or one of the three lanes. Validation is repeated inside the Next handler and when normalizing the draft. In contrast, `Nessuno` in the **lane-type** dropdown remains a valid, separate selection. The wizard still does not write to WME.
+
+This is a UI parity prototype, **not** an authorization to write the design values into WME. The next phase must verify the typed enum values for the native panel, and country/user permissions before enabling edits.
 
 ## Acceptance criteria before real editing
 
