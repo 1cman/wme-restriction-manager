@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.10
+// @version      4.0.0-alpha.11
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.10";
+    const VERSION = "4.0.0-alpha.11";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -31,6 +31,8 @@
     const RESTRICTION_TYPES = ["BLOCKED", "ALLOWED", "TOLL"];
     const WEEKDAYS = ["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"];
     const MAX_DRAFT_TIME_FRAMES = 12; // Stable 3.2 SAFE12 guardrail, for read-only draft only.
+    // BLOCKED without selected types = all blocked. With selected types, default
+    // changes to FREE, with explicit BLOCKED rules for the targeted types.
     const DEFAULT_TYPES = Object.freeze({BLOCKED:"BLOCKED",ALLOWED:"BLOCKED",TOLL:"TOLL"});
     const VEHICLE_TYPES = [
         "BUS", "CAV", "CLEAN_FUEL", "EV", "HAZARDOUS_MATERIALS",
@@ -78,15 +80,20 @@
         BLOCKED:["Transito vietato (con eventuali eccezioni)","No entry (with optional exceptions)","Accès interdit (avec exceptions éventuelles)","Acceso prohibido (con excepciones opcionales)","Durchfahrt verboten (mit möglichen Ausnahmen)","Passagem proibida (com exceções opcionais)"],
         ALLOWED:["Transito consentito (solo ai veicoli autorizzati)","Access allowed (authorized traffic only)","Accès autorisé (véhicules autorisés uniquement)","Acceso permitido (solo vehículos autorizados)","Zufahrt erlaubt (nur berechtigte Fahrzeuge)","Acesso permitido (apenas veículos autorizados)"],
         TOLL:["Transito a pedaggio (con possibili esenzioni)","Toll road (with optional exemptions)","Accès à péage (avec exemptions éventuelles)","Acceso con peaje (con posibles exenciones)","Mautpflichtig (mit möglichen Ausnahmen)","Via com portagem (com possíveis isenções)"],
-        vehicle_step:["Per quali veicoli vuoi definire un'eccezione?","Which vehicles should receive an exception?","Quels véhicules reçoivent une exception ?","¿Qué vehículos tendrán una excepción?","Welche Fahrzeuge sollen eine Ausnahme erhalten?","Que veículos devem ter uma exceção?"],
-        vehicles_optional:["Nessuna selezione: il divieto vale per tutti. Le categorie selezionate saranno esentate dal divieto.","No selection: all vehicles are blocked. Selected types will be allowed through.","Aucun choix : tous les véhicules sont bloqués. Les types choisis seront autorisés.","Sin selección: se prohíbe el acceso a todos. Los tipos elegidos estarán exentos.","Keine Auswahl: alle Fahrzeuge sind gesperrt. Ausgewählte Arten sind ausgenommen.","Sem seleção: todos os veículos são bloqueados. Os tipos selecionados ficam isentos."],
+        vehicle_step:["Per quali veicoli vuoi definire un'eccezione?","Which vehicles should receive an exception?","Quels véhicules reçoivent une exception ?","¿Qué vehículos tendrán una excepción?","Welche Fahrzeuge sollen eine Ausnahme erhalten?","Que veículos devem ter uma excezione?"], 
+        blocked_vehicle_step:["A quali veicoli vuoi vietare il transito?","Which vehicles should be prohibited?","Quels véhicules doivent être interdits ?","¿Qué vehículos quieres prohibir?","Welche Fahrzeugarten sollen gesperrt werden?","Que veículos pretende proibir?"],
+        vehicles_optional:["Nessuna selezione = transito vietato a TUTTI. Seleziona uno o più tipi di veicolo per vietare il transito SOLO a quelli scelti; gli altri restano autorizzati.","No selection = ALL vehicles prohibited. Select vehicle types to prohibit ONLY those types; others remain allowed.","Aucun choix : TOUS les véhicules interdits. Sinon seuls les types choisis sont interdits.","Sin selección: TODOS prohibidos. Con selección, solo se prohíben los tipos elegidos.","Ohne Auswahl: ALLE Fahrzeuge gesperrt. Mit Auswahl nur die gewählten Arten.","Sem seleção: TODOS proibidos. Com seleção apenas os tipos escolhidos."],
         vehicles_allowed:["Seleziona almeno un tipo di veicolo autorizzato. Tutte le altre categorie rimangono vietate; pass e occupanti si impostano nel passaggio successivo.","Select at least one allowed vehicle type. All other traffic stays blocked; permits and occupancy are configured next.","Choisissez au moins un type de véhicule autorisé. Les autres restent interdits ; permis et occupants à l'étape suivante.","Selecciona al menos un tipo de vehículo autorizado. Los demás siguen prohibidos; permisos y ocupantes se configuran después.","Wähle mindestens eine zugelassene Fahrzeugart. Alle anderen bleiben gesperrt; Berechtigungen und Insassen folgen.","Selecione pelo menos um tipo de veículo autorizado. Os restantes ficam bloqueados; autorizações e ocupantes seguem-se."],
         allowed_step:["Quali veicoli vuoi autorizzare?","Which vehicles should be allowed?","Quels véhicules souhaitez-vous autoriser ?","¿Qué vehículos quieres autorizar?","Welche Fahrzeuge sollen zugelassen werden?","Que veículos pretende autorizar?"],
         allowed_required:["Seleziona almeno un tipo di veicolo autorizzato per proseguire.","Select at least one allowed vehicle type to continue.","Sélectionnez au moins un type de véhicule autorisé pour continuer.","Selecciona al menos un tipo de vehículo autorizado para continuar.","Wähle mindestens eine zugelassene Fahrzeugart, um fortzufahren.","Selecione pelo menos um tipo de veículo autorizado para continuar."],
         allowed_default:["Transito vietato per impostazione predefinita","Access blocked by default","Accès interdit par défaut","Acceso prohibido por defecto","Zufahrt standardmäßig gesperrt","Passagem proibida por predefinição"],
         toll_default:["Transito a pedaggio per impostazione predefinita","Toll by default","Péage par défaut","Peaje por defecto","Standardmäßig mautpflichtig","Portagem por predefinição"],
         allowed_preview:["Criteri per il transito consentito","Allowed traffic criteria","Critères d'accès autorisé","Criterios de acceso permitido","Kriterien für die erlaubte Zufahrt","Critérios de acesso permitido"],
-        blocked_preview:["Veicoli esentati dal divieto","Vehicles exempt from the block","Véhicules exemptés","Vehículos exentos de la prohibición","Vom Verbot ausgenommene Fahrzeuge","Veículos isentos da proibição"],
+        blocked_preview:["Veicoli ai quali è vietato il transito","Vehicles prohibited from passing","Véhicules interdits de circulation","Vehículos con circulación prohibida","Gesperrte Fahrzeugarten","Veículos proibidos de circular"],
+        blocked_everyone:["Transito vietato a tutti i veicoli","All vehicles prohibited","Circulation interdite à tous les véhicules","Tránsito prohibido a todos los vehículos","Durchfahrt für alle Fahrzeuge verboten","Passagem proibida para todos os veículos"],
+        blocked_only_selected:["Transito vietato esclusivamente ai tipi di veicolo selezionati; gli altri restano autorizzati.","Only selected vehicle types are blocked; others remain allowed.","Seuls les types sélectionnés sont interdits ; les autres sont autorisés.","Solo se prohíben los tipos seleccionados; el resto está permitido.","Nur gewählte Fahrzeugarten gesperrt; andere erlaubt.","Apenas os tipos selecionados proibidos; os restantes permitidos."],
+        motor_ban_all:["Tutte le motociclette selezionate sono vietate, senza distinzioni di motore.","All selected motorcycles are prohibited regardless of engine.","Toutes les motos sélectionnées sont interdites, sans condition moteur.","Todas las motos seleccionadas están prohibidas, sin condición de motor.","Alle gewählten Motorräder sind unabhängig vom Motor gesperrt.","Todas as motas selecionadas são proibidas independentemente do motor."],
+        motor_ban_conditional:["Solo le motociclette che soddisfano le condizioni motore indicate saranno vietate (anteprima sperimentale).","Only motorcycles matching engine conditions are prohibited (experimental preview).","Seules les motos correspondant aux conditions moteur sont interdites (aperçu).","Solo motos con las condiciones de motor indicadas están prohibidas (vista previa).","Nur Motorräder mit den Motorbedingungen sind gesperrt (Vorschau).","Só as motas com as condições do motor são proibidas (pré-visualização)."],
         toll_preview:["Veicoli esentati dal pedaggio","Vehicles exempt from toll","Véhicules exonérés de péage","Vehículos exentos de peaje","Von der Maut ausgenommene Fahrzeuge","Veículos isentos de portagem"],
         all_vehicle_types:["Qualsiasi categoria che soddisfi le condizioni avanzate (da verificare nel WME nativo)","Any vehicle type meeting advanced criteria (verify in native WME)","Toute catégorie répondant aux conditions avancées (à vérifier dans WME)","Cualquier tipo que cumpla las condiciones avanzadas (verificar en WME)","Alle Typen, die die Bedingungen erfüllen (in WME prüfen)","Qualquer categoria que cumpra as condições (verificar no WME)"],
         others_blocked:["Ogni altro traffico rimane vietato.","All other traffic remains prohibited.","Toute autre circulation reste interdite.","El resto del tráfico sigue prohibido.","Alle anderen Fahrzeuge bleiben gesperrt.","Todo o restante tráfego continua proibido."],
@@ -122,7 +129,7 @@
         plate_note:["Regole sulle targhe: non selezionabili in questa Alpha; verificare disponibilità per Paese e opzioni native.","License plate rules: unavailable in this Alpha pending country and native WME verification.","Plaques : indisponibles avant vérification par pays dans WME.","Matrículas: no disponibles hasta verificar el país en WME.","Kennzeichenregeln: bis zur Prüfung des Landes in WME nicht verfügbar.","Regras de matrícula: indisponíveis até verificação por país no WME."],
         no_condition:["Nessuna","None","Aucune","Ninguna","Keine","Nenhuma"],
         motorcycle_step:["Condizioni sperimentali per motociclette","Experimental motorcycle engine conditions","Conditions moteur expérimentales pour motos","Condiciones experimentales para motocicletas","Experimentelle Motorrad-Motorbedingungen","Condições experimentais de motor para motos"],
-        motorcycle_intro:["Passaggio facoltativo, solo per le motociclette esentate. La versione stabile 3.2.0 conserva dati motore esistenti (engineType, operator, capacityThreshold); questa Alpha non genera regole motore reali.","Optional, for exempt motorcycles only. Stable 3.2.0 preserves existing engine data (engineType, operator, capacityThreshold); this Alpha cannot generate actual engine rules.","Facultatif, motos exemptées uniquement. Cette Alpha ne crée pas de règles moteur réelles.","Opcional, solo motos exentas. Esta Alpha no crea reglas de motor reales.","Optional nur für befreite Motorräder. Diese Alpha erstellt keine echten Motorregeln.","Opcional, apenas motos isentas. Esta Alpha não cria regras reais de motor."],
+        motorcycle_intro:["Facoltativo, solo per le motociclette a cui vietare il transito. Senza condizioni motore, tutte le motociclette selezionate saranno vietate. Questa Alpha non crea ancora regole reali; la stabile 3.2.0 conserva le condizioni motore esistenti.","Optional, for prohibited motorcycles only. Without engine conditions, all selected motorcycles are blocked. Alpha is read-only; stable 3.2.0 preserves existing motor rules.","Facultatif, motos interdites uniquement. Sans condition moteur, toutes sont interdites. Alpha en lecture seule.","Opcional, solo motos prohibidas. Sin condiciones de motor, se prohíben todas. Alpha de solo lectura.","Optional nur für gesperrte Motorräder. Ohne Motorbedingung sind alle gesperrt. Alpha schreibgeschützt.","Opcional, apenas para motos proibidas. Sem condições do motor, todas ficam proibidas. Alpha de leitura."],
         motorcycle_enable:["Specifica il tipo di motore (sperimentale)","Specify engine type (experimental)","Préciser le type de moteur (expérimental)","Especificar tipo de motor (experimental)","Motortyp angeben (experimentell)","Especificar tipo de motor (experimental)"],
         motorcycle_engine:["Tipo di motore / codice WME","Engine type / WME code","Type de moteur / code WME","Tipo de motor / código WME","Motortyp / WME-Code","Tipo de motor / código WME"],
         motorcycle_engine_hint:["Inserisci il codice rilevato nel pannello WME; se disponibile sono suggeriti i valori già presenti sul segmento. Nessun codice viene considerato automaticamente valido.","Enter the code shown in WME; existing values on the segment may be suggested. No code is presumed valid.","Saisissez le code WME; des valeurs existantes peuvent être proposées, sans validation.","Introduce el código WME; se sugieren valores existentes, sin validación.","WME-Code eingeben; vorhandene Werte werden vorgeschlagen, aber nicht validiert.","Introduza o código WME; são sugeridos valores existentes, sem validação."],
@@ -226,8 +233,10 @@
         return {
             direction:draft.direction, scope:draft.scope, lane:draft.lane,
             restrictionIntent:draft.restrictionType,
-            defaultType:DEFAULT_TYPES[draft.restrictionType],
-            overrideType:OVERRIDE_TYPES[draft.restrictionType],
+            defaultType:draft.restrictionType==="BLOCKED"&&vehicleTypes.length?
+                "FREE":DEFAULT_TYPES[draft.restrictionType],
+            overrideType:draft.restrictionType==="BLOCKED"&&vehicleTypes.length?
+                "BLOCKED":OVERRIDE_TYPES[draft.restrictionType],
             vehicleTypes,verified:false
         };
     }
@@ -663,7 +672,8 @@
                     }),node("p",tr("pending")));
             }
             if(step===4) {
-                dialog.append(node("h3",tr(draft.restrictionType==="ALLOWED"?"allowed_step":"vehicle_step")));
+                dialog.append(node("h3",tr(draft.restrictionType==="BLOCKED"?"blocked_vehicle_step":
+                    draft.restrictionType==="ALLOWED"?"allowed_step":"vehicle_step")));
                 const helpKey = draft.restrictionType==="BLOCKED"?"vehicles_optional":
                     draft.restrictionType==="ALLOWED"?"vehicles_allowed":"vehicles_toll";
                 dialog.append(node("p",tr(helpKey)));
