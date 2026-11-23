@@ -68,13 +68,13 @@ Alpha 7 separates **wizard intents** from **SDK defaultType enum values**:
 
 | Wizard card / intent | Proposed SDK default | Proposed SDK override | Draft validation |
 | --- | --- | --- | --- |
-| Red: `BLOCKED`, Transito vietato | `BLOCKED` | optional `FREE` exceptions | Can omit exceptions |
+| Red: `BLOCKED`, Transito vietato (**historical Alpha 7; superseded by Alpha 11**) | `BLOCKED` if no types chosen, otherwise `FREE` | `BLOCKED` rules for chosen types | No selection prohibits all; selecting types prohibits only those |
 | Green: `ALLOWED`, Transito consentito *solo agli autorizzati* | `BLOCKED` | `FREE` for allowed criteria | **Alpha 8:** at least one authorized vehicle type is mandatory; passes and occupancy are additional, optional draft conditions |
 | Blue: `TOLL`, Transito a pedaggio | `TOLL` | `FREE` exemptions | Existing vehicle-exemption requirement retained |
 
 `ALLOWED` **is an internal wizard intent, not an SDK RESTRICTION_TYPE**. Never submit it or mistake it for SDK `FREE`. Green and red currently share a BLOCKED base but have different draft intent and validation; the green flow is an explicit whitelist. The green vehicle step says **choose vehicles to authorize**, not vehicles to prohibit. Other traffic remains blocked. **Historical note:** Alpha 7 allowed progression without a selected vehicle type; Alpha 8 supersedes this behavior and requires at least one authorized vehicle. Changing the intent clears existing vehicle and advanced draft selections to avoid accidental authorizations.
 
-In the summary, show the SDK `BLOCKED` base and `FREE` exemptions, plus a prominent note that all other traffic is blocked. Because the current draft does not model native AND/OR groups, combining vehicle types, permits and passenger counts **does not yet establish the exact eligibility logic in WME**. Country-specific license plate options remain unavailable pending native verification. There is still **no WME write, apply, save or preset creation** in this Alpha. The stable script is untouched.
+For the green ALLOWED flow only, the summary should show a `BLOCKED` base and `FREE` authorizations, plus a note that all other traffic is blocked; this does not describe the red BLOCKED flow corrected in Alpha 11. Because the current draft does not model native AND/OR groups, combining vehicle types, permits and passenger counts **does not yet establish the exact eligibility logic in WME**. Country-specific license plate options remain unavailable pending native verification. There is still **no WME write, apply, save or preset creation** in this Alpha. The stable script is untouched.
 
 Testing: select the green intent, choose PRIVATE and EV, and confirm the summary shows a BLOCKED default and FREE authorizations (not a FREE default with BLOCKED exceptions). In Alpha 8, verify that the green intent **cannot proceed without at least one selected vehicle**, irrespective of permits or occupancy. Test red and blue flows for regression and both WME Standard and Beta. Waze editors have reported routing risks if e.g. PRIVATE is allowed but EV is omitted from whitelist; use native restrictions with care.
 
