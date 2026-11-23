@@ -1036,6 +1036,34 @@
                         node("p",tr("criteria_unverified")),
                         node("p",tr("plate_note")),
                         node("p",tr("vehicles_unknown")));
+                }else if(draft.restrictionType==="BLOCKED"){
+                    const checked=normalizeDraft(draft,current.segment);
+                    const schedule=normalizeRedSchedule(redSchedule);
+                    const motor=normalizeMotorDraft(motorDraft,
+                        checked.vehicleTypes.includes("MOTORCYCLE"));
+                    dialog.append(node("h3",tr("summary")),
+                        node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
+                        node("p",tr("rule_preview")+": "+tr("allowed_default")+
+                            " (SDK "+checked.defaultType+")"),
+                        node("p",tr("blocked_preview")+" (SDK "+checked.overrideType+"): "+
+                            (checked.vehicleTypes.length?
+                                checked.vehicleTypes.map(type=>vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", "):
+                                tr("no_exceptions"))));
+                    if(checked.vehicleTypes.includes("MOTORCYCLE")){
+                        dialog.append(node("p",tr("motorcycle_engine")+": "+
+                            (motor.engineType||tr("motorcycle_unchecked"))),
+                            node("p",tr("motorcycle_intro")));
+                    }
+                    dialog.append(node("h4",tr("schedule_summary")));
+                    for(const frame of schedule.timeFrames){
+                        const dates=(frame.startDate||tr("no_condition"))+" → "+
+                            (frame.endDate||tr("no_condition"));
+                        const days=frame.weekdays.map(day=>tr(day)).join(", ");
+                        const hours=frame.fromTime===null?tr("schedule_all_day"):
+                            frame.fromTime+"–"+frame.toTime;
+                        dialog.append(node("p",dates+" · "+days+" · "+hours));
+                    }
+                    dialog.append(node("p",tr("red_schedule_intro")));
                 }else{
                 const conditions=normalizeAdvanced(advanced,current.permits);
                 const checked=normalizeDraft(draft,current.segment,conditions);
@@ -1060,14 +1088,18 @@
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
-            if(step>0)footer.append(button(tr("back"),()=>{step--;render();}));
-            if(step<6){
+            if(step>0)footer.append(button(tr("back"),()=>{
+                const previous=previousWizardStep(step,draft.restrictionType,draft.vehicleTypes);
+                if(previous!==null){step=previous;render();}
+            }));
+            if(step!==6){
                 const next=button(tr("next"),advance);
                 next.dataset.guidedNext="true";
                 next.disabled=(step===1&&!SCOPES.includes(draft.scope))||
                     (step===2&&!LANES.includes(draft.lane))||
                     (step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length) ||
-                    (step===5&&!isAdvancedValid());
+                    (step===5&&!isAdvancedValid())||
+                    (step===7&&!isScheduleValid());
                 footer.append(next);
             }
             dialog.append(footer);
