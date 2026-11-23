@@ -15,13 +15,20 @@ assert.deepEqual(a.countryIdentity({country:{id:1,name:'Italy'}}),{id:1,name:'It
 assert.equal(a.countryIdentity(null),null);
 assert.equal(a.countryIdentity({country:{name:'Italy'}}),null);
 assert.equal(a.normalizeLabel(' + Aggiungi   restrizioni '),'aggiungi restrizioni');
+assert.equal(a.SCOPES.length,5);
+assert.equal(a.LANES.length,6);
+assert.ok(a.SCOPES.includes('scope_none'));
+assert.ok(a.SCOPES.includes('segment'));
+assert.notEqual(a.SCOPES.indexOf('scope_none'),a.SCOPES.indexOf('segment'));
+assert.ok(a.LANES.includes('lane_none'));
 for(const scope of a.SCOPES)for(const lane of a.LANES){
     const draft=a.normalizeDraft({direction:'FWD',scope,lane},{isAtoB:true});
     assert.equal(draft.verified,false);
-    assert.equal(draft.lane,scope==='segment'?null:lane);
+    assert.equal(draft.lane,lane);
 }
 assert.throws(()=>a.normalizeDraft({direction:'REV',scope:'left',lane:'hov'},{isAtoB:true}));
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'left',lane:'invented'},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:null},{isAtoB:true}));
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'random',lane:'hov'},{isAtoB:true}));
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
