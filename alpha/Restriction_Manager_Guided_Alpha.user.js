@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.11
+// @version      4.0.0-alpha.12
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.11";
+    const VERSION = "4.0.0-alpha.12";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -58,6 +58,16 @@
         country:["Paese del segmento","Segment country","Pays du segment","País del segmento","Land des Segments","País do segmento"],
         unknown:["Non rilevato","Not detected","Non détecté","No detectado","Nicht erkannt","Não detetado"],
         observed:["Restrizioni esistenti (lettura SDK)","Existing restrictions (SDK read)","Restrictions existantes (lecture SDK)","Restricciones existentes (lectura SDK)","Vorhandene Beschränkungen (SDK)","Restrições existentes (leitura SDK)"],
+        inspection_title:["Verifica tecnica (lettura SDK)","Technical inspection (SDK read-only)","Inspection technique (lecture SDK)","Inspección técnica (lectura SDK)","Technische Prüfung (SDK-Lesemodus)","Inspeção técnica (leitura SDK)"],
+        inspection_scope:["Ambiti corsia osservati","Observed lane scopes","Portées de voie observées","Ámbitos de carril observados","Beobachtete Fahrstreifenbereiche","Âmbitos de via observados"],
+        inspection_lane:["Tipologie corsia osservate","Observed lane types","Types de voie observés","Tipos de carril observados","Beobachtete Fahrstreifentypen","Tipos de via observados"],
+        inspection_defaults:["Regole principali osservate","Observed default restriction kinds","Types de restrictions observées","Tipos de restricciones observadas","Beobachtete Standardbeschränkungen","Tipos de restrição observados"],
+        inspection_zone:["Fusi orari osservati nelle restrizioni","Time zones observed in restrictions","Fuseaux horaires observés","Zonas horarias observadas","Beobachtete Zeitzonen","Fusos horários observados"],
+        inspection_editable:["Restrizioni modificabili / non modificabili / sconosciute","Editable / non-editable / unknown restrictions","Restrictions modifiables / non / inconnues","Restricciones editables / no / desconocidas","Bearbeitbare / gesperrte / unbekannte Beschränkungen","Restrições editáveis / não / desconhecidas"],
+        inspection_none:["Nessun valore disponibile","No values available","Aucune valeur disponible","Sin valores disponibles","Keine Werte verfügbar","Sem valores disponíveis"],
+        inspection_warn:["Questi valori provengono solo da restrizioni già presenti sul segmento. NON certificano le opzioni disponibili per crearne una nuova, né verificano le API interne, la lingua o il fuso orario del segmento.","These values come only from existing segment restrictions. They do NOT certify support for new rules or verify private APIs, UI locale or segment time zone.","Valeurs des restrictions existantes uniquement ; aucune garantie de prise en charge de nouvelles règles.","Solo valores de restricciones existentes; no garantizan compatibilidad para nuevas reglas.","Nur Werte vorhandener Beschränkungen; keine Garantie für neue Regeln.","Apenas valores de restrições existentes; não garantem suporte para regras novas."],
+        inspection_snapshot:["Controllo variazioni delle restrizioni SDK","SDK restriction change check","Contrôle des modifications SDK","Comprobación de cambios SDK","SDK-Beschränkungsänderungen prüfen","Verificação de alterações SDK"],
+        inspection_changed:["Le restrizioni SDK del segmento sono cambiate durante la procedura. Ricomincia per aggiornare la bozza.","Segment SDK restrictions changed during the wizard. Restart to refresh the draft.","Les restrictions SDK ont changé ; recommencez.","Las restricciones SDK cambiaron; reinicia.","SDK-Beschränkungen geändert; bitte neu starten.","Restrições SDK alteradas; reinicie."],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -395,6 +405,45 @@
             return [...unique.values()];
         }catch(_){return null;}
     }
+    // Observe existing SDK fields ONLY. Values are evidence that a segment uses
+    // them, never evidence that WME allows creating that combination here.
+    function inspectRestrictionCapabilities(segment) {
+        const restrictions=Array.isArray(segment?.restrictions)?segment.restrictions:null;
+        const rows=restrictions||[];
+        const strings=list=>[...new Set(list.filter(x=>typeof x==="string"&&x.trim()))].sort();
+        const lanes=strings(rows.map(r=>r?.laneType));
+        const scopes=strings(rows.map(r=>r?.laneScope??r?.disposition));
+        const defaults=strings(rows.map(r=>r?.defaultType));
+        const timeZones=strings(rows.flatMap(r=>
+            Array.isArray(r?.timeFrames)?r.timeFrames.map(t=>t?.timeZone):[]));
+        const editable={yes:0,no:0,unknown:0};
+        for(const r of rows){
+            if(r?.editable===true)editable.yes++;
+            else if(r?.editable===false)editable.no++;
+            else editable.unknown++;
+        }
+        return {available:!!restrictions,count:restrictions?.length??null,
+            laneScopes:scopes,laneTypes:lanes,defaultTypes:defaults,timeZones,
+            editable,verified:false};
+    }
+    // Restriction-field fingerprint, used only to abort a read-only wizard
+    // when data changes. Unknown/complex SDK structures fail closed.
+    function restrictionSnapshot(segment) {
+        if(!segment||!Array.isArray(segment.restrictions))return null;
+        try{
+            return JSON.stringify({
+                id:segment.id, isAtoB:segment.isAtoB,
+                isBtoA:segment.isBtoA,isTwoWay:segment.isTwoWay,
+                restrictions:segment.restrictions.map(r=>({
+                    direction:r.direction,defaultType:r.defaultType,
+                    laneScope:r.laneScope,disposition:r.disposition,
+                    laneType:r.laneType,description:r.description,
+                    timeFrames:r.timeFrames,vehicleRules:r.vehicleRules,
+                    driveProfiles:r.driveProfiles,editable:r.editable
+                }))
+            })??null;
+        }catch(_){return null;}
+    }
     async function readContext(sdk) {
         const sel = await sdk.Editing.getSelection();
         if (!Array.isArray(sel?.ids) || sel.ids.length !== 1 || !String(sel.objectType || "").toLowerCase().includes("segment")) return null;
@@ -407,7 +456,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
