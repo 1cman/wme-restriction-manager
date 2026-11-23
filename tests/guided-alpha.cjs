@@ -17,33 +17,61 @@ assert.equal(a.countryIdentity({country:{name:'Italy'}}),null);
 assert.equal(a.normalizeLabel(' + Aggiungi   restrizioni '),'aggiungi restrizioni');
 assert.equal(a.SCOPES.length,4);
 assert.equal(a.LANES.length,6);
+assert.deepEqual(a.RESTRICTION_TYPES,['BLOCKED','FREE','TOLL']);
+assert.equal(a.VEHICLE_TYPES.length,15);
+assert.equal(new Set(a.VEHICLE_TYPES).size,15);
+assert.equal(a.OVERRIDE_TYPES.BLOCKED,'FREE');
+assert.equal(a.OVERRIDE_TYPES.FREE,'BLOCKED');
+assert.equal(a.OVERRIDE_TYPES.TOLL,'FREE');
+assert.deepEqual(a.selectedVehicleTypes(['TAXI','BUS','TAXI']),['BUS','TAXI']);
+assert.throws(()=>a.selectedVehicleTypes(['INVENTED']));
+assert.throws(()=>a.selectedVehicleTypes('BUS'));
 assert.ok(!a.SCOPES.includes('scope_none'));
 assert.ok(!a.SCOPES.includes(null));
 assert.ok(a.SCOPES.includes('segment'));
 assert.ok(a.SCOPES.includes('left') && a.SCOPES.includes('center') && a.SCOPES.includes('right'));
 assert.ok(a.LANES.includes('lane_none'));
 for(const scope of a.SCOPES)for(const lane of a.LANES){
-    const draft=a.normalizeDraft({direction:'FWD',scope,lane},{isAtoB:true});
+    const draft=a.normalizeDraft({direction:'FWD',scope,lane,restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true});
     assert.equal(draft.verified,false);
     assert.equal(draft.lane,lane);
 }
-assert.throws(()=>a.normalizeDraft({direction:'REV',scope:'left',lane:'hov'},{isAtoB:true}));
-assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'left',lane:'invented'},{isAtoB:true}));
-assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:null},{isAtoB:true}));
-assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'random',lane:'hov'},{isAtoB:true}));
-assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'scope_none',lane:'lane_none'},{isAtoB:true}));
-assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:null,lane:'lane_none'},{isAtoB:true}));
-assert.deepEqual(a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none'},{isAtoB:true}),{
-  direction:'FWD',scope:'segment',lane:'lane_none',verified:false
+assert.throws(()=>a.normalizeDraft({direction:'REV',scope:'left',lane:'hov',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'left',lane:'invented',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:null,restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'random',lane:'hov',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'scope_none',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:null,lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.deepEqual(a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}),{
+  direction:'FWD',scope:'segment',lane:'lane_none',defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:[],verified:false
 });
+for (const restrictionType of a.RESTRICTION_TYPES) {
+  const draft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:['MOTORCYCLE','TRUCK']};
+  const result=a.normalizeDraft(draft,{isAtoB:true});
+  assert.equal(result.defaultType,restrictionType);
+  assert.equal(result.overrideType,a.OVERRIDE_TYPES[restrictionType]);
+  assert.deepEqual(result.vehicleTypes,['MOTORCYCLE','TRUCK']);
+  assert.equal(result.verified,false);
+  assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TRUCK'],'Input must not be modified');
+}
+for (const restrictionType of ['FREE','TOLL']) {
+  assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:[]},{isAtoB:true}),
+    /requires explicit vehicle override rules/);
+}
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'FAKE',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['FAKE']},{isAtoB:true}));
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
   'User cannot progress from scope step until an explicit valid choice');
 assert.ok(src.includes('if (step === 1 && !SCOPES.includes(draft.scope)) return;'),
   'Programmatic progression must enforce scope selection');
 assert.ok(src.includes('warning.setAttribute("role","alert")'),
   'Missing selection must display an accessible warning');
-assert.ok(src.includes('const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none"};'),
+assert.ok(src.includes('const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};'),
   'The wizard must never preselect an arbitrary scope');
+assert.ok(src.includes('if (step === 4 && draft.restrictionType !== "BLOCKED" && !selectedVehicleTypes(draft.vehicleTypes).length) return;'),
+  'FREE and TOLL steps must require exception types');
+assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
+  'Next button must still guard scope');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const segment={id:1,isAtoB:true,restrictions:[]};
