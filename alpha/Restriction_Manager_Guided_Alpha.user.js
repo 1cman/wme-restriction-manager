@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.8
+// @version      4.0.0-alpha.9
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.8";
+    const VERSION = "4.0.0-alpha.9";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -97,6 +97,15 @@
         no_exceptions:["Nessuna eccezione","No exceptions","Aucune exception","Sin excepciones","Keine Ausnahmen","Sem exceções"],
         summary:["Riepilogo di prova","Test summary","Résumé de test","Resumen de prueba","Testübersicht","Resumo de teste"],
         advanced:["Condizioni avanzate (anteprima)","Advanced conditions (preview)","Conditions avancées (aperçu)","Condiciones avanzadas (vista previa)","Erweiterte Bedingungen (Vorschau)","Condições avançadas (pré-visualização)"],
+        advanced_allowed_intro:["Per ogni tipo di veicolo scegli se sono necessari un pass o un numero minimo di occupanti. Senza condizioni aggiuntive, il veicolo è autorizzato direttamente.","For each vehicle type, choose whether a permit or minimum occupancy is required. With neither selected, access is unconditional.","Pour chaque véhicule, choisissez permis ou occupants. Sans condition, accès direct.","Para cada tipo de vehículo, selecciona permiso u ocupantes. Sin condiciones, acceso directo.","Für jeden Fahrzeugtyp Berechtigung oder Insassen wählen. Ohne Bedingungen direkte Zulassung.","Para cada veículo, selecione autorização ou ocupantes. Sem condições, acesso direto."],
+        requires_pass:["Richiede un pass","Requires a permit","Permis obligatoire","Requiere un permiso","Berechtigung erforderlich","Requer autorização"],
+        requires_occupancy:["Richiede un numero minimo di occupanti","Requires minimum occupancy","Occupants minimum requis","Requiere ocupantes mínimos","Mindestinsassen erforderlich","Requer ocupação mínima"],
+        direct_access:["Autorizzato direttamente, senza condizioni aggiuntive","Authorized directly, no extra conditions","Autorisé directement, sans condition","Autorizado directamente, sin condiciones","Direkt berechtigt, ohne weitere Bedingungen","Autorizado diretamente, sem condições"],
+        vehicle_occupancy:["Occupanti minimi per questo veicolo","Minimum occupants for this vehicle","Occupants minimum pour ce véhicule","Ocupantes mínimos para este vehículo","Mindestinsassen für dieses Fahrzeug","Ocupantes mínimos para este veículo"],
+        missing_vehicle_pass:["Seleziona almeno un pass per questo veicolo.","Select at least one permit for this vehicle.","Sélectionnez au moins un permis pour ce véhicule.","Selecciona al menos un permiso para este vehículo.","Wähle mindestens eine Berechtigung für dieses Fahrzeug.","Selecione pelo menos uma autorização para este veículo."],
+        missing_vehicle_occupancy:["Indica almeno 2 occupanti per questo veicolo.","Enter at least 2 occupants for this vehicle.","Saisissez au moins 2 occupants pour ce véhicule.","Indica al menos 2 ocupantes para este vehículo.","Mindestens 2 Insassen für dieses Fahrzeug eingeben.","Indique pelo menos 2 ocupantes para este veículo."],
+        vehicle_rules_summary:["Condizioni per ciascun veicolo autorizzato","Conditions for each authorized vehicle","Conditions pour chaque véhicule autorisé","Condiciones para cada vehículo autorizado","Bedingungen für jedes zugelassene Fahrzeug","Condições por veículo autorizado"],
+        both_conditions:["Per questo veicolo sono richiesti sia il pass sia il numero minimo di occupanti (combinazione da verificare in WME).","Both permit and occupancy are required for this vehicle (verify in WME).","Permis et occupants requis pour ce véhicule (à vérifier dans WME).","Permiso y ocupantes requeridos para este vehículo (verificar en WME).","Berechtigung und Insassen erforderlich (in WME prüfen).","Autorização e ocupação exigidas para este veículo (verificar no WME)."],
         occupancy:["Occupanti minimi (facoltativo)","Minimum occupants (optional)","Occupants minimum (facultatif)","Ocupantes mínimos (opcional)","Mindestinsassen (optional)","Ocupantes mínimos (opcional)"],
         occupancy_help:["Vuoto = nessun vincolo. Altrimenti inserisci un intero da 2 in su.","Blank = no limit. Otherwise enter an integer of at least 2.","Vide = aucune limite. Sinon entier à partir de 2.","Vacío = sin límite. Introduce entero de 2 o más.","Leer = keine Begrenzung. Sonst ganze Zahl ab 2.","Vazio = sem limite. Introduz inteiro a partir de 2."],
         occupancy_error:["Il numero di occupanti deve essere un intero di almeno 2.","Occupants must be an integer of at least 2.","Le nombre doit être un entier à partir de 2.","El número debe ser entero de 2 o más.","Ganze Zahl ab 2 erforderlich.","Necessário inteiro a partir de 2."],
@@ -203,6 +212,38 @@
         if(permitIds.some(id=>typeof id!=="string"||!allowed.has(id)))throw Error("Unrecognized country permit");
         return {minPassengers,permitIds,verified:false};
     }
+    // Read-only whitelist draft: every selected vehicle has its own rules.
+    // No conditions means directly allowed; conditions on a different vehicle
+    // never imply a requirement for this one.
+    function normalizeVehicleRules(types,rules,permits) {
+        const chosen=selectedVehicleTypes(types);
+        if(!chosen.length)throw Error("No authorized vehicle types");
+        if(!rules||typeof rules!=="object"||Array.isArray(rules))throw Error("Invalid vehicle rules");
+        if(Object.keys(rules).some(type=>!chosen.includes(type)))
+            throw Error("Conditions for an unselected vehicle");
+        const validPermits=new Set((permits||[]).map(p=>p.id));
+        const vehicles=chosen.map(vehicleType=>{
+            const rule=rules[vehicleType]??{
+                requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
+            };
+            if(typeof rule.requiresPass!=="boolean"||typeof rule.requiresOccupancy!=="boolean"||
+               !Array.isArray(rule.permitIds))throw Error("Invalid vehicle conditions");
+            const permitIds=[...new Set(rule.permitIds)];
+            if(permitIds.some(id=>typeof id!=="string"||!validPermits.has(id)))
+                throw Error("Unrecognized vehicle permit");
+            if(rule.requiresPass&&!permitIds.length)throw Error("Missing vehicle permit");
+            if(!rule.requiresPass&&permitIds.length)throw Error("Inactive permit has IDs");
+            const minPassengers=rule.minPassengers??null;
+            if(rule.requiresOccupancy&&(!Number.isSafeInteger(minPassengers)||minPassengers<2))
+                throw Error("Invalid vehicle occupancy");
+            if(!rule.requiresOccupancy&&minPassengers!==null)throw Error("Inactive occupancy has value");
+            return {vehicleType,
+                access:rule.requiresPass||rule.requiresOccupancy?"CONDITIONAL":"DIRECT",
+                requiresPass:rule.requiresPass,requiresOccupancy:rule.requiresOccupancy,
+                permitIds,minPassengers};
+        });
+        return {vehicles,verified:false};
+    }
     async function readPermits(sdk,country) {
         if(!country||typeof sdk?.DataModel?.Countries?.getById!=="function")return null;
         const countryId=Number(country.id);
@@ -229,7 +270,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
