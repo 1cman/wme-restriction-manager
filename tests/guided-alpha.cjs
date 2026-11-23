@@ -30,11 +30,13 @@ assert.equal(a.countryIdentity({country:{name:'Italy'}}),null);
 assert.equal(a.normalizeLabel(' + Aggiungi   restrizioni '),'aggiungi restrizioni');
 assert.equal(a.SCOPES.length,4);
 assert.equal(a.LANES.length,6);
-assert.deepEqual(a.RESTRICTION_TYPES,['BLOCKED','FREE','TOLL']);
+assert.deepEqual(a.RESTRICTION_TYPES,['BLOCKED','ALLOWED','TOLL']);
+assert.deepEqual(a.DEFAULT_TYPES,{BLOCKED:'BLOCKED',ALLOWED:'BLOCKED',TOLL:'TOLL'});
+assert.ok(!a.RESTRICTION_TYPES.includes('FREE'),'Do not confuse wizard intents with SDK defaultType FREE');
 assert.equal(a.VEHICLE_TYPES.length,15);
 assert.equal(new Set(a.VEHICLE_TYPES).size,15);
 assert.equal(a.OVERRIDE_TYPES.BLOCKED,'FREE');
-assert.equal(a.OVERRIDE_TYPES.FREE,'BLOCKED');
+assert.equal(a.OVERRIDE_TYPES.ALLOWED,'FREE');
 assert.equal(a.OVERRIDE_TYPES.TOLL,'FREE');
 assert.deepEqual(a.selectedVehicleTypes(['TAXI','BUS','TAXI']),['BUS','TAXI']);
 assert.throws(()=>a.selectedVehicleTypes(['INVENTED']));
@@ -56,21 +58,37 @@ assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'random',lane:'hov',re
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'scope_none',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:null,lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
 assert.deepEqual(a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}),{
-  direction:'FWD',scope:'segment',lane:'lane_none',defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:[],verified:false
+  direction:'FWD',scope:'segment',lane:'lane_none',restrictionIntent:'BLOCKED',
+  defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:[],verified:false
 });
 for (const restrictionType of a.RESTRICTION_TYPES) {
   const draft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:['MOTORCYCLE','TRUCK']};
   const result=a.normalizeDraft(draft,{isAtoB:true});
-  assert.equal(result.defaultType,restrictionType);
+  assert.equal(result.restrictionIntent,restrictionType);
+  assert.equal(result.defaultType,a.DEFAULT_TYPES[restrictionType]);
   assert.equal(result.overrideType,a.OVERRIDE_TYPES[restrictionType]);
   assert.deepEqual(result.vehicleTypes,['MOTORCYCLE','TRUCK']);
   assert.equal(result.verified,false);
   assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TRUCK'],'Input must not be modified');
 }
-for (const restrictionType of ['FREE','TOLL']) {
-  assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:[]},{isAtoB:true}),
-    /requires explicit vehicle override rules/);
+for (const restrictionType of ['ALLOWED','TOLL']) {
+  const expected=restrictionType==='ALLOWED'?/ALLOWED requires explicit authorization criteria/:/TOLL requires explicit vehicle exemption rules/;
+  assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:[]},{isAtoB:true}),expected);
 }
+// White-list mode must NOT produce an SDK FREE default (which allows all vehicles).
+const whitelist={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']};
+assert.deepEqual(a.normalizeDraft(whitelist,{isAtoB:true}),{
+ direction:'FWD',scope:'segment',lane:'lane_none',restrictionIntent:'ALLOWED',
+ defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:['EV','PRIVATE'],verified:false
+});
+const passOnly={...whitelist,vehicleTypes:[]};
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:['pass1']}),true);
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:2,permitIds:[]}),true);
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:[]}),false);
+assert.equal(a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:3,permitIds:[]}).defaultType,'BLOCKED');
+assert.equal(a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:['pass1']}).overrideType,'FREE');
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:[]}),/ALLOWED requires explicit authorization criteria/);
+assert.throws(()=>a.normalizeDraft({...whitelist,restrictionType:'FREE'},{isAtoB:true}),/Invalid restriction intent/);
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'FAKE',vehicleTypes:[]},{isAtoB:true}));
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['FAKE']},{isAtoB:true}));
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
@@ -81,8 +99,16 @@ assert.ok(src.includes('warning.setAttribute("role","alert")'),
   'Missing selection must display an accessible warning');
 assert.ok(src.includes('const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};'),
   'The wizard must never preselect an arbitrary scope');
-assert.ok(src.includes('if (step === 4 && draft.restrictionType !== "BLOCKED" && !selectedVehicleTypes(draft.vehicleTypes).length) return;'),
-  'FREE and TOLL steps must require exception types');
+assert.ok(src.includes('if (step===4 && draft.restrictionType==="TOLL" && !selectedVehicleTypes(draft.vehicleTypes).length)return;'),
+  'TOLL step must require an exception vehicle');
+assert.ok(src.includes('normalizeDraft(draft,current.segment,conditions);'),
+  'Advanced draft must be validated before proceeding and in the summary');
+assert.ok(src.includes('draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft,advanced)'),
+  'ALLOWED without authorized vehicles, passes or occupancy must block the next step');
+assert.ok(src.includes('advanced.minPassengers=null;') && src.includes('advanced.permitIds=[];'),
+  'Changing restriction intent must clear stale advanced permissions');
+assert.ok(src.includes('node("p",tr("others_blocked"))'),
+  'Whitelist summary must clearly state the default prohibition');
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
   'Next button must still guard scope');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
@@ -111,5 +137,5 @@ assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*
  assert.equal(await a.readContext(sdk),null);
  sdk.Editing.getSelection=async()=>({objectType:'segment',ids:[1,2]});
  assert.equal(await a.readContext(sdk),null);
- console.log('PASS: guided alpha choices, country permits, advanced draft and read-only guards');
+ console.log('PASS: guided alpha whitelist, country permits, advanced draft and read-only guards');
 })().catch(e=>{console.error(e);process.exitCode=1;});
