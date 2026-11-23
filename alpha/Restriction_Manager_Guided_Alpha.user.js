@@ -172,7 +172,9 @@
             if(!Array.isArray(data?.restrictionSubscriptions))return null;
             const list=data.restrictionSubscriptions.filter(p=>
                 typeof p?.id==="string"&&p.id.trim()&&typeof p?.name==="string"&&p.name.trim());
-            return [...new Map(list.map(p=>[p.id,{id:p.id,name:p.name}])).values()];
+            const unique=new Map();
+            for(const p of list)if(!unique.has(p.id))unique.set(p.id,{id:p.id,name:p.name});
+            return [...unique.values()];
         }catch(_){return null;}
     }
     async function readContext(sdk) {
