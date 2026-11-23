@@ -147,6 +147,79 @@ assert.ok(src.includes('advanced.permitIds=advanced.permitIds.includes(id)?'),
   'Autocomplete and checkboxes must share a persistent selection');
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
   'Next button must still guard scope');
+// Alpha 9: conditions are attached to INDIVIDUAL authorized vehicle types.
+const selectedVehicles=['PRIVATE','MOTORCYCLE','EV','HYBRID'];
+const vehicleRules={
+  PRIVATE:{requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null},
+  MOTORCYCLE:{requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null},
+  EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null},
+  HYBRID:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}
+};
+const knownPermits=[{id:'zone',name:'ZTL zone'}];
+const mixed=a.normalizeVehicleRules(selectedVehicles,vehicleRules,knownPermits);
+assert.equal(mixed.verified,false);
+assert.deepEqual(mixed.vehicles.map(v=>[v.vehicleType,v.access]),[
+  ['EV','DIRECT'],['HYBRID','DIRECT'],['MOTORCYCLE','CONDITIONAL'],['PRIVATE','CONDITIONAL']
+]);
+for(const direct of ['EV','HYBRID']){
+  const row=mixed.vehicles.find(v=>v.vehicleType===direct);
+  assert.deepEqual(row.permitIds,[]);
+  assert.equal(row.minPassengers,null);
+}
+for(const conditional of ['MOTORCYCLE','PRIVATE']){
+  const row=mixed.vehicles.find(v=>v.vehicleType===conditional);
+  assert.deepEqual(row.permitIds,['zone']);
+  assert.equal(row.minPassengers,null);
+}
+assert.deepEqual(vehicleRules.PRIVATE.permitIds,['zone'],'Validation must not mutate source');
+assert.equal(a.normalizeDraft({...whitelist,vehicleTypes:selectedVehicles},{isAtoB:true}).defaultType,'BLOCKED');
+assert.deepEqual(a.normalizeVehicleRules(['EV'],{},null).vehicles[0],{
+  vehicleType:'EV',access:'DIRECT',requiresPass:false,
+  requiresOccupancy:false,permitIds:[],minPassengers:null
+});
+const minOnly={PRIVATE:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:3}};
+assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles[0].access,'DIRECT');
+assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles[1].minPassengers,3);
+const both={PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['zone'],minPassengers:2}};
+assert.equal(a.normalizeVehicleRules(['PRIVATE'],both,knownPermits).vehicles[0].access,'CONDITIONAL');
+assert.throws(()=>a.normalizeVehicleRules([],{},knownPermits),/No authorized vehicle/);
+assert.throws(()=>a.normalizeVehicleRules(['EV'],{PRIVATE:vehicleRules.PRIVATE},knownPermits),/unselected vehicle/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:true,requiresOccupancy:false,permitIds:[],minPassengers:null
+}},knownPermits),/Missing vehicle permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:true,requiresOccupancy:false,permitIds:['not-listed'],minPassengers:null
+}},knownPermits),/Unrecognized vehicle permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null
+}},null),/Unrecognized vehicle permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:null
+}},knownPermits),/Invalid vehicle occupancy/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:1
+}},knownPermits),/Invalid vehicle occupancy/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:false,permitIds:['zone'],minPassengers:null
+}},knownPermits),/Inactive permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:3
+}},knownPermits),/Inactive occupancy/);
+assert.ok(src.includes('if(input.checked)vehicleRules[type]=emptyRule();') &&
+  src.includes('else delete vehicleRules[type];'),'Deselection must remove the vehicle conditions');
+assert.ok(src.includes('if(draft.restrictionType==="ALLOWED")') &&
+  src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits)'),
+  'Whitelist next-step validation must use per-vehicle rules');
+assert.ok(src.includes('vehiclePermitPicker(type,rule)') &&
+  src.includes('search.setAttribute("role","combobox")'),
+  'Vehicles requiring permits must retain searchable autocomplete');
+assert.ok(src.includes('const conditions=normalizeVehicleRules(') &&
+  src.includes('node("h4",tr("vehicle_rules_summary"))'),
+  'Summary must distinguish vehicle-by-vehicle rules');
+assert.ok(src.includes('if(rule.access==="DIRECT")box.append(node("p",tr("direct_access")))'),
+  'Summary must clearly label direct access');
+assert.ok(src.includes('(step===5&&!isAdvancedValid())'),
+  'Next button must be blocked on invalid per-vehicle requirements');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
