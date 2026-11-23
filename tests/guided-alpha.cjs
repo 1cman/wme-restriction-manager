@@ -83,12 +83,17 @@ assert.deepEqual(a.normalizeDraft(whitelist,{isAtoB:true}),{
  defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:['EV','PRIVATE'],verified:false
 });
 const passOnly={...whitelist,vehicleTypes:[]};
-assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:['pass1']}),true);
-assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:2,permitIds:[]}),true);
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:['pass1']}),false);
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:2,permitIds:[]}),false);
 assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:[]}),false);
-assert.equal(a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:3,permitIds:[]}).defaultType,'BLOCKED');
-assert.equal(a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:['pass1']}).overrideType,'FREE');
-assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:[]}),/ALLOWED requires explicit authorization criteria/);
+assert.equal(a.hasAllowedCriteria(whitelist),true);
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:3,permitIds:[]}),
+  /ALLOWED requires at least one authorized vehicle type/);
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:['pass1']}),
+  /ALLOWED requires at least one authorized vehicle type/);
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:[]}),
+  /ALLOWED requires at least one authorized vehicle type/);
+assert.equal(a.normalizeDraft(whitelist,{isAtoB:true}).defaultType,'BLOCKED');
 assert.throws(()=>a.normalizeDraft({...whitelist,restrictionType:'FREE'},{isAtoB:true}),/Invalid restriction intent/);
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'FAKE',vehicleTypes:[]},{isAtoB:true}));
 assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['FAKE']},{isAtoB:true}));
@@ -100,16 +105,46 @@ assert.ok(src.includes('warning.setAttribute("role","alert")'),
   'Missing selection must display an accessible warning');
 assert.ok(src.includes('const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};'),
   'The wizard must never preselect an arbitrary scope');
-assert.ok(src.includes('if (step===4 && draft.restrictionType==="TOLL" && !selectedVehicleTypes(draft.vehicleTypes).length)return;'),
-  'TOLL step must require an exception vehicle');
+assert.ok(src.includes('(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")'),
+  'Both ALLOWED and TOLL steps must require at least one selected vehicle');
+assert.ok(src.includes('if (step===4 && (draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")'),
+  'Advance must enforce selection, not just disable the button');
+assert.ok(src.includes('(step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length)'),
+  'Next button must be disabled when green whitelist has no vehicle');
 assert.ok(src.includes('normalizeDraft(draft,current.segment,conditions);'),
   'Advanced draft must be validated before proceeding and in the summary');
-assert.ok(src.includes('draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft,advanced)'),
-  'ALLOWED without authorized vehicles, passes or occupancy must block the next step');
+assert.ok(src.includes('draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft)'),
+  'ALLOWED requires vehicle types irrespective of passes and occupancy');
 assert.ok(src.includes('advanced.minPassengers=null;') && src.includes('advanced.permitIds=[];'),
   'Changing restriction intent must clear stale advanced permissions');
 assert.ok(src.includes('node("p",tr("others_blocked"))'),
   'Whitelist summary must clearly state the default prohibition');
+// Sorting and typeahead must be locale aware, accent-insensitive, and non-mutating.
+const rawPermits=[
+  {id:'z',name:'ZTL Zeta'},
+  {id:'a',name:'Àrea centrale'},
+  {id:'b',name:'area nord'},
+  {id:'c',name:'Èlite'},
+  {id:'d',name:'Carpool 10'},
+  {id:'e',name:'Carpool 2'}
+];
+assert.deepEqual(a.sortPermits(rawPermits,'it').map(p=>p.id),['a','b','e','d','c','z']);
+assert.equal(rawPermits[0].id,'z','Sorting must not mutate SDK data');
+assert.deepEqual(a.filterPermits(rawPermits,'AREA','it').map(p=>p.id),['a','b']);
+assert.deepEqual(a.filterPermits(rawPermits,'elite','it').map(p=>p.id),['c']);
+assert.deepEqual(a.filterPermits(rawPermits,'CARPOOL','it').map(p=>p.id),['e','d']);
+assert.deepEqual(a.filterPermits(rawPermits,'no-match','it'),[]);
+assert.deepEqual(a.filterPermits(rawPermits,'','it').map(p=>p.id),['a','b','e','d','c','z']);
+assert.ok(src.includes('search.setAttribute("role","combobox")'),
+  'Pass search must expose accessible autocomplete');
+assert.ok(src.includes('search.addEventListener("input"'),
+  'Pass autocomplete must refresh on each keystroke');
+assert.ok(src.includes('search.addEventListener("keydown"'),
+  'Pass autocomplete must support keyboard input');
+assert.ok(src.includes('const sorted=sortPermits(current.permits,lang);'),
+  'Visible pass list must be sorted by WME locale');
+assert.ok(src.includes('advanced.permitIds=advanced.permitIds.includes(id)?'),
+  'Autocomplete and checkboxes must share a persistent selection');
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
   'Next button must still guard scope');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
@@ -138,5 +173,5 @@ assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*
  assert.equal(await a.readContext(sdk),null);
  sdk.Editing.getSelection=async()=>({objectType:'segment',ids:[1,2]});
  assert.equal(await a.readContext(sdk),null);
- console.log('PASS: guided alpha whitelist, country permits, advanced draft and read-only guards');
+ console.log('PASS: guided alpha vehicle requirement, alphabetic permit autocomplete and read-only guards');
 })().catch(e=>{console.error(e);process.exitCode=1;});
