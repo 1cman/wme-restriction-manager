@@ -155,6 +155,9 @@ The current WME SDK API index lists `LicensePlateRule` as a type alias / variabl
 
 ## Alpha 10: separate red BLOCKED pathway, optional motorcycle engine, date/time schedule (2026-11-23)
 
+**Historical note:** The statement below that red-selected vehicle types are *exempt* was corrected in **Alpha 11**: selected vehicle types are prohibited. Alpha 10's date/time navigation is retained, while its red selection semantics are superseded.
+
+
 The red **Transito vietato** intent now has a different guided flow from green and blue:
 
 - Direction → scope → lane → restriction type → **vehicles exempt from prohibition**.
@@ -173,6 +176,27 @@ The red schedule step offers:
 The **green ALLOWED** path retains independent per-vehicle pass/occupancy conditions; the **blue TOLL** path currently retains its existing Advanced conditions step. Neither is routed through the red-only time scheduling at this stage.
 
 **Regression tests:** red with no exempt vehicles; red with non-motorcycle exemptions; red with MOTORCYCLE (opt-in off/on), invalid engine code, weekday/date/time errors, multiple slots and >12 draft slots; Back path; green/blue unaffected. Check the corresponding UI in WME Standard and Beta.
+
+## Alpha 11: red BLOCKED means prohibit selected vehicles, not exempt them (2026-11-23)
+
+The native WME editor screenshot supplied by the maintainer shows **"Guidare è vietato per"** with radio choices **"Tutti i veicoli"** and **"Tipi di veicoli selezionati"**. Selected motorcycles can then be restricted as a whole or further qualified by experimental **engine type, engine displacement (cc), or power (kW)**. This directly corrects the former Alpha 10 interpretation, which mistakenly regarded red-selected vehicles as **exceptions** to a prohibition. Alpha 10 is **superseded** for red selection semantics.
+
+The [official WME SDK SegmentRestriction interface](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.SegmentRestriction.html) documents the relevant combinations:
+
+| Wizard red selection | Expected behavior | Proposed SDK draft |
+| --- | --- | --- |
+| No vehicle selected | **All vehicles prohibited** for the schedule | `defaultType: BLOCKED`, no vehicle override rules |
+| One or more types selected | **Only selected vehicle types prohibited**, other types allowed | `defaultType: FREE`, `vehicleRules.BLOCKED` with the selected types |
+| MOTORCYCLE selected without motor conditions | **All motorcycles** prohibited (or all selected types, if other categories also chosen) | Same selective restriction as above |
+| MOTORCYCLE selected with motor conditions | **Only matching motorcycles** prohibited; other types/engine variants not automatically banned | Draft-only `BLOCKED` motorcycle conditions, with native serialization and rule precedence **not yet verified** |
+
+Green `ALLOWED` keeps the opposite meaning: `defaultType: BLOCKED` plus `FREE` authorizations for selected vehicle classes and their individual conditions. Blue `TOLL` is unchanged. Switching card type clears incompatible state.
+
+**Red guided flow:** direction → scope → lane → red type → optional choice of vehicle types to **PROHIBIT** → optional motorcycle engine conditions **only when MOTORCYCLE was selected** → red date/day/time schedule → read-only summary. Without motorcycles, the optional engine step is skipped; no red pass, occupant-count or license-plate step is shown.
+
+**Motorcycle prototype:** based on the supplied native WME screenshot, the Alpha's optional engine step now offers independent preview rows labeled **Fuel powered** (displacement in cc) and **Fully electric** (power output in kW), with comparators **All**, **<** and **≤**. These are design/UI identifiers (`FUEL` / `ELECTRIC`, `ALL` / `LT` / `LTE`) and are **not assumed to be actual internal WME SDK enums**. Thresholds must be positive, displacement an integer, and a motor filter must have at least one selected engine condition. With no motor filter enabled, all selected motorcycles are prohibited. If enabled, only the motorcycles satisfying the chosen motor conditions are intended to be prohibited. Rules involving multiple motor conditions, country eligibility, exact internal `engineType`/`operator`/`capacityThreshold` values and interactions with the schedule require native verification. **No real WME rule is generated or modified.**
+
+**Testing:** zero selected vehicles must remain BLOCKED; selecting PRIVATE, MOTORCYCLE or several categories must yield proposed FREE default and BLOCKED vehicle overrides. Verify motorcycle engine disabled (all motorcycles) and conditional fuel/electric thresholds, invalid thresholds, green whitelist/TOLL regressions, forward/back navigation and read-only guards on both WME Standard and Beta.
 
 ## Acceptance criteria before real editing
 
