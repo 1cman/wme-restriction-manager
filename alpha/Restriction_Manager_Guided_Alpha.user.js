@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.4
+// @version      4.0.0-alpha.5
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.4";
+    const VERSION = "4.0.0-alpha.5";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -33,6 +33,13 @@
         "PUBLIC_TRANSPORTATION", "RV", "TAXI", "TOWING_VEHICLE", "TRUCK"
     ];
     const OVERRIDE_TYPES = Object.freeze({BLOCKED:"FREE",FREE:"BLOCKED",TOLL:"FREE"});
+    // Visual cues inspired by WME restriction categories (not exact sampled native colors).
+    // Only the restriction-kind step uses these colors; selection semantics stay unchanged.
+    const RESTRICTION_COLORS = Object.freeze({
+        BLOCKED: {background:"#FDE8E7", active:"#F8CBC7", border:"#D93933"},
+        FREE:    {background:"#E5F4E8", active:"#C6E9CE", border:"#258B4C"},
+        TOLL:    {background:"#E5F2FF", active:"#C9E2FC", border:"#1E7ACD"}
+    });
     const LANGS = ["it", "en", "fr", "es", "de", "pt"];
     const labels = {
         launch:["Crea restrizione guidata","Create guided restriction","Créer une restriction guidée","Crear restricción guiada","Beschränkung geführt erstellen","Criar restrição guiada"],
@@ -148,7 +155,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeLabel,readContext,selectedVehicleTypes,SCOPES,LANES,RESTRICTION_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES};
+        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeLabel,readContext,selectedVehicleTypes,SCOPES,LANES,RESTRICTION_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -226,7 +233,20 @@
                 const label=node("label"),input=node("input");
                 input.type="radio";input.name=ID+"-choice";input.value=k;input.checked=k===value;
                 input.addEventListener("change",()=>{onChange(k);render();});
-                label.style.cssText="display:block;padding:8px 0;";
+                const colors = keys===RESTRICTION_TYPES ? RESTRICTION_COLORS[k] : null;
+                if (colors) {
+                    const selected=input.checked;
+                    label.dataset.restrictionType=k;
+                    label.style.cssText="display:flex;align-items:center;gap:9px;margin:6px 0;padding:10px 12px;"+
+                        "border:2px solid "+(selected?colors.border:"transparent")+";border-radius:8px;"+
+                        "background:"+(selected?colors.active:colors.background)+";"+
+                        "font-weight:600;cursor:pointer;";
+                    input.style.accentColor=colors.border;
+                    input.style.margin="0";
+                    input.style.flexShrink="0";
+                } else {
+                    label.style.cssText="display:block;padding:8px 0;";
+                }
                 label.append(input,document.createTextNode(" "+tr(k)));box.append(label);
             }
             return box;
