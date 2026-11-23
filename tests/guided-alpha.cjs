@@ -78,7 +78,7 @@ assert.ok(src.includes('tr("blocked_everyone")+" (SDK BLOCKED)"'), 'All forbidde
 assert.ok(src.includes('tr("blocked_only_selected")'), 'Selective red prohibition must preserve other vehicle access');
 assert.ok(src.includes('"FREE":DEFAULT_TYPES[draft.restrictionType]'), 'Selective red default must switch to FREE');
 assert.ok(src.includes('"BLOCKED":OVERRIDE_TYPES[draft.restrictionType]'), 'Selective red vehicle rules must be BLOCKED');
-assert.ok(src.includes('tr("blocked_vehicle_step")'), 'Red vehicle question must refer to prohibited, not exempt types');
+assert.ok(src.includes('"BLOCKED"?"blocked_vehicle_step"'), 'Red vehicle question must refer to prohibited, not exempt types');
 assert.ok(src.includes('motorDraft.conditions'), 'Motor conditions must be tracked separately');
 assert.ok(src.includes('motor_select_fuel') && src.includes('motor_select_electric'), 'Native-style fuel/electric UI missing');
 assert.ok(src.includes('motor_limit_cc') && src.includes('motor_limit_kw'), 'Native-style cc/kW thresholds missing');
