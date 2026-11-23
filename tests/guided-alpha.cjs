@@ -356,6 +356,66 @@ assert.ok(src.includes('normalizeMotorDraft(motorDraft,draft.vehicleTypes.includ
 assert.ok(src.includes('if(draft.restrictionType==="BLOCKED"){') &&
  src.includes('node("h3",tr("motorcycle_step"))'),
  'Red motorcycle path must not show permit/occupancy controls');
+// Alpha 12: read-only SDK inspection must never be mistaken for geographic eligibility.
+const observedSegment={
+ id:204,isAtoB:true,isBtoA:true,isTwoWay:true,
+ restrictions:[
+  {direction:'FWD',defaultType:'BLOCKED',laneScope:'ALL',laneType:'HOV',
+   timeFrames:[{startDate:'2026-11-23',timeZone:'Europe/Rome'}],vehicleRules:{FREE:[]},
+   editable:true,description:'Test local restriction'},
+  {direction:'REV',defaultType:'FREE',laneScope:'RIGHT',laneType:'BUS',
+   timeFrames:[{timeZone:'Europe/Rome'},{timeZone:null}],vehicleRules:{BLOCKED:[]},
+   editable:false},
+  {direction:'REV',defaultType:'FREE',laneScope:'RIGHT',laneType:'BUS',
+   timeFrames:[],vehicleRules:{BLOCKED:[]},editable:null}
+ ]
+};
+const observedReport=a.inspectRestrictionCapabilities(observedSegment);
+assert.deepEqual(observedReport,{
+ available:true,count:3,laneScopes:['ALL','RIGHT'],
+ laneTypes:['BUS','HOV'],defaultTypes:['BLOCKED','FREE'],
+ timeZones:['Europe/Rome'],editable:{yes:1,no:1,unknown:1},verified:false
+});
+assert.deepEqual(a.inspectRestrictionCapabilities({id:5,restrictions:[]}),{
+ available:true,count:0,laneScopes:[],laneTypes:[],defaultTypes:[],
+ timeZones:[],editable:{yes:0,no:0,unknown:0},verified:false
+});
+assert.equal(a.inspectRestrictionCapabilities({id:5}).available,false);
+assert.equal(a.restrictionSnapshot({id:5}),null);
+const baseline=a.restrictionSnapshot(observedSegment);
+assert.ok(typeof baseline==='string');
+assert.equal(a.restrictionSnapshot(observedSegment),baseline,'Same SDK data must preserve fingerprint');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,isBtoA:false}),baseline,
+ 'Direction change must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ ...observedSegment.restrictions.slice(0,1),{...observedSegment.restrictions[1],
+  timeFrames:[{timeZone:'Europe/Rome',fromTime:'18:00'}]},observedSegment.restrictions[2]
+]}),baseline,'Time-range modification must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...observedSegment.restrictions[0],vehicleRules:{FREE:[{vehicleTypes:['BUS']}]}},
+ ...observedSegment.restrictions.slice(1)
+]}),baseline,'Vehicle-rule modification must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...observedSegment.restrictions[0],laneScope:'LEFT'},
+ ...observedSegment.restrictions.slice(1)
+]}),baseline,'Lane-scope modification must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...observedSegment.restrictions[0],editable:false},
+ ...observedSegment.restrictions.slice(1)
+]}),baseline,'Edit permission change must invalidate draft');
+const cyclic={id:20,isAtoB:true,restrictions:[{direction:'FWD'}]};
+cyclic.restrictions[0].timeFrames=cyclic.restrictions;
+assert.equal(a.restrictionSnapshot(cyclic),null,'Unserializable SDK state must be unknown, not guessed');
+assert.ok(src.includes('const baselineSnapshot=restrictionSnapshot(current.segment);'),
+ 'The wizard must capture initial SDK restrictions');
+assert.ok(src.includes('if(baselineSnapshot!==latestSnapshot)'),
+ 'Next must abort if observed SDK restrictions or direction changed');
+assert.ok(src.includes('node("p",tr("inspection_changed"))'),
+ 'Stale drafts must show a clear message');
+assert.ok(src.includes('const inspection=inspectRestrictionCapabilities(context.segment);'),
+ 'SDK observation belongs in the sidebar, not a write path');
+assert.ok(src.includes('details.append(note);root.append(details);'),
+ 'Inspection must communicate its read-only, observed-only limitations');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
