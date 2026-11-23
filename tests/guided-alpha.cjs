@@ -62,12 +62,33 @@ assert.deepEqual(a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_no
   direction:'FWD',scope:'segment',lane:'lane_none',restrictionIntent:'BLOCKED',
   defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:[],verified:false
 });
+const redBase={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED'};
+const redAll=a.normalizeDraft({...redBase,vehicleTypes:[]},{isAtoB:true});
+assert.equal(redAll.defaultType,'BLOCKED');
+assert.deepEqual(redAll.vehicleTypes,[]);
+const redOnlyMotor=a.normalizeDraft({...redBase,vehicleTypes:['MOTORCYCLE']},{isAtoB:true});
+assert.equal(redOnlyMotor.defaultType,'FREE');
+assert.equal(redOnlyMotor.overrideType,'BLOCKED');
+assert.deepEqual(redOnlyMotor.vehicleTypes,['MOTORCYCLE']);
+const redTwo=a.normalizeDraft({...redBase,vehicleTypes:['MOTORCYCLE','PRIVATE']},{isAtoB:true});
+assert.equal(redTwo.defaultType,'FREE');
+assert.equal(redTwo.overrideType,'BLOCKED');
+assert.deepEqual(redTwo.vehicleTypes,['MOTORCYCLE','PRIVATE']);
+assert.ok(src.includes('tr("blocked_everyone")+" (SDK BLOCKED)"'), 'All forbidden summary must be explicit');
+assert.ok(src.includes('tr("blocked_only_selected")'), 'Selective red prohibition must preserve other vehicle access');
+assert.ok(src.includes('"FREE":DEFAULT_TYPES[draft.restrictionType]'), 'Selective red default must switch to FREE');
+assert.ok(src.includes('"BLOCKED":OVERRIDE_TYPES[draft.restrictionType]'), 'Selective red vehicle rules must be BLOCKED');
+assert.ok(src.includes('tr("blocked_vehicle_step")'), 'Red vehicle question must refer to prohibited, not exempt types');
+assert.ok(src.includes('motorDraft.conditions'), 'Motor conditions must be tracked separately');
+assert.ok(src.includes('motor_select_fuel') && src.includes('motor_select_electric'), 'Native-style fuel/electric UI missing');
+assert.ok(src.includes('motor_limit_cc') && src.includes('motor_limit_kw'), 'Native-style cc/kW thresholds missing');
+
 for (const restrictionType of a.RESTRICTION_TYPES) {
   const draft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:['MOTORCYCLE','TRUCK']};
   const result=a.normalizeDraft(draft,{isAtoB:true});
   assert.equal(result.restrictionIntent,restrictionType);
-  assert.equal(result.defaultType,a.DEFAULT_TYPES[restrictionType]);
-  assert.equal(result.overrideType,a.OVERRIDE_TYPES[restrictionType]);
+  assert.equal(result.defaultType,restrictionType==='BLOCKED'?'FREE':a.DEFAULT_TYPES[restrictionType]);
+  assert.equal(result.overrideType,restrictionType==='BLOCKED'?'BLOCKED':a.OVERRIDE_TYPES[restrictionType]);
   assert.deepEqual(result.vehicleTypes,['MOTORCYCLE','TRUCK']);
   assert.equal(result.verified,false);
   assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TRUCK'],'Input must not be modified');
@@ -272,14 +293,46 @@ assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
  slots:Array(13).fill({fromTime:'09:00',toTime:'10:00'})}),/SAFE12/);
 assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
  allDay:false,slots:[]}),/SAFE12/);
-assert.deepEqual(a.normalizeMotorDraft({enabled:false,engineType:''},true),
- {engineType:null,verified:false});
-assert.deepEqual(a.normalizeMotorDraft({enabled:true,engineType:' SAMPLE '},true),
- {engineType:'SAMPLE',verified:false});
-assert.throws(()=>a.normalizeMotorDraft({enabled:true,engineType:''},true),
- /Invalid experimental engine type/);
-assert.throws(()=>a.normalizeMotorDraft({enabled:true,engineType:'SAMPLE'},false),
- /Motorcycle type not selected/);
+assert.deepEqual(a.normalizeMotorDraft({enabled:false,conditions:[]},true),
+ {mode:'ALL_MOTORCYCLES',conditions:[],verified:false});
+assert.deepEqual(a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125},
+ {engineType:'ELECTRIC',operator:'LTE',capacityThreshold:11.5}
+]},true),{
+ mode:'MATCHING_ENGINES',
+ conditions:[{engineType:'FUEL',operator:'LT',capacityThreshold:125},
+             {engineType:'ELECTRIC',operator:'LTE',capacityThreshold:11.5}],
+ verified:false
+});
+assert.deepEqual(a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:null}
+]},true).conditions[0],{
+ engineType:'FUEL',operator:'ALL',capacityThreshold:null
+});
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[]},true),
+ /Select at least one motorcycle engine/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'ELECTRIC',operator:'LT',capacityThreshold:null}
+]},true),/Invalid motorcycle engine threshold/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LTE',capacityThreshold:1.3}
+]},true),/Invalid motorcycle engine threshold/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:125}
+]},true),/ALL engine condition cannot have threshold/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:null},
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125}
+]},true),/Invalid motorcycle engine condition/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FAKE',operator:'ALL',capacityThreshold:null}
+]},true),/Invalid motorcycle engine condition/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'FAKE',capacityThreshold:null}
+]},true),/Invalid motorcycle engine condition/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:null}
+]},false),/Motorcycle type not selected/);
 const sampleRaw={W:{model:{segments:{getObjectById:()=>({
  attributes:{restrictions:[{getDriveProfileList:()=>({
   getDriveProfiles:()=>[{getEngineCapacities:()=>[
