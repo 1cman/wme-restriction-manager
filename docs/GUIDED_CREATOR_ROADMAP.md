@@ -33,7 +33,7 @@ The wizard now continues beyond direction/scope/lane type:
 - `FREE`: vehicles allowed by default; at least one `BLOCKED` rule required.
 - `TOLL`: toll by default; at least one `FREE` exception required.
 
-For now each selected vehicle type represents a proposed rule exception. **Country eligibility, lane-type combinations, subscriptions, license plate rules, minimum occupancy, motorcycle engine limits, compound AND/OR conditions and remaining WME restriction kinds are not yet supported by this prototype**. The full matrix remains part of the acceptance criteria before enabling real writes. Current dropdowns are a generic SDK catalogue, not a guarantee that an editor can apply them in the current country.
+For now each selected vehicle type represents a proposed rule exception. **Country eligibility, lane-type combinations, license plate rules, motorcycle engine limits, compound AND/OR conditions and remaining WME restriction kinds are not yet supported by this prototype.** Occupancy and country permits are available only as read-only draft choices in Alpha 6; this does not establish editing eligibility or an SDK serialization format. The full matrix remains part of the acceptance criteria before enabling real writes. Current dropdowns are a generic SDK catalogue, not a guarantee that an editor can apply them in the current country.
 
 Sources consulted:
 - [WME SDK SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/production/latest/interfaces/index.SDK.SegmentRestriction.html)
@@ -43,6 +43,22 @@ Sources consulted:
 ### Test protocol
 
 Select a segment and enter the wizard, explicitly select direction and lane, choose `BLOCKED`, `FREE`, or `TOLL`, then choose zero or more vehicle categories. Check that `FREE` and `TOLL` require at least one override vehicle. Check that the summary correctly preserves your selections when going backward and forward. No save/apply action should exist.
+
+## Alpha 5–6: restriction colors and advanced draft (2026-11-23)
+
+- **Alpha 5:** Restriction type options are shown as softly colored cards: red (BLOCKED), green (FREE) and blue (TOLL). Selection is indicated by a stronger shade and border. These are approximate interface colors, not sampled WME CSS variables.
+- **Alpha 6:** Add a read-only **Advanced conditions** step between vehicle exceptions and summary. An optional `minPassengers` draft accepts empty or an integer of at least 2. It is a proposal and **not yet mapped to WME vehicle rules or verified for the local country**.
+- The permit checklist is read from `sdk.DataModel.Countries.getById({countryId})` using the **selected segment's country** and its `restrictionSubscriptions` list (each item has an `id` and `name`). No Italian-specific list or current-editor-location fallback is used. SDK failures/unavailable country return an unknown state (not an empty list); unknown permit IDs are rejected by draft validation.
+- License plate conditions remain explicitly unavailable in the Alpha pending native verification. Motorcycle-specific parameters and condition combination logic are also still out of scope.
+- The summary displays occupancy and selected permit names without creating an SDK restriction payload, saving presets, modifying WME, reading browser storage or exporting data. Invalid conditions and changes to the segment country/permit list block advancement. The stable 3.2 branch is unchanged.
+
+Sources:
+- [SDK Country.restrictionSubscriptions](https://www.waze.com/editor/sdk/interfaces/index.SDK.Country.html)
+- [SDK Countries.getById](https://web-assets.waze.com/wme_sdk_docs/production/latest/classes/index.SDK.Countries.html)
+- [SDK Subscription](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.Subscription.html)
+- [SDK DriveProfileAttributes](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.DriveProfileAttributes.html)
+
+**Manual test:** Select a single segment and traverse the guided wizard. In Advanced conditions, leave occupancy blank, enter 2 (then 3), try an invalid fractional value, and inspect the available passes. All choices must appear in the read-only summary. Confirm that the pass list belongs to the segment country rather than the editor language and that no Save/Apply action appears. Validate both WME Standard and Beta.
 
 ## Acceptance criteria before real editing
 
