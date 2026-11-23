@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.7
+// @version      4.0.0-alpha.8
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.7";
+    const VERSION = "4.0.0-alpha.8";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -78,9 +78,9 @@
         TOLL:["Transito a pedaggio (con possibili esenzioni)","Toll road (with optional exemptions)","Accès à péage (avec exemptions éventuelles)","Acceso con peaje (con posibles exenciones)","Mautpflichtig (mit möglichen Ausnahmen)","Via com portagem (com possíveis isenções)"],
         vehicle_step:["Per quali veicoli vuoi definire un'eccezione?","Which vehicles should receive an exception?","Quels véhicules reçoivent une exception ?","¿Qué vehículos tendrán una excepción?","Welche Fahrzeuge sollen eine Ausnahme erhalten?","Que veículos devem ter uma exceção?"],
         vehicles_optional:["Nessuna selezione: il divieto vale per tutti. Le categorie selezionate saranno esentate dal divieto.","No selection: all vehicles are blocked. Selected types will be allowed through.","Aucun choix : tous les véhicules sont bloqués. Les types choisis seront autorisés.","Sin selección: se prohíbe el acceso a todos. Los tipos elegidos estarán exentos.","Keine Auswahl: alle Fahrzeuge sind gesperrt. Ausgewählte Arten sind ausgenommen.","Sem seleção: todos os veículos são bloqueados. Os tipos selecionados ficam isentos."],
-        vehicles_allowed:["Seleziona i veicoli da autorizzare: tutti gli altri restano vietati. Puoi anche proseguire senza selezionare veicoli e indicare poi pass o occupanti.","Select the vehicle types to allow; all other traffic stays blocked. Or continue and specify a permit or occupancy requirement instead.","Choisissez les véhicules autorisés ; les autres restent interdits. Vous pouvez aussi préciser un permis ou l'occupation à l'étape suivante.","Selecciona los vehículos autorizados; los demás están prohibidos. También puedes indicar un permiso u ocupación después.","Wähle zugelassene Fahrzeuge; alle anderen bleiben gesperrt. Alternativ später Berechtigung oder Insassen festlegen.","Selecione os veículos autorizados; os restantes ficam bloqueados. Pode também definir autorização ou ocupação a seguir."],
+        vehicles_allowed:["Seleziona almeno un tipo di veicolo autorizzato. Tutte le altre categorie rimangono vietate; pass e occupanti si impostano nel passaggio successivo.","Select at least one allowed vehicle type. All other traffic stays blocked; permits and occupancy are configured next.","Choisissez au moins un type de véhicule autorisé. Les autres restent interdits ; permis et occupants à l'étape suivante.","Selecciona al menos un tipo de vehículo autorizado. Los demás siguen prohibidos; permisos y ocupantes se configuran después.","Wähle mindestens eine zugelassene Fahrzeugart. Alle anderen bleiben gesperrt; Berechtigungen und Insassen folgen.","Selecione pelo menos um tipo de veículo autorizado. Os restantes ficam bloqueados; autorizações e ocupantes seguem-se."],
         allowed_step:["Quali veicoli vuoi autorizzare?","Which vehicles should be allowed?","Quels véhicules souhaitez-vous autoriser ?","¿Qué vehículos quieres autorizar?","Welche Fahrzeuge sollen zugelassen werden?","Que veículos pretende autorizar?"],
-        allowed_required:["Specifica almeno un criterio di autorizzazione: un veicolo, un pass oppure il numero minimo di occupanti.","Specify at least one allow criterion: vehicle type, permit or minimum occupancy.","Précisez un critère : véhicule, permis ou occupants.","Indica un criterio: vehículo, permiso u ocupantes.","Mindestens ein Kriterium: Fahrzeug, Berechtigung oder Insassen.","Defina um critério: veículo, autorização ou ocupantes."],
+        allowed_required:["Seleziona almeno un tipo di veicolo autorizzato per proseguire.","Select at least one allowed vehicle type to continue.","Sélectionnez au moins un type de véhicule autorisé pour continuer.","Selecciona al menos un tipo de vehículo autorizado para continuar.","Wähle mindestens eine zugelassene Fahrzeugart, um fortzufahren.","Selecione pelo menos um tipo de veículo autorizado para continuar."],
         allowed_default:["Transito vietato per impostazione predefinita","Access blocked by default","Accès interdit par défaut","Acceso prohibido por defecto","Zufahrt standardmäßig gesperrt","Passagem proibida por predefinição"],
         toll_default:["Transito a pedaggio per impostazione predefinita","Toll by default","Péage par défaut","Peaje por defecto","Standardmäßig mautpflichtig","Portagem por predefinição"],
         allowed_preview:["Criteri per il transito consentito","Allowed traffic criteria","Critères d'accès autorisé","Criterios de acceso permitido","Kriterien für die erlaubte Zufahrt","Critérios de acesso permitido"],
@@ -101,6 +101,10 @@
         occupancy_help:["Vuoto = nessun vincolo. Altrimenti inserisci un intero da 2 in su.","Blank = no limit. Otherwise enter an integer of at least 2.","Vide = aucune limite. Sinon entier à partir de 2.","Vacío = sin límite. Introduce entero de 2 o más.","Leer = keine Begrenzung. Sonst ganze Zahl ab 2.","Vazio = sem limite. Introduz inteiro a partir de 2."],
         occupancy_error:["Il numero di occupanti deve essere un intero di almeno 2.","Occupants must be an integer of at least 2.","Le nombre doit être un entier à partir de 2.","El número debe ser entero de 2 o más.","Ganze Zahl ab 2 erforderlich.","Necessário inteiro a partir de 2."],
         country_permits:["Pass disponibili nell'elenco del Paese","Permits listed for the segment country","Permis listés pour ce pays","Permisos listados para el país","Berechtigungen des Landes","Autorizações listadas para o país"],
+        permit_search:["Cerca un pass","Search for a permit","Rechercher un permis","Buscar un permiso","Berechtigung suchen","Pesquisar uma autorização"],
+        permit_search_placeholder:["Digita il nome del pass...","Type a permit name...","Saisissez un nom de permis...","Escribe el nombre del permiso...","Name der Berechtigung eingeben...","Introduza o nome da autorização..."],
+        permit_search_empty:["Nessun pass corrispondente","No matching permits","Aucun permis correspondant","No se encontraron permisos","Keine passenden Berechtigungen","Nenhuma autorização correspondente"],
+        permit_selected_count:["Pass selezionati","Selected permits","Permis sélectionnés","Permisos seleccionados","Ausgewählte Berechtigungen","Autorizações selecionadas"],
         permits_missing:["Elenco pass non disponibile tramite SDK.","SDK permit list unavailable.","Liste de permis SDK indisponible.","Lista SDK no disponible.","SDK-Liste nicht verfügbar.","Lista SDK indisponível."],
         permits_empty:["Nessun pass restituito dallo SDK.","No permits returned by the SDK.","Aucun permis retourné.","El SDK no devuelve permisos.","Keine Berechtigungen gefunden.","Nenhuma autorização devolvida."],
         permit_note:["La presenza nell'elenco non prova che il pass sia utilizzabile nella restrizione.","Listing does not prove the permit can be used here.","La liste ne garantit pas l'admissibilité.","La lista no garantiza compatibilidad.","Listeneintrag garantiert keine Verwendbarkeit.","A lista não garante elegibilidade."],
@@ -150,12 +154,26 @@
     // SDK semantics: BLOCKED defaults can have FREE vehicle rules; TOLL can have FREE
     // exemptions. The green ALLOWED wizard intent is a BLOCKED default plus a FREE
     // whitelist; it must never turn into SDK defaultType FREE (which would allow all).
-    function hasAllowedCriteria(draft,advanced) {
-        return selectedVehicleTypes(draft.vehicleTypes).length>0 ||
-            (advanced?.minPassengers!==null && Number.isSafeInteger(advanced?.minPassengers) && advanced.minPassengers>=2) ||
-            (Array.isArray(advanced?.permitIds) && advanced.permitIds.length>0);
+    function hasAllowedCriteria(draft) {
+        // A whitelist requires a vehicle category; passes/occupancy can only refine it.
+        return selectedVehicleTypes(draft.vehicleTypes).length>0;
     }
-    function normalizeDraft(draft, segment, advanced=null) {
+    function sortPermits(permits,locale="en") {
+        const collator=new Intl.Collator(LANGS.includes(locale)?locale:"en",
+            {sensitivity:"base",numeric:true});
+        return [...permits].sort((a,b)=>
+            collator.compare(a.name,b.name)||String(a.id).localeCompare(String(b.id)));
+    }
+    function normalizePermitSearch(value) {
+        return String(value??"").normalize("NFD")
+            .replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().trim().replace(/\s+/g," ");
+    }
+    function filterPermits(permits,search,locale="en") {
+        const term=normalizePermitSearch(search);
+        const sorted=sortPermits(permits,locale);
+        return term?sorted.filter(permit=>normalizePermitSearch(permit.name).includes(term)):sorted;
+    }
+    function normalizeDraft(draft, segment) {
         if (!availableDirections(segment).includes(draft.direction)) throw new Error("Direction unavailable");
         if (!SCOPES.includes(draft.scope)) throw new Error("Invalid scope");
         if (!LANES.includes(draft.lane)) throw new Error("Invalid lane design option");
@@ -165,8 +183,8 @@
         if (draft.restrictionType==="TOLL" && !vehicleTypes.length) {
             throw new Error("TOLL requires explicit vehicle exemption rules");
         }
-        if (draft.restrictionType==="ALLOWED" && !hasAllowedCriteria(draft,advanced)) {
-            throw new Error("ALLOWED requires explicit authorization criteria");
+        if (draft.restrictionType==="ALLOWED" && !hasAllowedCriteria(draft)) {
+            throw new Error("ALLOWED requires at least one authorized vehicle type");
         }
         return {
             direction:draft.direction, scope:draft.scope, lane:draft.lane,
@@ -211,7 +229,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -313,7 +331,8 @@
             if (step === 1 && !SCOPES.includes(draft.scope)) return;
             if (step === 2 && !LANES.includes(draft.lane)) return;
             if (step === 3 && !RESTRICTION_TYPES.includes(draft.restrictionType)) return;
-            if (step===4 && draft.restrictionType==="TOLL" && !selectedVehicleTypes(draft.vehicleTypes).length)return;
+            if (step===4 && (draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")
+                && !selectedVehicleTypes(draft.vehicleTypes).length)return;
             if(step===5){
                 try{
                     const conditions=normalizeAdvanced(advanced,current.permits);
@@ -375,8 +394,8 @@
                     all.append(label);
                 }
                 dialog.append(all);
-                if(draft.restrictionType==="TOLL" && !draft.vehicleTypes.length) {
-                    const warning=node("p",tr("select_vehicle"));
+                if((draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED") && !draft.vehicleTypes.length) {
+                    const warning=node("p",tr(draft.restrictionType==="ALLOWED"?"allowed_required":"select_vehicle"));
                     warning.setAttribute("role","alert");warning.style.cssText="color:#c62828;font-weight:600;";
                     dialog.append(warning);
                 }
@@ -396,23 +415,112 @@
                 if(current.permits===null)dialog.append(node("p",tr("permits_missing")));
                 else if(!current.permits.length)dialog.append(node("p",tr("permits_empty")));
                 else {
-                    const box=node("div");box.style.cssText="max-height:130px;overflow:auto;border:1px solid #d1d5db;padding:6px;border-radius:7px;";
-                    for(const permit of current.permits){
-                        const item=node("label"),check=node("input");
-                        item.style.cssText="display:flex;gap:8px;margin:5px 0;";
-                        check.type="checkbox";check.checked=advanced.permitIds.includes(permit.id);
-                        check.addEventListener("change",()=>{
-                            advanced.permitIds=check.checked?
-                                [...new Set([...advanced.permitIds,permit.id])]:
-                                advanced.permitIds.filter(id=>id!==permit.id);
-                            render();
-                        });
-                        item.append(check,document.createTextNode(permit.name));box.append(item);
-                    }
-                    dialog.append(box);
+                    // Sort pass choices alphabetically in the WME interface language.
+                    const sorted=sortPermits(current.permits,lang);
+                    const searchLabel=node("label",tr("permit_search"));
+                    searchLabel.style.cssText="display:block;font-weight:600;margin:6px 0;";
+                    const search=node("input");
+                    search.type="search";search.autocomplete="off";
+                    search.placeholder=tr("permit_search_placeholder");
+                    search.id=ID+"-permit-search";
+                    search.style.cssText="display:block;width:100%;box-sizing:border-box;padding:8px;"+
+                        "margin:5px 0;border:1px solid #9ca3af;border-radius:7px;";
+                    search.setAttribute("role","combobox");
+                    search.setAttribute("aria-autocomplete","list");
+                    search.setAttribute("aria-controls",ID+"-permit-suggestions");
+                    search.setAttribute("aria-expanded","false");
+                    searchLabel.append(search);
+                    const suggestions=node("div");
+                    suggestions.id=ID+"-permit-suggestions";
+                    suggestions.setAttribute("role","listbox");
+                    suggestions.style.cssText="display:none;max-height:145px;overflow:auto;"+
+                        "border:1px solid #9ca3af;border-radius:7px;margin-bottom:8px;";
+                    const box=node("div");
+                    box.style.cssText="max-height:155px;overflow:auto;border:1px solid #d1d5db;"+
+                        "padding:6px;border-radius:7px;";
+                    const count=node("p");
+                    count.setAttribute("aria-live","polite");
+                    count.style.cssText="margin:5px 0;color:#4b5563;font-size:12px;";
+                    let activeIndex=-1;
+                    let matches=[];
+                    const togglePermit=id=>{
+                        advanced.permitIds=advanced.permitIds.includes(id)?
+                            advanced.permitIds.filter(value=>value!==id):
+                            [...advanced.permitIds,id];
+                    };
+                    const updatePicker=()=>{
+                        const query=normalizePermitSearch(search.value);
+                        matches=filterPermits(sorted,query,lang);
+                        box.replaceChildren();
+                        count.textContent=tr("permit_selected_count")+": "+advanced.permitIds.length;
+                        if(!matches.length){
+                            box.append(node("p",tr("permit_search_empty")));
+                        }else{
+                            for(const permit of matches){
+                                const item=node("label"),check=node("input");
+                                item.style.cssText="display:flex;align-items:center;gap:8px;margin:5px 0;cursor:pointer;";
+                                check.type="checkbox";check.value=permit.id;
+                                check.checked=advanced.permitIds.includes(permit.id);
+                                check.addEventListener("change",()=>{
+                                    togglePermit(permit.id);
+                                    updatePicker();
+                                });
+                                item.append(check,document.createTextNode(permit.name));box.append(item);
+                            }
+                        }
+                        suggestions.replaceChildren();
+                        const choices=query?matches.slice(0,8):[];
+                        if(activeIndex>=choices.length)activeIndex=-1;
+                        suggestions.style.display=choices.length?"block":"none";
+                        search.setAttribute("aria-expanded",choices.length?"true":"false");
+                        if(activeIndex<0)search.removeAttribute("aria-activedescendant");
+                        for(const [index,permit] of choices.entries()){
+                            const option=button(
+                                (advanced.permitIds.includes(permit.id)?"✓ ":"+ ")+permit.name,
+                                ()=>{
+                                    togglePermit(permit.id);
+                                    search.value="";
+                                    activeIndex=-1;
+                                    updatePicker();
+                                    search.focus();
+                                });
+                            option.id=ID+"-permit-suggestion-"+index;
+                            option.setAttribute("role","option");
+                            option.setAttribute("aria-selected",String(advanced.permitIds.includes(permit.id)));
+                            option.style.cssText="display:block;width:100%;text-align:left;padding:7px 9px;"+
+                                "background:"+(index===activeIndex?"#dbeafe":"#fff")+";"+
+                                "border:0;border-radius:0;cursor:pointer;color:#202938;font:inherit;";
+                            suggestions.append(option);
+                        }
+                        if(activeIndex>=0)search.setAttribute("aria-activedescendant",
+                            ID+"-permit-suggestion-"+activeIndex);
+                    };
+                    search.addEventListener("input",()=>{activeIndex=-1;updatePicker();});
+                    search.addEventListener("keydown",event=>{
+                        if(event.key==="Escape"&&search.value){
+                            search.value="";activeIndex=-1;updatePicker();event.preventDefault();return;
+                        }
+                        if(!normalizePermitSearch(search.value)||!matches.length)return;
+                        const total=Math.min(matches.length,8);
+                        if(event.key==="ArrowDown"||event.key==="ArrowUp"){
+                            activeIndex=event.key==="ArrowDown"?(activeIndex+1)%total:
+                                (activeIndex<=0?total-1:activeIndex-1);
+                            updatePicker();
+                            event.preventDefault();
+                        }else if(event.key==="Enter"){
+                            const selected=matches[activeIndex<0?0:activeIndex];
+                            if(selected){
+                                togglePermit(selected.id);
+                                search.value="";activeIndex=-1;updatePicker();
+                                event.preventDefault();
+                            }
+                        }
+                    });
+                    dialog.append(searchLabel,suggestions,count,box);
+                    updatePicker();
                 }
                 dialog.append(node("p",tr("permit_note")),node("p",tr("plate_note")));
-                if(draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft,advanced)){
+                if(draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft)){
                     const warning=node("p",tr("allowed_required"));
                     warning.setAttribute("role","alert");
                     warning.style.cssText="color:#c62828;font-weight:600;";
@@ -453,11 +561,11 @@
                 const next=button(tr("next"),advance);
                 next.disabled=(step===1&&!SCOPES.includes(draft.scope))||
                     (step===2&&!LANES.includes(draft.lane))||
-                    (step===4&&draft.restrictionType==="TOLL"&&!draft.vehicleTypes.length) ||
+                    (step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length) ||
                     (step===5&&(
                         (advanced.minPassengers!==null&&
                          (!Number.isSafeInteger(advanced.minPassengers)||advanced.minPassengers<2)) ||
-                        (draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft,advanced))));
+                        (draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft))));
                 footer.append(next);
             }
             dialog.append(footer);
