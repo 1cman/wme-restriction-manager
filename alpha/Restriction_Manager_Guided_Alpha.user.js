@@ -94,6 +94,7 @@
         allowed_preview:["Criteri per il transito consentito","Allowed traffic criteria","Critères d'accès autorisé","Criterios de acceso permitido","Kriterien für die erlaubte Zufahrt","Critérios de acesso permitido"],
         blocked_preview:["Veicoli ai quali è vietato il transito","Vehicles prohibited from passing","Véhicules interdits de circulation","Vehículos con circulación prohibida","Gesperrte Fahrzeugarten","Veículos proibidos de circular"],
         blocked_everyone:["Transito vietato a tutti i veicoli","All vehicles prohibited","Circulation interdite à tous les véhicules","Tránsito prohibido a todos los vehículos","Durchfahrt für alle Fahrzeuge verboten","Passagem proibida para todos os veículos"],
+        blocked_selected_base:["Transito consentito agli altri veicoli per impostazione predefinita","Other vehicle types allowed by default","Les autres véhicules sont autorisés par défaut","Otros vehículos permitidos por defecto","Andere Fahrzeugarten standardmäßig erlaubt","Outros veículos permitidos por predefinição"],
         blocked_only_selected:["Transito vietato esclusivamente ai tipi di veicolo selezionati; gli altri restano autorizzati.","Only selected vehicle types are blocked; others remain allowed.","Seuls les types sélectionnés sont interdits ; les autres sont autorisés.","Solo se prohíben los tipos seleccionados; el resto está permitido.","Nur gewählte Fahrzeugarten gesperrt; andere erlaubt.","Apenas os tipos selecionados proibidos; os restantes permitidos."],
         motor_ban_all:["Tutte le motociclette selezionate sono vietate, senza distinzioni di motore.","All selected motorcycles are prohibited regardless of engine.","Toutes les motos sélectionnées sont interdites, sans condition moteur.","Todas las motos seleccionadas están prohibidas, sin condición de motor.","Alle gewählten Motorräder sind unabhängig vom Motor gesperrt.","Todas as motas selecionadas são proibidas independentemente do motor."],
         motor_ban_conditional:["Solo le motociclette che soddisfano le condizioni motore indicate saranno vietate (anteprima sperimentale).","Only motorcycles matching engine conditions are prohibited (experimental preview).","Seules les motos correspondant aux conditions moteur sont interdites (aperçu).","Solo motos con las condiciones de motor indicadas están prohibidas (vista previa).","Nur Motorräder mit den Motorbedingungen sind gesperrt (Vorschau).","Só as motas com as condições do motor são proibidas (pré-visualização)."],
@@ -1136,17 +1137,34 @@
                     const motor=normalizeMotorDraft(motorDraft,
                         checked.vehicleTypes.includes("MOTORCYCLE"));
                     dialog.append(node("h3",tr("summary")),
-                        node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
-                        node("p",tr("rule_preview")+": "+tr("allowed_default")+
-                            " (SDK "+checked.defaultType+")"),
-                        node("p",tr("blocked_preview")+" (SDK "+checked.overrideType+"): "+
-                            (checked.vehicleTypes.length?
-                                checked.vehicleTypes.map(type=>vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", "):
-                                tr("no_exceptions"))));
+                        node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)));
+                    if(!checked.vehicleTypes.length){
+                        dialog.append(node("p",tr("blocked_everyone")+" (SDK BLOCKED)"));
+                    }else{
+                        dialog.append(
+                            node("p",tr("rule_preview")+": "+tr("blocked_selected_base")+
+                                " (SDK "+checked.defaultType+")"),
+                            node("p",tr("blocked_preview")+" (SDK "+checked.overrideType+"): "+
+                                checked.vehicleTypes.map(type=>
+                                    vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", ")),
+                            node("p",tr("blocked_only_selected")));
+                    }
                     if(checked.vehicleTypes.includes("MOTORCYCLE")){
-                        dialog.append(node("p",tr("motorcycle_engine")+": "+
-                            (motor.engineType||tr("motorcycle_unchecked"))),
-                            node("p",tr("motorcycle_intro")));
+                        if(motor.mode==="ALL_MOTORCYCLES"){
+                            dialog.append(node("p",tr("motor_ban_all")));
+                        }else{
+                            dialog.append(node("p",tr("motor_ban_conditional")));
+                            for(const entry of motor.conditions){
+                                const engine=tr(entry.engineType==="FUEL"?"motor_select_fuel":"motor_select_electric");
+                                const cmp=entry.operator==="ALL"?tr("motor_compare_all"):
+                                    entry.operator==="LT"?"<":"≤";
+                                const unit=entry.engineType==="FUEL"?"cc":"kW";
+                                const description=entry.operator==="ALL"?engine+" · "+cmp:
+                                    engine+" · "+cmp+" "+entry.capacityThreshold+" "+unit;
+                                dialog.append(node("p",description));
+                            }
+                            dialog.append(node("p",tr("motor_experimental_note")));
+                        }
                     }
                     dialog.append(node("h4",tr("schedule_summary")));
                     for(const frame of schedule.timeFrames){
