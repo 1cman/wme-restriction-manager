@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.3
+// @version      4.0.0-alpha.4
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,11 +18,21 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.3";
+    const VERSION = "4.0.0-alpha.4";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
     const LANES = ["lane_none", "express", "fast", "hov", "public_transport", "carpool_toll_free"];
+    // VehicleType and defaultType are documented SDK types. These lists are NOT
+    // an eligibility matrix: local WME permissions and supported combinations
+    // must be verified separately before any write path is enabled.
+    const RESTRICTION_TYPES = ["BLOCKED", "FREE", "TOLL"];
+    const VEHICLE_TYPES = [
+        "BUS", "CAV", "CLEAN_FUEL", "EV", "HAZARDOUS_MATERIALS",
+        "HOV_2", "HOV_3", "HYBRID", "MOTORCYCLE", "PRIVATE",
+        "PUBLIC_TRANSPORTATION", "RV", "TAXI", "TOWING_VEHICLE", "TRUCK"
+    ];
+    const OVERRIDE_TYPES = Object.freeze({BLOCKED:"FREE",FREE:"BLOCKED",TOLL:"FREE"});
     const LANGS = ["it", "en", "fr", "es", "de", "pt"];
     const labels = {
         launch:["Crea restrizione guidata","Create guided restriction","Créer une restriction guidée","Crear restricción guiada","Beschränkung geführt erstellen","Criar restrição guiada"],
@@ -52,11 +62,42 @@
         public_transport:["Mezzi pubblici","Public transport","Transports publics","Transporte público","Öffentlicher Verkehr","Transportes públicos"],
         carpool_toll_free:["No pedaggio per carpool","Toll-free carpool","Péage gratuit pour covoiturage","Sin peaje para vehículos compartidos","Mautfrei für Fahrgemeinschaften","Sem portagem para boleias"],
         pending:["Opzioni dimostrative: disponibilità per Paese, segmento e direzione ancora da verificare nel pannello nativo.","Design options only: country, segment and direction eligibility still requires native WME verification.","Options de conception : disponibilité à vérifier dans WME.","Opciones de diseño: disponibilidad aún por verificar en WME.","Entwurfsoptionen: Verfügbarkeit in WME noch zu prüfen.","Opções de desenho: disponibilidade ainda por verificar no WME."],
+        restriction_kind:["Che tipo di restrizione vuoi creare?","Which restriction would you like to create?","Quel type de restriction souhaitez-vous créer ?","¿Qué tipo de restricción quieres crear?","Welche Beschränkung möchtest du erstellen?","Que tipo de restrição queres criar?"],
+        BLOCKED:["Transito vietato (con eventuali eccezioni)","No entry (with optional exceptions)","Accès interdit (avec exceptions éventuelles)","Acceso prohibido (con excepciones opcionales)","Durchfahrt verboten (mit möglichen Ausnahmen)","Passagem proibida (com exceções opcionais)"],
+        FREE:["Transito consentito (con divieti per veicoli scelti)","Access allowed (with blocks for selected vehicles)","Accès autorisé (sauf véhicules choisis)","Acceso permitido (salvo vehículos seleccionados)","Zufahrt erlaubt (außer gewählte Fahrzeuge)","Acesso permitido (exceto veículos selecionados)"],
+        TOLL:["Transito a pedaggio (con possibili esenzioni)","Toll road (with optional exemptions)","Accès à péage (avec exemptions éventuelles)","Acceso con peaje (con posibles exenciones)","Mautpflichtig (mit möglichen Ausnahmen)","Via com portagem (com possíveis isenções)"],
+        vehicle_step:["Per quali veicoli vuoi definire un'eccezione?","Which vehicles should receive an exception?","Quels véhicules reçoivent une exception ?","¿Qué vehículos tendrán una excepción?","Welche Fahrzeuge sollen eine Ausnahme erhalten?","Que veículos devem ter uma exceção?"],
+        vehicles_optional:["Nessuna selezione: il divieto vale per tutti. Le categorie selezionate saranno esentate dal divieto.","No selection: all vehicles are blocked. Selected types will be allowed through.","Aucun choix : tous les véhicules sont bloqués. Les types choisis seront autorisés.","Sin selección: se prohíbe el acceso a todos. Los tipos elegidos estarán exentos.","Keine Auswahl: alle Fahrzeuge sind gesperrt. Ausgewählte Arten sind ausgenommen.","Sem seleção: todos os veículos são bloqueados. Os tipos selecionados ficam isentos."],
+        vehicles_blocked:["Seleziona almeno un tipo di veicolo da vietare: gli altri restano autorizzati.","Select at least one vehicle type to block; others remain allowed.","Choisissez au moins un type de véhicule interdit ; les autres restent autorisés.","Selecciona al menos un tipo de vehículo prohibido; los demás siguen autorizados.","Wähle mindestens eine zu sperrende Fahrzeugart; andere bleiben erlaubt.","Seleciona pelo menos um tipo de veículo a proibir; os outros continuam permitidos."],
+        vehicles_toll:["Seleziona almeno un tipo di veicolo esente dal pedaggio.","Select at least one vehicle type to exempt from the toll.","Choisissez au moins un type de véhicule exempté du péage.","Selecciona al menos un tipo de vehículo exento del peaje.","Wähle mindestens eine von der Maut befreite Fahrzeugart.","Seleciona pelo menos um tipo de veículo isento da portagem."],
+        vehicles_unknown:["Le categorie sono tratte dallo SDK: non è ancora verificato se siano disponibili per questo Paese o tipo di restrizione. Nessuna modifica sarà effettuata.","Vehicle types come from the SDK: local availability for this country and restriction is not yet verified. Nothing will be changed.","Types issus du SDK : disponibilité locale non vérifiée. Aucune modification ne sera effectuée.","Tipos del SDK: disponibilidad local no verificada. No se realizarán cambios.","Fahrzeugarten aus dem SDK: lokale Verfügbarkeit noch nicht geprüft. Keine Änderungen.","Tipos do SDK: disponibilidade local não verificada. Sem alterações."],
+        select_vehicle:["Seleziona almeno un veicolo per questo tipo di restrizione.","Select at least one vehicle for this restriction type.","Sélectionnez au moins un véhicule pour ce type de restriction.","Selecciona al menos un vehículo para este tipo de restricción.","Wähle mindestens eine Fahrzeugart für diese Beschränkung.","Seleciona pelo menos um veículo para este tipo de restrição."],
+        rule_preview:["Regola principale","Default behavior","Règle principale","Regla principal","Grundregel","Regra principal"],
+        vehicle_preview:["Eccezione per i veicoli selezionati","Exception for selected vehicles","Exception pour les véhicules choisis","Excepción para vehículos seleccionados","Ausnahme für gewählte Fahrzeuge","Exceção para os veículos selecionados"],
+        no_exceptions:["Nessuna eccezione","No exceptions","Aucune exception","Sin excepciones","Keine Ausnahmen","Sem exceções"],
         summary:["Riepilogo di prova","Test summary","Résumé de test","Resumen de prueba","Testübersicht","Resumo de teste"],
         changed:["La selezione è cambiata. Chiudi e riapri la procedura.","Selection changed. Close and reopen the wizard.","La sélection a changé. Rouvrez l'assistant.","La selección ha cambiado. Vuelve a abrir el asistente.","Auswahl geändert. Assistent erneut öffnen.","A seleção mudou. Reabre o assistente."],
         anchor:["Pulsante nel pannello WME","Button in WME panel","Bouton dans WME","Botón en WME","Schaltfläche in WME","Botão no WME"],
         found:["Rilevato","Detected","Détecté","Detectado","Erkannt","Detetado"],
         fallback:["Non rilevato: usa questa scheda.","Not detected: use this tab.","Non détecté : utilisez cet onglet.","No detectado: usa esta pestaña.","Nicht erkannt: diesen Tab verwenden.","Não detetado: usa este separador."]
+    };
+    // Labels for all 15 documented SDK VehicleType values.
+    const vehicleLabels = {
+        BUS:["Autobus","Bus","Bus","Autobús","Bus","Autocarro"],
+        CAV:["Veicolo connesso/autonomo","Connected/automated vehicle","Véhicule connecté/autonome","Vehículo conectado/autónomo","Vernetztes/autonomes Fahrzeug","Veículo conectado/autónomo"],
+        CLEAN_FUEL:["Veicolo a combustibile pulito","Clean-fuel vehicle","Véhicule à carburant propre","Vehículo de combustible limpio","Fahrzeug mit sauberem Kraftstoff","Veículo a combustível limpo"],
+        EV:["Veicolo elettrico","Electric vehicle","Véhicule électrique","Vehículo eléctrico","Elektrofahrzeug","Veículo elétrico"],
+        HAZARDOUS_MATERIALS:["Trasporto merci pericolose","Hazardous materials","Transport de matières dangereuses","Mercancías peligrosas","Gefahrguttransport","Materiais perigosos"],
+        HOV_2:["HOV 2+","HOV 2+","HOV 2+","HOV 2+","HOV 2+","HOV 2+"],
+        HOV_3:["HOV 3+","HOV 3+","HOV 3+","HOV 3+","HOV 3+","HOV 3+"],
+        HYBRID:["Veicolo ibrido","Hybrid vehicle","Véhicule hybride","Vehículo híbrido","Hybridfahrzeug","Veículo híbrido"],
+        MOTORCYCLE:["Motocicletta","Motorcycle","Moto","Motocicleta","Motorrad","Motociclo"],
+        PRIVATE:["Auto privata","Private car","Voiture particulière","Coche particular","Privat-Pkw","Automóvel particular"],
+        PUBLIC_TRANSPORTATION:["Trasporto pubblico","Public transportation","Transport public","Transporte público","Öffentlicher Verkehr","Transporte público"],
+        RV:["Camper","Recreational vehicle","Camping-car","Autocaravana","Wohnmobil","Autocaravana"],
+        TAXI:["Taxi","Taxi","Taxi","Taxi","Taxi","Táxi"],
+        TOWING_VEHICLE:["Veicolo con rimorchio","Towing vehicle","Véhicule tracteur","Vehículo con remolque","Zugfahrzeug","Veículo com reboque"],
+        TRUCK:["Autocarro","Truck","Camion","Camión","Lkw","Camião"]
     };
     const nativeLabels = new Set(["aggiungi restrizioni","aggiungi restrizione","add restrictions","add restriction","ajouter des restrictions","ajouter une restriction","añadir restricciones","agregar restricciones","añadir restricción","beschränkungen hinzufügen","beschränkung hinzufügen","adicionar restrições","adicionar restrição"]);
     function normalizeLabel(value) {
@@ -72,6 +113,12 @@
         if (!c || (typeof c.id !== "number" && typeof c.id !== "string")) return null;
         return {id:c.id, name:typeof c.name === "string" ? c.name : String(c.id), code:typeof c.code === "string" ? c.code : null};
     }
+    function selectedVehicleTypes(types) {
+        if (!Array.isArray(types) || types.some(type => !VEHICLE_TYPES.includes(type))) throw new Error("Invalid vehicle selection");
+        return VEHICLE_TYPES.filter(type => types.includes(type));
+    }
+    // Pure, read-only model. SDK allows default BLOCKED with optional FREE rules,
+    // FREE with mandatory BLOCKED rules, and TOLL with mandatory FREE rules.
     function normalizeDraft(draft, segment) {
         if (!availableDirections(segment).includes(draft.direction)) throw new Error("Direction unavailable");
         if (!SCOPES.includes(draft.scope)) throw new Error("Invalid scope");
@@ -79,7 +126,16 @@
         // WME displays 'None' for scope as an invalid placeholder, not a valid target.
         // The lane type's 'None' remains a distinct, valid design choice.
         // These labels are still unverified as SDK enum values or country capabilities.
-        return {direction:draft.direction, scope:draft.scope, lane:draft.lane, verified:false};
+        if (!RESTRICTION_TYPES.includes(draft.restrictionType)) throw new Error("Invalid restriction type");
+        const vehicleTypes = selectedVehicleTypes(draft.vehicleTypes);
+        if (draft.restrictionType !== "BLOCKED" && !vehicleTypes.length) {
+            throw new Error("Selected restriction type requires explicit vehicle override rules");
+        }
+        return {
+            direction:draft.direction, scope:draft.scope, lane:draft.lane,
+            defaultType:draft.restrictionType, overrideType:OVERRIDE_TYPES[draft.restrictionType],
+            vehicleTypes, verified:false
+        };
     }
     async function readContext(sdk) {
         const sel = await sdk.Editing.getSelection();
@@ -92,7 +148,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeLabel,readContext,SCOPES,LANES};
+        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeLabel,readContext,selectedVehicleTypes,SCOPES,LANES,RESTRICTION_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -163,7 +219,7 @@
         dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
         document.body.append(dialog);
         let step=0;
-        const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none"};
+        const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
         const options = (keys,value,onChange) => {
             const box=node("div");
             for(const k of keys) {
@@ -179,6 +235,8 @@
             // Guard progress here as well as in the button state: no implicit scope.
             if (step === 1 && !SCOPES.includes(draft.scope)) return;
             if (step === 2 && !LANES.includes(draft.lane)) return;
+            if (step === 3 && !RESTRICTION_TYPES.includes(draft.restrictionType)) return;
+            if (step === 4 && draft.restrictionType !== "BLOCKED" && !selectedVehicleTypes(draft.vehicleTypes).length) return;
             let fresh;
             try {fresh=await readContext(sdk);} catch (_) {}
             if (!fresh || fresh.segment.id!==current.segment.id ||
@@ -204,13 +262,61 @@
             }
             if(step===2) dialog.append(node("h3",tr("lane")),options(LANES,draft.lane,v=>draft.lane=v),node("p",tr("pending")));
             if(step===3) {
+                dialog.append(node("h3",tr("restriction_kind")),
+                    options(RESTRICTION_TYPES,draft.restrictionType,v=>{
+                        draft.restrictionType=v;
+                        draft.vehicleTypes=[];
+                    }),node("p",tr("pending")));
+            }
+            if(step===4) {
+                dialog.append(node("h3",tr("vehicle_step")));
+                const helpKey = draft.restrictionType==="BLOCKED"?"vehicles_optional":
+                    draft.restrictionType==="FREE"?"vehicles_blocked":"vehicles_toll";
+                dialog.append(node("p",tr(helpKey)));
+                const all = node("div");
+                all.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:6px;";
+                for (const type of VEHICLE_TYPES) {
+                    const label=node("label"),input=node("input");
+                    input.type="checkbox";input.value=type;input.checked=draft.vehicleTypes.includes(type);
+                    input.addEventListener("change",()=>{
+                        draft.vehicleTypes=input.checked?
+                            [...new Set([...draft.vehicleTypes,type])]:
+                            draft.vehicleTypes.filter(value=>value!==type);
+                        render();
+                    });
+                    label.style.cssText="display:flex;align-items:start;gap:6px;font-size:12px;padding:5px 0;";
+                    label.append(input,document.createTextNode(vehicleLabels[type]?.[LANGS.indexOf(lang)]||type));
+                    all.append(label);
+                }
+                dialog.append(all);
+                if(draft.restrictionType!=="BLOCKED" && !draft.vehicleTypes.length) {
+                    const warning=node("p",tr("select_vehicle"));
+                    warning.setAttribute("role","alert");warning.style.cssText="color:#c62828;font-weight:600;";
+                    dialog.append(warning);
+                }
+                dialog.append(node("p",tr("vehicles_unknown")));
+            }
+            if(step===5) {
                 const checked=normalizeDraft(draft,current.segment);
-                dialog.append(node("h3",tr("summary")),node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),node("p",tr("pending")));
+                dialog.append(node("h3",tr("summary")),
+                    node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
+                    node("p",tr("rule_preview")+": "+tr(checked.defaultType)),
+                    node("p",tr("vehicle_preview")+" ("+checked.overrideType+"): "+
+                        (checked.vehicleTypes.length?
+                            checked.vehicleTypes.map(type=>vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", "):
+                            tr("no_exceptions"))),
+                    node("p",tr("vehicles_unknown")));
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
             if(step>0)footer.append(button(tr("back"),()=>{step--;render();}));
-            if(step<3){const next=button(tr("next"),advance);next.disabled=(step===1&&!SCOPES.includes(draft.scope))||(step===2&&!LANES.includes(draft.lane));footer.append(next);}
+            if(step<5){
+                const next=button(tr("next"),advance);
+                next.disabled=(step===1&&!SCOPES.includes(draft.scope))||
+                    (step===2&&!LANES.includes(draft.lane))||
+                    (step===4&&draft.restrictionType!=="BLOCKED"&&!draft.vehicleTypes.length);
+                footer.append(next);
+            }
             dialog.append(footer);
         }
         render();
