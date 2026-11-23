@@ -16,8 +16,9 @@ assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['unlisted']
 assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['pass1']},null),/Unrecognized country permit/);
 assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:'pass1'},null),/Invalid permits/);
 assert.ok(src.includes('if(step===6) {'),'Advanced step must precede the summary');
-assert.ok(src.includes('if(step===5){try{normalizeAdvanced(advanced,current.permits);}catch(_){return;}}'),
-  'Next handler must block invalid advanced conditions');
+assert.ok(src.includes('const conditions=normalizeAdvanced(advanced,current.permits);') &&
+          src.includes('normalizeDraft(draft,current.segment,conditions);'),
+  'Next handler must validate advanced conditions and whitelist before reaching summary');
 assert.ok(src.includes('JSON.stringify(fresh.permits)!==JSON.stringify(current.permits)'),
   'Changes to country permit choices must abort the wizard');
 assert.deepEqual(a.availableDirections({isAtoB:true}),['FWD']);
