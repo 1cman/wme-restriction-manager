@@ -73,7 +73,7 @@ for (const restrictionType of a.RESTRICTION_TYPES) {
   assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TRUCK'],'Input must not be modified');
 }
 for (const restrictionType of ['ALLOWED','TOLL']) {
-  const expected=restrictionType==='ALLOWED'?/ALLOWED requires explicit authorization criteria/:/TOLL requires explicit vehicle exemption rules/;
+  const expected=restrictionType==='ALLOWED'?/ALLOWED requires at least one authorized vehicle type/:/TOLL requires explicit vehicle exemption rules/;
   assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:[]},{isAtoB:true}),expected);
 }
 // White-list mode must NOT produce an SDK FREE default (which allows all vehicles).
