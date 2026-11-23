@@ -220,6 +220,89 @@ assert.ok(src.includes('if(rule.access==="DIRECT")box.append(node("p",tr("direct
   'Summary must clearly label direct access');
 assert.ok(src.includes('(step===5&&!isAdvancedValid())'),
   'Next button must be blocked on invalid per-vehicle requirements');
+// Alpha 10 red flow: skip permits/occupancy entirely, except optional motorcycle engine.
+for(const types of [[],['PRIVATE'],['TRUCK']]){
+ assert.equal(a.nextWizardStep(4,'BLOCKED',types),7);
+ assert.equal(a.previousWizardStep(7,'BLOCKED',types),4);
+}
+assert.equal(a.nextWizardStep(4,'BLOCKED',['MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(4,'BLOCKED',['PRIVATE','MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(5,'BLOCKED',['MOTORCYCLE']),7);
+assert.equal(a.nextWizardStep(7,'BLOCKED',['MOTORCYCLE']),6);
+assert.equal(a.previousWizardStep(6,'BLOCKED',['MOTORCYCLE']),7);
+assert.equal(a.previousWizardStep(7,'BLOCKED',['MOTORCYCLE']),5);
+assert.equal(a.previousWizardStep(5,'BLOCKED',['MOTORCYCLE']),4);
+for(const intent of ['ALLOWED','TOLL']){
+ assert.equal(a.nextWizardStep(4,intent,['MOTORCYCLE']),5);
+ assert.equal(a.nextWizardStep(5,intent,['MOTORCYCLE']),6);
+ assert.equal(a.previousWizardStep(6,intent,['MOTORCYCLE']),5);
+}
+const redSchedule={
+ startDate:'2026-12-01',endDate:'2027-01-15',
+ weekdays:['MONDAY','FRIDAY'],allDay:false,
+ slots:[{fromTime:'07:00',toTime:'09:00'},{fromTime:'17:30',toTime:'19:00'}]
+};
+assert.deepEqual(a.normalizeRedSchedule(redSchedule),{
+ timeFrames:[{startDate:'2026-12-01',endDate:'2027-01-15',
+   weekdays:['MONDAY','FRIDAY'],fromTime:'07:00',toTime:'09:00',
+   timeZone:null,verified:false},
+  {startDate:'2026-12-01',endDate:'2027-01-15',
+   weekdays:['MONDAY','FRIDAY'],fromTime:'17:30',toTime:'19:00',
+   timeZone:null,verified:false}],
+ verified:false
+});
+assert.equal(a.normalizeRedSchedule({...redSchedule,allDay:true}).timeFrames.length,1);
+assert.equal(a.normalizeRedSchedule({
+ ...redSchedule,startDate:'',endDate:''
+}).timeFrames[0].startDate,null);
+assert.equal(redSchedule.slots[0].fromTime,'07:00','Validation must not mutate calendar input');
+for(const date of ['2026-02-30','2026-13-01','not-date']){
+ assert.throws(()=>a.normalizeRedSchedule({...redSchedule,startDate:date}),/Invalid dates/);
+}
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ endDate:'2026-11-30'}),/Invalid dates/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,weekdays:[]}),/Invalid weekdays/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ weekdays:['MONDAY','MONDAY']}),/Invalid weekdays/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ slots:[{fromTime:'22:00',toTime:'06:00'}]}),/Invalid time range/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ slots:[{fromTime:'09:00',toTime:'09:00'}]}),/Invalid time range/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ slots:Array(13).fill({fromTime:'09:00',toTime:'10:00'})}),/SAFE12/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ allDay:false,slots:[]}),/SAFE12/);
+assert.deepEqual(a.normalizeMotorDraft({enabled:false,engineType:''},true),
+ {engineType:null,verified:false});
+assert.deepEqual(a.normalizeMotorDraft({enabled:true,engineType:' SAMPLE '},true),
+ {engineType:'SAMPLE',verified:false});
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,engineType:''},true),
+ /Invalid experimental engine type/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,engineType:'SAMPLE'},false),
+ /Motorcycle type not selected/);
+const sampleRaw={W:{model:{segments:{getObjectById:()=>({
+ attributes:{restrictions:[{getDriveProfileList:()=>({
+  getDriveProfiles:()=>[{getEngineCapacities:()=>[
+    {attributes:{vehicleType:'MOTORCYCLE',engineType:'NATIVE-X'}},
+    {attributes:{vehicleType:'PRIVATE',engineType:'NOT-MOTOR'}}
+  ]}]
+ })}]}
+})}}}};
+assert.deepEqual(a.observedMotorTypes(sampleRaw,1),['NATIVE-X']);
+assert.deepEqual(a.observedMotorTypes({},1),[]);
+assert.ok(src.includes('if(step===7&&draft.restrictionType==="BLOCKED")'),
+ 'Date and time screen must be red-only');
+assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
+ 'Next navigation must use intent-aware flow');
+assert.ok(src.includes('const previous=previousWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
+ 'Back navigation must mirror the correct flow');
+assert.ok(src.includes('(step===7&&!isScheduleValid())'),
+ 'Invalid red schedule must block Next');
+assert.ok(src.includes('normalizeMotorDraft(motorDraft,draft.vehicleTypes.includes("MOTORCYCLE"));'),
+ 'Optional motor guard must be checked before advancing');
+assert.ok(src.includes('if(draft.restrictionType==="BLOCKED"){') &&
+ src.includes('node("h3",tr("motorcycle_step"))'),
+ 'Red motorcycle path must not show permit/occupancy controls');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
