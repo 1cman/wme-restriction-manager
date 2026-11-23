@@ -198,6 +198,32 @@ Green `ALLOWED` keeps the opposite meaning: `defaultType: BLOCKED` plus `FREE` a
 
 **Testing:** zero selected vehicles must remain BLOCKED; selecting PRIVATE, MOTORCYCLE or several categories must yield proposed FREE default and BLOCKED vehicle overrides. Verify motorcycle engine disabled (all motorcycles) and conditional fuel/electric thresholds, invalid thresholds, green whitelist/TOLL regressions, forward/back navigation and read-only guards on both WME Standard and Beta.
 
+## Alpha 12: SDK observation, consistency guard and write-readiness gate (2026-11-23)
+
+The SDK [SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.SegmentRestriction.html) interface explicitly documents `defaultType`, `direction`, `editable`, `laneScope`, `laneType`, `timeFrames`, and `vehicleRules`; `disposition` and `driveProfiles` are deprecated in favor of `laneScope` and `vehicleRules`. The [VehicleType](https://web-assets.waze.com/wme_sdk_docs/production/latest/types/index.SDK.VehicleType.html) reference lists the documented vehicle identifiers used in the prototype.
+
+**Implemented in read-only Alpha 12:**
+- The sidebar now offers an expandable **Technical inspection (SDK read-only)** of *existing* restrictions on the selected segment. It shows observed `laneScope`/`disposition` values, `laneType`, default restriction kinds, time-zone strings present in existing `timeFrames`, and counts of editable/non-editable/unknown restrictions. Duplicate values are removed and values are sorted. This panel shows **only bounded category metadata and counts**—no segment IDs, free-text descriptions, named permits, or raw private engine data.
+- The observation panel explicitly warns that observing an enum value in an existing restriction **does not prove** that it can be used to create a new restriction at that location or with current user permissions. No observed value is automatically mapped into a new draft.
+- On opening the wizard, it captures a **fingerprint** of the selected segment's documented SDK restriction fields and its traffic directions. Before each Next transition, the selected segment/country/available passes/direction checks still run; it now also aborts if that fingerprint changed. This prevents continuing a stale draft after a detectable SDK restriction modification.
+- The fingerprint covers SDK `direction`, `defaultType`, `laneScope`, `disposition`, `laneType`, `description`, `timeFrames`, `vehicleRules`, `driveProfiles`, `editable` and the segment directional flags. It is only kept in the current wizard session; it is not exported or stored. Unknown or circular SDK data produces an **unknown** snapshot rather than guessed data. **This is NOT a complete private-WME-model snapshot**; changes only in internal motorcycle engine metadata may escape detection and would need separate validation.
+- Nothing writes WME, stores presets, or enables a Save/Apply button. Stable 3.2.0 is unchanged. Alpha 11's red/green/blue selection logic remains the same.
+
+**Verified versus outstanding, with source confidence:**
+
+| Topic | Evidence today | Status for real writes |
+| --- | --- | --- |
+| Red default/selected and green allowlist `BLOCKED`/`FREE` combinations | Documented SDK `SegmentRestriction`, maintainer native WME screenshots, isolated tests | **SDK semantics verified; live write behavior not yet tested** |
+| SDK restriction field names | Documented `SegmentRestriction`, including deprecations | **Field names verified** |
+| Scope and lane-type enum values and geographic eligibility | WME screenshots + values observed on existing selected segments | **Mapping and new-write eligibility not verified** |
+| Country permit list | SDK `Countries.getById` / `restrictionSubscriptions` | **Read/list verified in prototype; actual rule composition not verified** |
+| Engine and capacity/power comparisons | Native WME screenshot + internal preservation logic from stable 3.2.0 | **New-rule SDK/native mapping and country support not verified** |
+| Last-digit plate restriction | Native WME Portuguese screenshot and Waze app help | **WME per-city support and write shape not verified** |
+| Red dates and hours | Pure draft validation and SAFE12 concept from stable | **Per-segment timezone, holiday exclusions, full SAFE12 operation budget and native serialization not verified** |
+| Editing safety | Alpha change fingerprint + isolated tests | **Partial SDK-only stale-draft detection; no real-write safety approval** |
+
+**Field validation protocol (next):** in WME Standard and Beta, select one segment with an existing restriction and inspect the new technical panel. Compare observed scopes, lane types, time zones and editable counts with the native panel. Then select an unrelated segment without any restrictions: the observed fields should be empty/unknown (never invented). Open the wizard, then edit an existing restriction in WME separately and verify the next step reports that the data has changed. For motorcycle engine types, compare a known WME native example and the 3.2.0 read-only preservation path separately; avoid assuming arbitrary engine enums. Do not enable writes before all unknowns above are resolved.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
