@@ -7,6 +7,19 @@ const file=path.join(__dirname,'../alpha/Restriction_Manager_Guided_Alpha.user.j
 const src=fs.readFileSync(file,'utf8');
 new vm.Script(src,{filename:file});
 const a=require(file);
+assert.deepEqual(a.normalizeAdvanced({minPassengers:null,permitIds:[]},null),{minPassengers:null,permitIds:[],verified:false});
+assert.deepEqual(a.normalizeAdvanced({minPassengers:3,permitIds:['pass1','pass1']},[{id:'pass1',name:'Example'}]),{minPassengers:3,permitIds:['pass1'],verified:false});
+for(const bad of [0,1,-1,1.5,NaN,Infinity,'2']) {
+    assert.throws(()=>a.normalizeAdvanced({minPassengers:bad,permitIds:[]},[]),/Invalid occupancy/);
+}
+assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['unlisted']},[]),/Unrecognized country permit/);
+assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['pass1']},null),/Unrecognized country permit/);
+assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:'pass1'},null),/Invalid permits/);
+assert.ok(src.includes('if(step===6) {'),'Advanced step must precede the summary');
+assert.ok(src.includes('if(step===5){try{normalizeAdvanced(advanced,current.permits);}catch(_){return;}}'),
+  'Next handler must block invalid advanced conditions');
+assert.ok(src.includes('JSON.stringify(fresh.permits)!==JSON.stringify(current.permits)'),
+  'Changes to country permit choices must abort the wizard');
 assert.deepEqual(a.availableDirections({isAtoB:true}),['FWD']);
 assert.deepEqual(a.availableDirections({isBtoA:true}),['REV']);
 assert.deepEqual(a.availableDirections({isTwoWay:true}),['FWD','REV','BOTH']);
@@ -74,14 +87,29 @@ assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'
   'Next button must still guard scope');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
+ const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
+ let requestedCountryId=null;
+ const countrySdk={DataModel:{Countries:{getById:async ({countryId})=>{
+   requestedCountryId=countryId;
+   return {restrictionSubscriptions:[...mockPermits,{id:'pass1',name:'Duplicate'},{name:'Invalid'}]};
+ }}}};
+ assert.deepEqual(await a.readPermits(countrySdk,{id:77,name:'Any Country'}),mockPermits);
+ assert.equal(requestedCountryId,77);
+ assert.equal(await a.readPermits(countrySdk,null),null);
+ assert.equal(await a.readPermits({DataModel:{}},{id:77}),null);
+ assert.deepEqual(await a.readPermits({DataModel:{Countries:{getById:async()=>({restrictionSubscriptions:[]})}}},{id:77}),[]);
+ assert.equal(await a.readPermits({DataModel:{Countries:{getById:async()=>{throw Error('Unavailable')}}}},{id:77}),null);
  const segment={id:1,isAtoB:true,restrictions:[]};
  const sdk={Editing:{getSelection:async()=>({objectType:'segment',ids:[1]})},DataModel:{Segments:{getById:async()=>segment,getAddress:async()=>({country:{id:1,name:'Italy'}})}}};
  assert.equal((await a.readContext(sdk)).country.name,'Italy');
+ assert.equal((await a.readContext(sdk)).permits,null);
+ sdk.DataModel.Countries=countrySdk.DataModel.Countries;
+ assert.deepEqual((await a.readContext(sdk)).permits,mockPermits);
  sdk.DataModel.Segments.getAddress=async()=>{throw Error('unknown')};
  assert.equal((await a.readContext(sdk)).country,null);
  sdk.Editing.getSelection=async()=>({objectType:'venue',ids:[1]});
  assert.equal(await a.readContext(sdk),null);
  sdk.Editing.getSelection=async()=>({objectType:'segment',ids:[1,2]});
  assert.equal(await a.readContext(sdk),null);
- console.log('PASS: guided alpha direction, country, scope, lane draft and read-only guards');
+ console.log('PASS: guided alpha choices, country permits, advanced draft and read-only guards');
 })().catch(e=>{console.error(e);process.exitCode=1;});
