@@ -1,6 +1,6 @@
 # Restriction Manager 4.0 — Guided Creator roadmap
 
-## Alpha 3 (isolated, read-only)
+## Alpha 4 (isolated, read-only)
 
 Install the separate userscript in alpha/Restriction_Manager_Guided_Alpha.user.js alongside stable Restriction Manager. The script namespace and SDK ID differ. It does not write map data, save presets, access storage or connect to cloud services. It is not a stable release.
 
@@ -18,6 +18,31 @@ Initial live testing confirmed the read-only Alpha starts successfully and the g
 A subsequent editor screenshot confirmed WME's red validation message **«Seleziona una corsia per applicare la restrizione»** when the scope remains **Nessuna**. In Alpha 3 the `Nessuna` scope is therefore **hidden** from the wizard: no scope is preselected, a red accessible warning appears and the **Next** button is disabled until the editor explicitly chooses `Intero Segmento` or one of the three lanes. Validation is repeated inside the Next handler and when normalizing the draft. In contrast, `Nessuno` in the **lane-type** dropdown remains a valid, separate selection. The wizard still does not write to WME.
 
 This is a UI parity prototype, **not** an authorization to write the design values into WME. The next phase must verify the typed enum values for the native panel, and country/user permissions before enabling edits.
+
+## Alpha 4: guided restriction type and vehicle exceptions (2026-11-23)
+
+The wizard now continues beyond direction/scope/lane type:
+
+1. **Type of default restriction**: `BLOCKED`, `FREE` or `TOLL` (as documented for segment restriction rules).
+2. **Vehicle exceptions**: multiselect from the 15 documented `VehicleType` SDK values, with explanations of how default restrictions and overrides interact.
+3. **Read-only summary**: indicates the primary rule, the override rule and selected vehicle categories; clearly marks the result **unverified** and does not write map data.
+
+### SDK rule semantics
+
+- `BLOCKED`: all vehicles blocked by default; optional `FREE` exceptions.
+- `FREE`: vehicles allowed by default; at least one `BLOCKED` rule required.
+- `TOLL`: toll by default; at least one `FREE` exception required.
+
+For now each selected vehicle type represents a proposed rule exception. **Country eligibility, lane-type combinations, subscriptions, license plate rules, minimum occupancy, motorcycle engine limits, compound AND/OR conditions and remaining WME restriction kinds are not yet supported by this prototype**. The full matrix remains part of the acceptance criteria before enabling real writes. Current dropdowns are a generic SDK catalogue, not a guarantee that an editor can apply them in the current country.
+
+Sources consulted:
+- [WME SDK SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/production/latest/interfaces/index.SDK.SegmentRestriction.html)
+- [WME SDK VehicleType](https://web-assets.waze.com/wme_sdk_docs/production/latest/types/index.SDK.VehicleType.html)
+- [WME SDK RESTRICTION_TYPE](https://web-assets.waze.com/wme_sdk_docs/beta/latest/variables/index.SDK.RESTRICTION_TYPE.html)
+
+### Test protocol
+
+Select a segment and enter the wizard, explicitly select direction and lane, choose `BLOCKED`, `FREE`, or `TOLL`, then choose zero or more vehicle categories. Check that `FREE` and `TOLL` require at least one override vehicle. Check that the summary correctly preserves your selections when going backward and forward. No save/apply action should exist.
 
 ## Acceptance criteria before real editing
 
