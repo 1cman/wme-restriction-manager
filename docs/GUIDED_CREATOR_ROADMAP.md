@@ -69,14 +69,27 @@ Alpha 7 separates **wizard intents** from **SDK defaultType enum values**:
 | Wizard card / intent | Proposed SDK default | Proposed SDK override | Draft validation |
 | --- | --- | --- | --- |
 | Red: `BLOCKED`, Transito vietato | `BLOCKED` | optional `FREE` exceptions | Can omit exceptions |
-| Green: `ALLOWED`, Transito consentito *solo agli autorizzati* | `BLOCKED` | `FREE` for allowed criteria | Must specify at least one authorized vehicle type, country permit or valid minimum occupant count |
+| Green: `ALLOWED`, Transito consentito *solo agli autorizzati* | `BLOCKED` | `FREE` for allowed criteria | **Alpha 8:** at least one authorized vehicle type is mandatory; passes and occupancy are additional, optional draft conditions |
 | Blue: `TOLL`, Transito a pedaggio | `TOLL` | `FREE` exemptions | Existing vehicle-exemption requirement retained |
 
-`ALLOWED` **is an internal wizard intent, not an SDK RESTRICTION_TYPE**. Never submit it or mistake it for SDK `FREE`. Green and red currently share a BLOCKED base but have different draft intent and validation; the green flow is an explicit whitelist. The green vehicle step says **choose vehicles to authorize**, not vehicles to prohibit. Other traffic remains blocked. If no vehicle types are selected, the user can proceed to advanced conditions, but a permit or valid minimum occupancy must then be specified before reaching the summary. Changing the intent clears existing vehicle and advanced draft selections to avoid accidental authorizations.
+`ALLOWED` **is an internal wizard intent, not an SDK RESTRICTION_TYPE**. Never submit it or mistake it for SDK `FREE`. Green and red currently share a BLOCKED base but have different draft intent and validation; the green flow is an explicit whitelist. The green vehicle step says **choose vehicles to authorize**, not vehicles to prohibit. Other traffic remains blocked. **Historical note:** Alpha 7 allowed progression without a selected vehicle type; Alpha 8 supersedes this behavior and requires at least one authorized vehicle. Changing the intent clears existing vehicle and advanced draft selections to avoid accidental authorizations.
 
 In the summary, show the SDK `BLOCKED` base and `FREE` exemptions, plus a prominent note that all other traffic is blocked. Because the current draft does not model native AND/OR groups, combining vehicle types, permits and passenger counts **does not yet establish the exact eligibility logic in WME**. Country-specific license plate options remain unavailable pending native verification. There is still **no WME write, apply, save or preset creation** in this Alpha. The stable script is untouched.
 
-Testing: select the green intent, choose PRIVATE and EV, and confirm the summary shows a BLOCKED default and FREE authorizations (not a FREE default with BLOCKED exceptions). Also test the green intent without vehicle selection: next step permits or occupancy can satisfy the whitelist, but leaving all criteria empty must block the summary. Test red and blue flows for regression and both WME Standard and Beta. Waze editors have reported routing risks if e.g. PRIVATE is allowed but EV is omitted from whitelist; use native restrictions with care.
+Testing: select the green intent, choose PRIVATE and EV, and confirm the summary shows a BLOCKED default and FREE authorizations (not a FREE default with BLOCKED exceptions). In Alpha 8, verify that the green intent **cannot proceed without at least one selected vehicle**, irrespective of permits or occupancy. Test red and blue flows for regression and both WME Standard and Beta. Waze editors have reported routing risks if e.g. PRIVATE is allowed but EV is omitted from whitelist; use native restrictions with care.
+
+## Alpha 8: vehicle selection required and alphabetic permit typeahead (2026-11-23)
+
+Following WME editor testing, the green **Transito consentito** whitelist now **always requires at least one selected vehicle type** before proceeding. A permit or minimum occupancy can no longer replace that step. Both the disabled Next button and the Next handler enforce the requirement, and the read-only draft validator independently rejects an empty whitelist. Red `BLOCKED` continues to allow no vehicle exceptions; blue `TOLL` retains its existing vehicle-exemption requirement. The earlier Alpha 7 allowance for a pass-only or occupancy-only whitelist is intentionally retired.
+
+The Advanced conditions step now offers a **searchable pass list with autocomplete**:
+- The visible checklist is alphabetically sorted by pass name using the active editor UI language's locale, with stable ID tie-breaking; the SDK result is not mutated.
+- Search ignores letter case and accents, filters the checklist as you type, and offers a dropdown of alphabetically ordered suggestions (up to 8). Keyboard arrows navigate suggestions, Enter toggles the highlighted (or first) pass, Escape clears the search.
+- Selecting an autocomplete suggestion or clicking a checkbox updates the **same persistent set of selected permit IDs**; searching or clearing the input does not drop earlier selections. A live count shows the selected total.
+- No hardcoded Italian pass list. The values still come from `sdk.DataModel.Countries.getById({countryId})` for the **segment's** country. If unavailable, the UI shows an unknown-list message rather than offering guessed passes.
+- The experiment remains **read-only**: it does not apply restrictions, generate actual SDK write payloads, modify presets, or use local/cloud storage. Country eligibility, compound AND/OR matching, and plate restrictions are not yet verified.
+
+**Test:** choose green and confirm Next stays disabled with no selected vehicle even if previously selected pass/occupancy exists; select a vehicle and continue. On the pass screen inspect alphabetical names, type a substring or an accent-free version of an accented name, use autocomplete by mouse and Enter, select multiple passes, clear search and confirm selections persist. Validate Standard and Beta WME.
 
 ## Acceptance criteria before real editing
 
