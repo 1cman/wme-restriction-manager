@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.1
+// @version      4.0.0-alpha.2
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,11 +18,11 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.1";
+    const VERSION = "4.0.0-alpha.2";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
-    const SCOPES = ["segment", "left", "center", "right"];
-    const LANES = ["express", "fast", "hov", "public_transport", "carpool_toll_free"];
+    const SCOPES = ["scope_none", "left", "center", "right", "segment"];
+    const LANES = ["lane_none", "express", "fast", "hov", "public_transport", "carpool_toll_free"];
     const LANGS = ["it", "en", "fr", "es", "de", "pt"];
     const labels = {
         launch:["Crea restrizione guidata","Create guided restriction","Créer une restriction guidée","Crear restricción guiada","Beschränkung geführt erstellen","Criar restrição guiada"],
@@ -39,11 +39,13 @@
         REV:["Da B verso A","B to A","De B vers A","De B a A","B nach A","De B para A"],
         BOTH:["Entrambe le direzioni","Both directions","Les deux sens","Ambos sentidos","Beide Richtungen","Ambos os sentidos"],
         scope:["A cosa si applica?","What does it apply to?","À quoi s'applique-t-elle ?","¿A qué se aplica?","Worauf gilt sie?","A que se aplica?"],
-        segment:["Intero segmento","Entire segment","Segment entier","Segmento completo","Gesamtes Segment","Segmento inteiro"],
+        scope_none:["Nessuna","None","Aucune","Ninguna","Keine","Nenhuma"],
+        segment:["Intero Segmento","Entire segment","Segment entier","Segmento completo","Gesamtes Segment","Segmento inteiro"],
         left:["Corsia sinistra","Left lane","Voie gauche","Carril izquierdo","Linker Fahrstreifen","Via esquerda"],
         center:["Corsia centrale","Center lane","Voie centrale","Carril central","Mittlerer Fahrstreifen","Via central"],
         right:["Corsia destra","Right lane","Voie droite","Carril derecho","Rechter Fahrstreifen","Via direita"],
         lane:["Tipologia di corsia richiesta","Requested lane type","Type de voie souhaité","Tipo de carril solicitado","Gewünschter Fahrstreifentyp","Tipo de via pretendido"],
+        lane_none:["Nessuno","None","Aucun","Ninguno","Keine","Nenhum"],
         express:["Express","Express","Express","Express","Express","Express"],
         fast:["Fast","Fast","Fast","Fast","Fast","Fast"],
         hov:["HOV","HOV","HOV","HOV","HOV","HOV"],
@@ -73,8 +75,10 @@
     function normalizeDraft(draft, segment) {
         if (!availableDirections(segment).includes(draft.direction)) throw new Error("Direction unavailable");
         if (!SCOPES.includes(draft.scope)) throw new Error("Invalid scope");
-        if (draft.scope !== "segment" && !LANES.includes(draft.lane)) throw new Error("Invalid lane design option");
-        return {direction:draft.direction, scope:draft.scope, lane:draft.scope === "segment" ? null : draft.lane, verified:false};
+        if (!LANES.includes(draft.lane)) throw new Error("Invalid lane design option");
+        // Never collapse the native None vs Entire segment, or None lane type.
+        // Both dropdowns are independent, even when designing whole-segment restrictions.
+        return {direction:draft.direction, scope:draft.scope, lane:draft.lane, verified:false};
     }
     async function readContext(sdk) {
         const sel = await sdk.Editing.getSelection();
@@ -158,7 +162,7 @@
         dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
         document.body.append(dialog);
         let step=0;
-        const draft={direction:availableDirections(current.segment).at(-1),scope:"segment",lane:null};
+        const draft={direction:availableDirections(current.segment).at(-1),scope:"scope_none",lane:"lane_none"};
         const options = (keys,value,onChange) => {
             const box=node("div");
             for(const k of keys) {
@@ -178,22 +182,21 @@
                  !availableDirections(fresh.segment).includes(draft.direction)) {
                 dialog.replaceChildren(node("p",tr("changed")),button(tr("close"),()=>dialog.close()));return;
             }
-            if(step===1 && draft.scope==="segment") step=3;
-            else step++;
+            step++;
             render();
         }
         function render(){
             dialog.replaceChildren(node("h2",tr("launch")),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
             if(step===0) dialog.append(node("h3",tr("direction")),options(availableDirections(current.segment),draft.direction,v=>draft.direction=v));
-            if(step===1) dialog.append(node("h3",tr("scope")),options(SCOPES,draft.scope,v=>{draft.scope=v;draft.lane=null;}),node("p",tr("pending")));
+            if(step===1) dialog.append(node("h3",tr("scope")),options(SCOPES,draft.scope,v=>{draft.scope=v;}),node("p",tr("pending")));
             if(step===2) dialog.append(node("h3",tr("lane")),options(LANES,draft.lane,v=>draft.lane=v),node("p",tr("pending")));
             if(step===3) {
                 const checked=normalizeDraft(draft,current.segment);
-                dialog.append(node("h3",tr("summary")),node("p",tr(checked.direction)+" · "+tr(checked.scope)+(checked.lane?" · "+tr(checked.lane):"")),node("p",tr("pending")));
+                dialog.append(node("h3",tr("summary")),node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),node("p",tr("pending")));
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
-            if(step>0)footer.append(button(tr("back"),()=>{step=step===3&&draft.scope==="segment"?1:step-1;render();}));
+            if(step>0)footer.append(button(tr("back"),()=>{step--;render();}));
             if(step<3){const next=button(tr("next"),advance);next.disabled=step===2&&!draft.lane;footer.append(next);}
             dialog.append(footer);
         }
