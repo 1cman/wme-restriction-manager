@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.5
+// @version      4.0.0-alpha.6
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.5";
+    const VERSION = "4.0.0-alpha.6";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -83,6 +83,16 @@
         vehicle_preview:["Eccezione per i veicoli selezionati","Exception for selected vehicles","Exception pour les véhicules choisis","Excepción para vehículos seleccionados","Ausnahme für gewählte Fahrzeuge","Exceção para os veículos selecionados"],
         no_exceptions:["Nessuna eccezione","No exceptions","Aucune exception","Sin excepciones","Keine Ausnahmen","Sem exceções"],
         summary:["Riepilogo di prova","Test summary","Résumé de test","Resumen de prueba","Testübersicht","Resumo de teste"],
+        advanced:["Condizioni avanzate (anteprima)","Advanced conditions (preview)","Conditions avancées (aperçu)","Condiciones avanzadas (vista previa)","Erweiterte Bedingungen (Vorschau)","Condições avançadas (pré-visualização)"],
+        occupancy:["Occupanti minimi (facoltativo)","Minimum occupants (optional)","Occupants minimum (facultatif)","Ocupantes mínimos (opcional)","Mindestinsassen (optional)","Ocupantes mínimos (opcional)"],
+        occupancy_help:["Vuoto = nessun vincolo. Altrimenti inserisci un intero da 2 in su.","Blank = no limit. Otherwise enter an integer of at least 2.","Vide = aucune limite. Sinon entier à partir de 2.","Vacío = sin límite. Introduce entero de 2 o más.","Leer = keine Begrenzung. Sonst ganze Zahl ab 2.","Vazio = sem limite. Introduz inteiro a partir de 2."],
+        occupancy_error:["Il numero di occupanti deve essere un intero di almeno 2.","Occupants must be an integer of at least 2.","Le nombre doit être un entier à partir de 2.","El número debe ser entero de 2 o más.","Ganze Zahl ab 2 erforderlich.","Necessário inteiro a partir de 2."],
+        country_permits:["Pass disponibili nell'elenco del Paese","Permits listed for the segment country","Permis listés pour ce pays","Permisos listados para el país","Berechtigungen des Landes","Autorizações listadas para o país"],
+        permits_missing:["Elenco pass non disponibile tramite SDK.","SDK permit list unavailable.","Liste de permis SDK indisponible.","Lista SDK no disponible.","SDK-Liste nicht verfügbar.","Lista SDK indisponível."],
+        permits_empty:["Nessun pass restituito dallo SDK.","No permits returned by the SDK.","Aucun permis retourné.","El SDK no devuelve permisos.","Keine Berechtigungen gefunden.","Nenhuma autorização devolvida."],
+        permit_note:["La presenza nell'elenco non prova che il pass sia utilizzabile nella restrizione.","Listing does not prove the permit can be used here.","La liste ne garantit pas l'admissibilité.","La lista no garantiza compatibilidad.","Listeneintrag garantiert keine Verwendbarkeit.","A lista não garante elegibilidade."],
+        plate_note:["Regole targa: non selezionabili in questa Alpha; necessaria verifica nativa.","License plate rules: disabled pending native verification.","Plaques : vérification native requise.","Matrículas: requieren verificación.","Kennzeichen: native Prüfung erforderlich.","Matrículas: requerem verificação."],
+        no_condition:["Nessuna","None","Aucune","Ninguna","Keine","Nenhuma"],
         changed:["La selezione è cambiata. Chiudi e riapri la procedura.","Selection changed. Close and reopen the wizard.","La sélection a changé. Rouvrez l'assistant.","La selección ha cambiado. Vuelve a abrir el asistente.","Auswahl geändert. Assistent erneut öffnen.","A seleção mudou. Reabre o assistente."],
         anchor:["Pulsante nel pannello WME","Button in WME panel","Bouton dans WME","Botón en WME","Schaltfläche in WME","Botão no WME"],
         found:["Rilevato","Detected","Détecté","Detectado","Erkannt","Detetado"],
@@ -144,6 +154,27 @@
             vehicleTypes, verified:false
         };
     }
+    function normalizeAdvanced(advanced,permits) {
+        const minPassengers=advanced?.minPassengers??null;
+        if(minPassengers!==null&&(!Number.isSafeInteger(minPassengers)||minPassengers<2))throw Error("Invalid occupancy");
+        if(!Array.isArray(advanced?.permitIds))throw Error("Invalid permits");
+        const permitIds=[...new Set(advanced.permitIds)];
+        const allowed=new Set((permits||[]).map(p=>p.id));
+        if(permitIds.some(id=>typeof id!=="string"||!allowed.has(id)))throw Error("Unrecognized country permit");
+        return {minPassengers,permitIds,verified:false};
+    }
+    async function readPermits(sdk,country) {
+        if(!country||typeof sdk?.DataModel?.Countries?.getById!=="function")return null;
+        const countryId=Number(country.id);
+        if(!Number.isSafeInteger(countryId)||countryId<0)return null;
+        try{
+            const data=await sdk.DataModel.Countries.getById({countryId});
+            if(!Array.isArray(data?.restrictionSubscriptions))return null;
+            const list=data.restrictionSubscriptions.filter(p=>
+                typeof p?.id==="string"&&p.id.trim()&&typeof p?.name==="string"&&p.name.trim());
+            return [...new Map(list.map(p=>[p.id,{id:p.id,name:p.name}])).values()];
+        }catch(_){return null;}
+    }
     async function readContext(sdk) {
         const sel = await sdk.Editing.getSelection();
         if (!Array.isArray(sel?.ids) || sel.ids.length !== 1 || !String(sel.objectType || "").toLowerCase().includes("segment")) return null;
@@ -151,11 +182,12 @@
         if (!segment) return null;
         let address = null;
         try { address = await sdk.DataModel.Segments.getAddress({segmentId:segment.id}); } catch (_) {}
-        return {segment,country:countryIdentity(address)};
+        const country=countryIdentity(address);
+        return {segment,country,permits:await readPermits(sdk,country)};
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeLabel,readContext,selectedVehicleTypes,SCOPES,LANES,RESTRICTION_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,SCOPES,LANES,RESTRICTION_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -227,6 +259,7 @@
         document.body.append(dialog);
         let step=0;
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
+        const advanced={minPassengers:null,permitIds:[]};
         const options = (keys,value,onChange) => {
             const box=node("div");
             for(const k of keys) {
@@ -257,10 +290,12 @@
             if (step === 2 && !LANES.includes(draft.lane)) return;
             if (step === 3 && !RESTRICTION_TYPES.includes(draft.restrictionType)) return;
             if (step === 4 && draft.restrictionType !== "BLOCKED" && !selectedVehicleTypes(draft.vehicleTypes).length) return;
+            if(step===5){try{normalizeAdvanced(advanced,current.permits);}catch(_){return;}}
             let fresh;
             try {fresh=await readContext(sdk);} catch (_) {}
             if (!fresh || fresh.segment.id!==current.segment.id ||
                  JSON.stringify(fresh.country)!==JSON.stringify(current.country) ||
+                 JSON.stringify(fresh.permits)!==JSON.stringify(current.permits) ||
                  !availableDirections(fresh.segment).includes(draft.direction)) {
                 dialog.replaceChildren(node("p",tr("changed")),button(tr("close"),()=>dialog.close()));return;
             }
@@ -317,7 +352,44 @@
                 dialog.append(node("p",tr("vehicles_unknown")));
             }
             if(step===5) {
+                dialog.append(node("h3",tr("advanced")));
+                const occ=node("label",tr("occupancy")),number=node("input");
+                occ.style.cssText="display:block;font-weight:600;margin:12px 0;";
+                number.type="number";number.min="2";number.step="1";
+                number.value=advanced.minPassengers===null?"":String(advanced.minPassengers);
+                number.style.cssText="display:block;width:110px;padding:6px;margin:5px 0;border:1px solid #9ca3af;border-radius:6px;";
+                number.addEventListener("change",()=>{
+                    advanced.minPassengers=number.value.trim()===""?null:Number(number.value);render();
+                });
+                occ.append(number);dialog.append(occ,node("p",tr("occupancy_help")),node("h4",tr("country_permits")));
+                if(current.permits===null)dialog.append(node("p",tr("permits_missing")));
+                else if(!current.permits.length)dialog.append(node("p",tr("permits_empty")));
+                else {
+                    const box=node("div");box.style.cssText="max-height:130px;overflow:auto;border:1px solid #d1d5db;padding:6px;border-radius:7px;";
+                    for(const permit of current.permits){
+                        const item=node("label"),check=node("input");
+                        item.style.cssText="display:flex;gap:8px;margin:5px 0;";
+                        check.type="checkbox";check.checked=advanced.permitIds.includes(permit.id);
+                        check.addEventListener("change",()=>{
+                            advanced.permitIds=check.checked?
+                                [...new Set([...advanced.permitIds,permit.id])]:
+                                advanced.permitIds.filter(id=>id!==permit.id);
+                            render();
+                        });
+                        item.append(check,document.createTextNode(permit.name));box.append(item);
+                    }
+                    dialog.append(box);
+                }
+                dialog.append(node("p",tr("permit_note")),node("p",tr("plate_note")));
+                if(advanced.minPassengers!==null&&
+                    (!Number.isSafeInteger(advanced.minPassengers)||advanced.minPassengers<2)){
+                    const error=node("p",tr("occupancy_error"));
+                    error.style.color="#c62828";error.setAttribute("role","alert");dialog.append(error);
+                }
+            }
+            if(step===6) {
                 const checked=normalizeDraft(draft,current.segment);
+                const conditions=normalizeAdvanced(advanced,current.permits);
                 dialog.append(node("h3",tr("summary")),
                     node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
                     node("p",tr("rule_preview")+": "+tr(checked.defaultType)),
@@ -325,16 +397,22 @@
                         (checked.vehicleTypes.length?
                             checked.vehicleTypes.map(type=>vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", "):
                             tr("no_exceptions"))),
+                    node("p",tr("occupancy")+": "+(conditions.minPassengers===null?tr("no_condition"):conditions.minPassengers)),
+                    node("p",tr("country_permits")+": "+(conditions.permitIds.length?
+                      conditions.permitIds.map(id=>current.permits?.find(p=>p.id===id)?.name||id).join(", "):tr("no_condition"))),
+                    node("p",tr("plate_note")),
                     node("p",tr("vehicles_unknown")));
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
             if(step>0)footer.append(button(tr("back"),()=>{step--;render();}));
-            if(step<5){
+            if(step<6){
                 const next=button(tr("next"),advance);
                 next.disabled=(step===1&&!SCOPES.includes(draft.scope))||
                     (step===2&&!LANES.includes(draft.lane))||
-                    (step===4&&draft.restrictionType!=="BLOCKED"&&!draft.vehicleTypes.length);
+                    (step===4&&draft.restrictionType!=="BLOCKED"&&!draft.vehicleTypes.length) ||
+                    (step===5&&advanced.minPassengers!==null&&
+                     (!Number.isSafeInteger(advanced.minPassengers)||advanced.minPassengers<2));
                 footer.append(next);
             }
             dialog.append(footer);
