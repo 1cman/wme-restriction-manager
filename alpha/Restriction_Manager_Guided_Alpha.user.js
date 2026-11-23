@@ -770,6 +770,41 @@
                 }
             }
             if(step===6) {
+                if(draft.restrictionType==="ALLOWED"){
+                    const checked=normalizeDraft(draft,current.segment);
+                    const conditions=normalizeVehicleRules(
+                        checked.vehicleTypes,vehicleRules,current.permits
+                    );
+                    dialog.append(
+                        node("h3",tr("summary")),
+                        node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
+                        node("p",tr("rule_preview")+": "+tr("allowed_default")+
+                            " (SDK "+checked.defaultType+")"),
+                        node("h4",tr("vehicle_rules_summary"))
+                    );
+                    for(const rule of conditions.vehicles){
+                        const box=node("div");
+                        box.style.cssText="padding:8px 10px;margin:6px 0;border-radius:6px;"+
+                            "border-left:4px solid "+(rule.access==="DIRECT"?"#258B4C":"#1E7ACD")+";"+
+                            "background:#f1f5f9;";
+                        box.append(node("strong",vehicleLabels[rule.vehicleType]?.[LANGS.indexOf(lang)]||rule.vehicleType));
+                        if(rule.access==="DIRECT")box.append(node("p",tr("direct_access")));
+                        if(rule.requiresPass){
+                            const names=rule.permitIds.map(id=>
+                                current.permits?.find(p=>p.id===id)?.name||id);
+                            box.append(node("p",tr("country_permits")+": "+names.join(", ")));
+                        }
+                        if(rule.requiresOccupancy)
+                            box.append(node("p",tr("vehicle_occupancy")+": "+rule.minPassengers));
+                        if(rule.requiresPass&&rule.requiresOccupancy)
+                            box.append(node("p",tr("both_conditions")));
+                        dialog.append(box);
+                    }
+                    dialog.append(node("p",tr("others_blocked")),
+                        node("p",tr("criteria_unverified")),
+                        node("p",tr("plate_note")),
+                        node("p",tr("vehicles_unknown")));
+                }else{
                 const conditions=normalizeAdvanced(advanced,current.permits);
                 const checked=normalizeDraft(draft,current.segment,conditions);
                 const exceptionLabel=checked.restrictionIntent==="ALLOWED"?"allowed_preview":
@@ -789,6 +824,7 @@
                 if(checked.restrictionIntent==="ALLOWED")dialog.append(
                     node("p",tr("others_blocked")),node("p",tr("criteria_unverified")));
                 dialog.append(node("p",tr("plate_note")),node("p",tr("vehicles_unknown")));
+                }
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
