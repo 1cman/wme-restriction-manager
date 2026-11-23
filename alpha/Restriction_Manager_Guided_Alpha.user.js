@@ -929,6 +929,78 @@
                 }
                 }
             }
+            if(step===7&&draft.restrictionType==="BLOCKED"){
+                dialog.append(node("h3",tr("red_schedule")),node("p",tr("red_schedule_intro")));
+                const dates=node("div");
+                dates.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;";
+                for(const field of ["startDate","endDate"]){
+                    const label=node("label",tr(field==="startDate"?"schedule_start":"schedule_end"));
+                    label.style.cssText="display:block;font-weight:600;";
+                    const input=node("input");input.type="date";input.value=redSchedule[field];
+                    input.style.cssText="display:block;box-sizing:border-box;width:100%;"+
+                        "padding:7px;border:1px solid #9ca3af;border-radius:6px;";
+                    input.addEventListener("change",()=>{redSchedule[field]=input.value;render();});
+                    label.append(input);dates.append(label);
+                }
+                dialog.append(dates,node("h4",tr("schedule_days")));
+                const days=node("div");
+                days.style.cssText="display:flex;flex-wrap:wrap;gap:5px;";
+                for(const day of WEEKDAYS){
+                    const label=node("label"),input=node("input");
+                    label.style.cssText="display:flex;gap:4px;align-items:center;"+
+                        "padding:5px;border:1px solid #cbd5e1;border-radius:6px;";
+                    input.type="checkbox";input.checked=redSchedule.weekdays.includes(day);
+                    input.addEventListener("change",()=>{
+                        redSchedule.weekdays=input.checked?[...redSchedule.weekdays,day]:
+                            redSchedule.weekdays.filter(value=>value!==day);
+                        redSchedule.weekdays=WEEKDAYS.filter(value=>redSchedule.weekdays.includes(value));
+                        render();
+                    });
+                    label.append(input,document.createTextNode(tr(day)));days.append(label);
+                }
+                dialog.append(days);
+                const label=node("label"),allDay=node("input");
+                label.style.cssText="display:flex;align-items:center;gap:8px;margin:12px 0;";
+                allDay.type="checkbox";allDay.checked=redSchedule.allDay;
+                allDay.addEventListener("change",()=>{redSchedule.allDay=allDay.checked;render();});
+                label.append(allDay,document.createTextNode(tr("schedule_all_day")));dialog.append(label);
+                if(!redSchedule.allDay){
+                    for(const [index,slot] of redSchedule.slots.entries()){
+                        const row=node("div");row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;"+
+                            "align-items:end;margin:8px 0;";
+                        for(const prop of ["fromTime","toTime"]){
+                            const field=node("label",tr(prop==="fromTime"?"schedule_from":"schedule_to"));
+                            field.style.cssText="display:block;font-weight:600;";
+                            const input=node("input");input.type="time";input.value=slot[prop];
+                            input.style.cssText="display:block;padding:7px;"+
+                                "border:1px solid #9ca3af;border-radius:6px;";
+                            input.addEventListener("change",()=>{
+                                redSchedule.slots[index][prop]=input.value;render();
+                            });
+                            field.append(input);row.append(field);
+                        }
+                        if(redSchedule.slots.length>1)
+                            row.append(button(tr("schedule_remove_slot"),()=>{
+                                redSchedule.slots.splice(index,1);render();
+                            }));
+                        dialog.append(row);
+                    }
+                    const add=button(tr("schedule_add_slot"),()=>{
+                        if(redSchedule.slots.length<MAX_DRAFT_TIME_FRAMES){
+                            redSchedule.slots.push({fromTime:"08:00",toTime:"18:00"});
+                            render();
+                        }
+                    });
+                    add.disabled=redSchedule.slots.length>=MAX_DRAFT_TIME_FRAMES;
+                    dialog.append(add);
+                }
+                if(!isScheduleValid()){
+                    const error=node("p",tr("schedule_invalid"));
+                    error.setAttribute("role","alert");
+                    error.style.cssText="color:#b91c1c;font-weight:600;";
+                    dialog.append(error);
+                }
+            }
             if(step===6) {
                 if(draft.restrictionType==="ALLOWED"){
                     const checked=normalizeDraft(draft,current.segment);
