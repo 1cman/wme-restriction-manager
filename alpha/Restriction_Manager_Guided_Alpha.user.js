@@ -501,6 +501,31 @@
         const launch=button(tr("launch"),openWizard);
         launch.disabled=!availableDirections(context.segment).length;
         root.append(launch,node("p",tr("anchor")+": "+(nativeButton?.isConnected?tr("found"):tr("fallback"))));
+        const inspection=inspectRestrictionCapabilities(context.segment);
+        const details=node("details");
+        details.style.cssText="margin-top:10px;padding:10px;border:1px solid #d1d5db;"+
+            "border-radius:8px;background:#f8fafc;font-size:12px;";
+        const summary=node("summary",tr("inspection_title"));
+        summary.style.cssText="cursor:pointer;font-weight:600;";
+        details.append(summary);
+        const list=(label,values)=>{
+            const field=node("p",tr(label)+": "+(values.length?values.join(", "):tr("inspection_none")));
+            field.style.cssText="margin:7px 0;overflow-wrap:anywhere;";
+            details.append(field);
+        };
+        list("inspection_scope",inspection.laneScopes);
+        list("inspection_lane",inspection.laneTypes);
+        list("inspection_defaults",inspection.defaultTypes);
+        list("inspection_zone",inspection.timeZones);
+        const counts=inspection.editable;
+        details.append(node("p",tr("inspection_editable")+": "+
+            [counts.yes,counts.no,counts.unknown].join(" / ")));
+        const snap=restrictionSnapshot(context.segment);
+        details.append(node("p",tr("inspection_snapshot")+": "+
+            (snap===null?tr("unknown"):tr("found"))));
+        const note=node("p",tr("inspection_warn"));
+        note.style.cssText="color:#92400e;font-weight:600;margin:8px 0 0;";
+        details.append(note);root.append(details);
     }
     let lastKey="";
     async function refresh() {
@@ -527,6 +552,7 @@
         dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
         document.body.append(dialog);
         let step=0;
+        const baselineSnapshot=restrictionSnapshot(current.segment);
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
         const advanced={minPassengers:null,permitIds:[]};
         const vehicleRules=Object.create(null);
@@ -714,6 +740,15 @@
                  JSON.stringify(fresh.permits)!==JSON.stringify(current.permits) ||
                  !availableDirections(fresh.segment).includes(draft.direction)) {
                 dialog.replaceChildren(node("p",tr("changed")),button(tr("close"),()=>dialog.close()));return;
+            }
+            // Never keep reviewing a stale draft after another edit changed
+            // the selected segment's restrictions or one of its directions.
+            const latestSnapshot=restrictionSnapshot(fresh.segment);
+            if(baselineSnapshot!==latestSnapshot){
+                dialog.replaceChildren(
+                    node("p",tr("inspection_changed")),
+                    button(tr("close"),()=>dialog.close()));
+                return;
             }
             const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);
             if(destination===null)return;
