@@ -143,11 +143,11 @@
         motor_threshold_required:["Inserisci un valore numerico positivo per la soglia selezionata.","Enter a positive number for the selected threshold.","Saisissez un nombre positif.","Introduce un número positivo.","Einen positiven Wert eingeben.","Introduza um número positivo."],
         motor_experimental_note:["Questi tipi di motore e confronti riproducono l'interfaccia nativa come bozza. Codici interni e valori supportati da verificare prima di un'applicazione reale.","These engine types and comparisons are a draft of the native UI; SDK codes and supported combinations are unverified.","Types et comparateurs provisoires : vérifier les codes SDK.","Tipos y comparadores provisionales: verificar los códigos SDK.","Entwurf der nativen UI; SDK-Codes noch zu prüfen.","Tipos e comparações provisórios; códigos SDK por verificar."],
         motorcycle_intro:["Facoltativo, solo per le motociclette a cui vietare il transito. Senza condizioni motore, tutte le motociclette selezionate saranno vietate. Questa Alpha non crea ancora regole reali; la stabile 3.2.0 conserva le condizioni motore esistenti.","Optional, for prohibited motorcycles only. Without engine conditions, all selected motorcycles are blocked. Alpha is read-only; stable 3.2.0 preserves existing motor rules.","Facultatif, motos interdites uniquement. Sans condition moteur, toutes sont interdites. Alpha en lecture seule.","Opcional, solo motos prohibidas. Sin condiciones de motor, se prohíben todas. Alpha de solo lectura.","Optional nur für gesperrte Motorräder. Ohne Motorbedingung sind alle gesperrt. Alpha schreibgeschützt.","Opcional, apenas para motos proibidas. Sem condições do motor, todas ficam proibidas. Alpha de leitura."],
-        motorcycle_enable:["Specifica il tipo di motore (sperimentale)","Specify engine type (experimental)","Préciser le type de moteur (expérimental)","Especificar tipo de motor (experimental)","Motortyp angeben (experimentell)","Especificar tipo de motor (experimental)"],
+        motorcycle_enable:["Limita il divieto in base al motore (sperimentale)","Limit the prohibition by engine (experimental)","Limiter l'interdiction selon le moteur (expérimental)","Limitar la prohibición por motor (experimental)","Verbot nach Motor einschränken (experimentell)","Limitar a proibição pelo motor (experimental)"],
         motorcycle_engine:["Tipo di motore / codice WME","Engine type / WME code","Type de moteur / code WME","Tipo de motor / código WME","Motortyp / WME-Code","Tipo de motor / código WME"],
         motorcycle_engine_hint:["Inserisci il codice rilevato nel pannello WME; se disponibile sono suggeriti i valori già presenti sul segmento. Nessun codice viene considerato automaticamente valido.","Enter the code shown in WME; existing values on the segment may be suggested. No code is presumed valid.","Saisissez le code WME; des valeurs existantes peuvent être proposées, sans validation.","Introduce el código WME; se sugieren valores existentes, sin validación.","WME-Code eingeben; vorhandene Werte werden vorgeschlagen, aber nicht validiert.","Introduza o código WME; são sugeridos valores existentes, sem validação."],
         motorcycle_engine_error:["Indica un tipo di motore oppure disattiva la condizione sperimentale.","Enter an engine type or disable the experimental condition.","Indiquez un type de moteur ou désactivez l'option.","Introduce un tipo de motor o desactiva la opción.","Motortyp eingeben oder die Option deaktivieren.","Indique um tipo de motor ou desative a opção."],
-        motorcycle_unchecked:["Nessuna specifica sul motore","No engine type specified","Aucun type de moteur précisé","Sin tipo de motor","Kein Motortyp angegeben","Nenhum tipo de motor especificado"],
+        motorcycle_unchecked:["Vietate tutte le motociclette selezionate, indipendentemente dal motore","All selected motorcycles prohibited, regardless of engine","Toutes les motos sélectionnées interdites, indépendamment du moteur","Todas las motos seleccionadas prohibidas, independientemente del motor","Alle ausgewählten Motorräder gesperrt, unabhängig vom Motor","Todas as motas selecionadas proibidas, independentemente do motor"],
         red_schedule:["Date e fasce orarie del divieto","Restriction dates and time ranges","Dates et plages horaires de l'interdiction","Fechas y horarios de la prohibición","Daten und Zeitfenster des Verbots","Datas e horários da proibição"],
         red_schedule_intro:["Il calendario riguarda il divieto rosso e le sue esenzioni. È una bozza: fuso orario del segmento, ricorrenze speciali e festività andranno verificati prima di modificare WME.","This calendar applies to the red prohibition and its exemptions. Draft only: segment time zone, special recurrences and holidays require verification.","Ce calendrier s'applique à l'interdiction rouge. Fuseau horaire et jours fériés non vérifiés.","El calendario corresponde a la prohibición roja. Zona horaria y festivos pendientes de verificar.","Dieser Kalender gilt für das rote Verbot. Zeitzone und Feiertage noch ungeprüft.","O calendário aplica-se à proibição vermelha. Fuso horário e feriados por verificar."],
         schedule_start:["Data di inizio (facoltativa)","Start date (optional)","Date de début (facultative)","Fecha de inicio (opcional)","Startdatum (optional)","Data de início (opcional)"],
@@ -485,7 +485,6 @@
             startDate:"",endDate:"",weekdays:[...WEEKDAYS],allDay:true,
             slots:[{fromTime:"08:00",toTime:"18:00"}]
         };
-        const motorSuggestions=observedMotorTypes(page,current.segment.id);
         const emptyRule=()=>({
             requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
         });
@@ -736,40 +735,97 @@
             if(step===5) {
                 if(draft.restrictionType==="BLOCKED"){
                     dialog.append(node("h3",tr("motorcycle_step")),node("p",tr("motorcycle_intro")));
-                    const toggleLabel=node("label"),toggle=node("input");
-                    toggle.type="checkbox";toggle.checked=motorDraft.enabled;
-                    toggleLabel.style.cssText="display:flex;align-items:center;gap:8px;margin:10px 0;";
-                    toggle.addEventListener("change",()=>{
-                        motorDraft.enabled=toggle.checked;
-                        if(!motorDraft.enabled)motorDraft.conditions=[];
+                    const enableLabel=node("label"),enable=node("input");
+                    enableLabel.style.cssText="display:flex;align-items:center;gap:8px;"+
+                        "margin:12px 0;font-weight:600;cursor:pointer;";
+                    enable.type="checkbox";enable.checked=motorDraft.enabled;
+                    enable.addEventListener("change",()=>{
+                        motorDraft.enabled=enable.checked;
+                        motorDraft.conditions=[];
                         render();
                     });
-                    toggleLabel.append(toggle,document.createTextNode(tr("motorcycle_enable")));
-                    dialog.append(toggleLabel);
-                    if(motorDraft.enabled){
-                        const nameLabel=node("label",tr("motorcycle_engine"));
-                        nameLabel.style.cssText="display:block;font-weight:600;";
-                        const input=node("input");
-                        input.type="text";input.maxLength=64;
-                        input.value=motorDraft.engineType;
-                        input.autocomplete="off";
-                        input.setAttribute("list",ID+"-observed-engine-types");
-                        input.style.cssText="display:block;margin:6px 0;padding:8px;"+
-                            "width:100%;box-sizing:border-box;border:1px solid #9ca3af;border-radius:6px;";
-                        input.addEventListener("input",()=>{
-                            motorDraft.engineType=input.value;
-                            refreshNext();
-                        });
-                        const suggestions=node("datalist");
-                        suggestions.id=ID+"-observed-engine-types";
-                        for(const value of motorSuggestions){
-                            const option=node("option");option.value=value;suggestions.append(option);
+                    enableLabel.append(enable,document.createTextNode(tr("motorcycle_enable")));
+                    dialog.append(enableLabel);
+                    if(!motorDraft.enabled){
+                        const note=node("p",tr("motor_ban_all"));
+                        note.style.cssText="padding:10px;background:#fee2e2;color:#7f1d1d;border-radius:7px;";
+                        dialog.append(note);
+                    }else{
+                        for(const engine of MOTOR_ENGINE_TYPES){
+                            const match=motorDraft.conditions.find(c=>c.engineType===engine);
+                            const card=node("div");
+                            card.style.cssText="background:#fee2e2;padding:12px;"+
+                                "border-radius:8px;margin:9px 0;";
+                            const selectLabel=node("label"),check=node("input");
+                            selectLabel.style.cssText="display:flex;gap:8px;align-items:center;"+
+                                "font-weight:600;cursor:pointer;";
+                            check.type="checkbox";check.checked=!!match;
+                            check.addEventListener("change",()=>{
+                                if(check.checked)motorDraft.conditions.push({
+                                    engineType:engine,operator:"ALL",capacityThreshold:null
+                                });
+                                else motorDraft.conditions=motorDraft.conditions.filter(c=>c.engineType!==engine);
+                                render();
+                            });
+                            selectLabel.append(check,document.createTextNode(
+                                tr(engine==="FUEL"?"motor_select_fuel":"motor_select_electric")));
+                            card.append(selectLabel);
+                            if(match){
+                                const caption=node("label",
+                                    tr(engine==="FUEL"?"motor_limit_cc":"motor_limit_kw"));
+                                caption.style.cssText="display:block;margin-top:8px;font-size:12px;";
+                                const comparator=node("select");
+                                comparator.style.cssText="display:block;max-width:100%;padding:7px;"+
+                                    "border:1px solid #fca5a5;border-radius:6px;margin:5px 0;";
+                                for(const value of MOTOR_COMPARATORS){
+                                    const option=node("option",tr(value==="ALL"?"motor_compare_all":
+                                        value==="LT"?"motor_compare_lt":"motor_compare_lte"));
+                                    option.value=value;option.selected=match.operator===value;
+                                    comparator.append(option);
+                                }
+                                comparator.addEventListener("change",()=>{
+                                    match.operator=comparator.value;
+                                    match.capacityThreshold=null;
+                                    render();
+                                });
+                                caption.append(comparator);card.append(caption);
+                                if(match.operator!=="ALL"){
+                                    const threshold=node("input");
+                                    threshold.type="number";
+                                    threshold.min=engine==="FUEL"?"1":"0.01";
+                                    threshold.step=engine==="FUEL"?"1":"any";
+                                    threshold.placeholder=engine==="FUEL"?"cc":"kW";
+                                    threshold.value=match.capacityThreshold===null?"":
+                                        String(match.capacityThreshold);
+                                    threshold.style.cssText="width:125px;padding:7px;"+
+                                        "border:1px solid #fca5a5;border-radius:6px;";
+                                    threshold.addEventListener("change",()=>{
+                                        match.capacityThreshold=threshold.value.trim()===""?
+                                            null:Number(threshold.value);
+                                        render();
+                                    });
+                                    card.append(threshold);
+                                    if(!Number.isFinite(match.capacityThreshold)||
+                                        match.capacityThreshold<=0||
+                                        (engine==="FUEL"&&!Number.isSafeInteger(match.capacityThreshold))){
+                                        const error=node("p",tr("motor_threshold_required"));
+                                        error.setAttribute("role","alert");
+                                        error.style.cssText="color:#991b1b;font-weight:600;";
+                                        card.append(error);
+                                    }
+                                }
+                            }
+                            dialog.append(card);
                         }
-                        nameLabel.append(input,suggestions);
-                        dialog.append(nameLabel,node("p",tr("motorcycle_engine_hint")));
-                        if(!motorDraft.engineType.trim())
-                            dialog.append(node("p",tr("motorcycle_engine_error")));
-                    }else dialog.append(node("p",tr("motorcycle_unchecked")));
+                        if(!motorDraft.conditions.length){
+                            const warning=node("p",tr("motor_select_required"));
+                            warning.setAttribute("role","alert");
+                            warning.style.cssText="color:#b91c1c;font-weight:600;";
+                            dialog.append(warning);
+                        }
+                        dialog.append(node("p",tr("motor_ban_conditional")),
+                            node("p",tr("motor_experimental_note")));
+                    }
                 }else if(draft.restrictionType==="ALLOWED"){
                     dialog.append(node("h3",tr("advanced")),node("p",tr("advanced_allowed_intro")));
                     for(const type of selectedVehicleTypes(draft.vehicleTypes)){
