@@ -255,8 +255,10 @@ assert.equal(a.previousWizardStep(6,'BLOCKED',['MOTORCYCLE']),7);
 assert.equal(a.previousWizardStep(7,'BLOCKED',['MOTORCYCLE']),5);
 assert.equal(a.previousWizardStep(5,'BLOCKED',['MOTORCYCLE']),4);
 assert.equal(a.nextWizardStep(4,'ALLOWED',['MOTORCYCLE']),5);
-assert.equal(a.nextWizardStep(5,'ALLOWED',['MOTORCYCLE']),6);
-assert.equal(a.previousWizardStep(6,'ALLOWED',['MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(5,'ALLOWED',['MOTORCYCLE']),7);
+assert.equal(a.nextWizardStep(7,'ALLOWED',['MOTORCYCLE']),6);
+assert.equal(a.previousWizardStep(6,'ALLOWED',['MOTORCYCLE']),7);
+assert.equal(a.previousWizardStep(7,'ALLOWED',['MOTORCYCLE']),5);
 // The blue exemption skips advanced pass/occupancy/plate conditions entirely.
 for(const types of [['PRIVATE'],['BUS','TAXI'],['MOTORCYCLE','EV']]){
  assert.equal(a.nextWizardStep(4,'TOLL',types),7);
@@ -290,8 +292,9 @@ assert.ok(src.includes('normalizeTollActivationDraft(checked,[current.segment.id
  'The automatic toll flag draft must target the selected segment');
 assert.ok(src.includes('node("h4",tr("toll_auto_flag"))'),
  'Toll summary must preview the automatic flag');
-assert.ok(src.includes('node("h3",tr(draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule"))'),
- 'Toll must display dedicated localized date/time heading');
+assert.ok(src.includes('const scheduleTitle=draft.restrictionType==="ALLOWED"?"green_schedule"') &&
+ src.includes('draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule"'),
+ 'Scheduling must display green, blue or red localized headings');
 assert.ok(!/\bupdateSegment\s*\(/.test(src),
  'No segment write is allowed in the read-only Alpha');
 const redSchedule={
@@ -379,8 +382,8 @@ const sampleRaw={W:{model:{segments:{getObjectById:()=>({
 })}}}};
 assert.deepEqual(a.observedMotorTypes(sampleRaw,1),['NATIVE-X']);
 assert.deepEqual(a.observedMotorTypes({},1),[]);
-assert.ok(src.includes('if(step===7&&(draft.restrictionType==="BLOCKED"||draft.restrictionType==="TOLL"))'),
- 'Date and time screen must include red and blue, not green');
+assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType))'),
+ 'Date and time screen must include red, green and blue');
 assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
  'Next navigation must use intent-aware flow');
 assert.ok(src.includes('const previous=previousWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
@@ -452,6 +455,71 @@ assert.ok(src.includes('const inspection=inspectRestrictionCapabilities(context.
  'SDK observation belongs in the sidebar, not a write path');
 assert.ok(src.includes('details.append(note);root.append(details);'),
  'Inspection must communicate its read-only, observed-only limitations');
+// Alpha 14: a green whitelist must have dates and hours AFTER vehicle-specific conditions.
+assert.ok(src.includes('if(step===5&&(intent==="BLOCKED"||intent==="ALLOWED"))return 7;'),
+ 'Green advanced conditions must continue to the shared calendar');
+assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(intent))return 6;'),
+ 'Every restriction type must go from calendar to summary');
+assert.ok(src.includes('if(step===7&&intent==="ALLOWED")return 5;'),
+ 'Back from green schedule must return to per-vehicle rules');
+assert.ok(src.includes('node("p",tr("green_schedule_intro"))'),
+ 'Green summary must display the chosen calendar and its meaning');
+const proposedFrames=[
+ {weekdays:['MONDAY'],fromTime:'08:00',toTime:'11:00'},
+ {weekdays:['MONDAY'],fromTime:'16:00',toTime:'19:00'}
+];
+const emptyBudget=a.estimateSafe12Budget([],proposedFrames);
+assert.deepEqual(emptyBudget,{
+ status:'WITHIN_ESTIMATE',existingRestrictions:0,existingFrames:0,
+ proposedRestrictions:2,proposedFrames:2,projectedRestrictions:2,projectedFrames:2,
+ limit:12,verified:false
+});
+const existingRestrictions=[
+ {timeFrames:[{fromTime:'09:00',toTime:'10:00'}]},
+ {timeFrames:[{fromTime:'10:00',toTime:'11:00'},{fromTime:'14:00',toTime:'15:00'}]}
+];
+const within=a.estimateSafe12Budget(existingRestrictions,proposedFrames);
+assert.equal(within.status,'WITHIN_ESTIMATE');
+assert.equal(within.existingRestrictions,2);
+assert.equal(within.existingFrames,3);
+assert.equal(within.projectedRestrictions,4);
+assert.equal(within.projectedFrames,5);
+assert.equal(within.verified,false,'An estimate must never be marked verified');
+assert.equal(existingRestrictions[0].timeFrames.length,1,'Inspector must never mutate SDK restrictions');
+const overByRules=a.estimateSafe12Budget(
+ Array.from({length:11},()=>({timeFrames:[]})),proposedFrames);
+assert.equal(overByRules.status,'OVER');
+assert.equal(overByRules.projectedRestrictions,13);
+const overByFrames=a.estimateSafe12Budget(
+ [{timeFrames:Array.from({length:11},()=>({weekdays:['TUESDAY']}))}],
+ proposedFrames);
+assert.equal(overByFrames.status,'OVER');
+assert.equal(overByFrames.projectedRestrictions,3);
+assert.equal(overByFrames.projectedFrames,13);
+const exactLimit=a.estimateSafe12Budget(
+ Array.from({length:10},()=>({timeFrames:[{}]})),proposedFrames);
+assert.equal(exactLimit.status,'WITHIN_ESTIMATE');
+assert.equal(exactLimit.projectedRestrictions,12);
+assert.equal(exactLimit.projectedFrames,12);
+for(const unknown of [
+ a.estimateSafe12Budget(null,proposedFrames),
+ a.estimateSafe12Budget([{description:'no-frames'}],proposedFrames),
+ a.estimateSafe12Budget([null],proposedFrames),
+ a.estimateSafe12Budget([],[]),
+ a.estimateSafe12Budget([],null),
+ a.estimateSafe12Budget([],['invalid'])
+]){
+ assert.equal(unknown.status,'UNKNOWN','Incomplete SDK data cannot be guessed');
+ assert.equal(unknown.projectedFrames,null);
+ assert.equal(unknown.verified,false);
+}
+assert.ok(src.includes('estimateSafe12Budget(') &&
+ src.includes('const estimate=estimateSafe12Budget(') &&
+ src.includes('tr("budget_assumption")'),
+ 'Read-only summary must show conservative SAFE12 estimate and assumptions');
+assert.ok(src.includes('tr("budget_unknown")') &&
+ src.includes('tr(estimate.status==="OVER"?"budget_over":"budget_within")'),
+ 'Budget must be transparent about over-limit and unknown cases');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
