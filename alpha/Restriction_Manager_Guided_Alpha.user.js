@@ -1284,6 +1284,17 @@
                         node("p",tr("criteria_unverified")),
                         node("p",tr("plate_note")),
                         node("p",tr("vehicles_unknown")));
+                    const schedule=normalizeRedSchedule(redSchedule);
+                    dialog.append(node("h4",tr("schedule_summary")));
+                    for(const frame of schedule.timeFrames){
+                        const dates=(frame.startDate||tr("no_condition"))+" → "+
+                            (frame.endDate||tr("no_condition"));
+                        const days=frame.weekdays.map(day=>tr(day)).join(", ");
+                        const hours=frame.fromTime===null?tr("schedule_all_day"):
+                            frame.fromTime+"–"+frame.toTime;
+                        dialog.append(node("p",dates+" · "+days+" · "+hours));
+                    }
+                    dialog.append(node("p",tr("green_schedule_intro")));
                 }else if(draft.restrictionType==="BLOCKED"){
                     const checked=normalizeDraft(draft,current.segment);
                     const schedule=normalizeRedSchedule(redSchedule);
@@ -1360,6 +1371,38 @@
                     dialog.append(node("p",tr("toll_schedule_intro")),
                         node("p",tr("vehicles_unknown")));
                 }
+                // Conservative budget only: not an SDK write plan and NOT
+                // a pass from the stable v3.2 SAFE12 full-operation validator.
+                const estimate=estimateSafe12Budget(
+                    current.segment.restrictions,
+                    normalizeRedSchedule(redSchedule).timeFrames
+                );
+                const budgetBox=node("section");
+                budgetBox.style.cssText="padding:10px;margin-top:14px;border:1px solid #cbd5e1;"+
+                    "border-radius:8px;background:#f8fafc;";
+                budgetBox.append(node("h4",tr("budget_heading")));
+                if(estimate.status==="UNKNOWN"){
+                    budgetBox.append(node("p",tr("budget_unknown")));
+                }else{
+                    budgetBox.append(
+                        node("p",tr("budget_existing")+": "+estimate.existingRestrictions),
+                        node("p",tr("budget_existing_frames")+": "+estimate.existingFrames),
+                        node("p",tr("budget_new")+": "+estimate.proposedRestrictions),
+                        node("p",tr("budget_total")+": "+
+                            estimate.projectedRestrictions+" / "+estimate.projectedFrames+
+                            " (max "+estimate.limit+")")
+                    );
+                    const warning=node("p",
+                        tr(estimate.status==="OVER"?"budget_over":"budget_within"));
+                    warning.style.cssText="font-weight:600;color:"+
+                        (estimate.status==="OVER"?"#b91c1c":"#475569")+";";
+                    if(estimate.status==="OVER")warning.setAttribute("role","alert");
+                    budgetBox.append(warning);
+                }
+                const assumption=node("p",tr("budget_assumption"));
+                assumption.style.cssText="font-size:12px;color:#475569;";
+                budgetBox.append(assumption);
+                dialog.append(budgetBox);
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
