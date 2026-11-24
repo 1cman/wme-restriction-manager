@@ -1184,6 +1184,43 @@
             if(entry.description)
                 field("existing_description",entry.description);
             field("existing_rules",entry.ruleGroups.join(", ")||tr("inspection_none"));
+            const diagnostics=inspectNativeVehicleRules(
+                segment.restrictions[entry.index-1]);
+            const nativeDetails=node("details");
+            nativeDetails.style.cssText="border:1px solid #e2e8f0;padding:7px;"+
+                "border-radius:6px;margin:9px 0;background:#f8fafc;";
+            const nativeTitle=node("summary",tr("native_conditions_title"));
+            nativeTitle.style.cssText="font-weight:600;cursor:pointer;";
+            nativeDetails.append(nativeTitle,node("p",tr("native_conditions_intro")));
+            if(diagnostics.legacyComparison==="SAME")
+                nativeDetails.append(node("p",tr("native_profiles_equal")));
+            if(diagnostics.legacyComparison==="DIFFERENT"||
+               diagnostics.legacyComparison==="UNKNOWN")
+                nativeDetails.append(node("p",tr("native_profiles_differ")));
+            for(const rule of diagnostics.rows){
+                const line=node("div");
+                line.style.cssText="margin:8px 0;padding:7px;border-left:3px solid "+
+                    (rule.status==="UNKNOWN"?"#b45309":"#64748b")+";"+
+                    "background:#fff;border-radius:4px;font-size:12px;";
+                const addText=text=>line.append(node("p",text));
+                addText(tr("native_group")+": "+rule.group+" #"+rule.index+
+                    " · "+(rule.status==="UNKNOWN"?tr("native_uncertain"):rule.status));
+                addText(tr("native_types")+": "+
+                    (rule.types.join(", ")||tr("unknown")));
+                if(rule.passCount!==null)
+                    addText(tr("native_passes")+": "+rule.passCount);
+                if(rule.minPassengers!==null)
+                    addText(tr("native_occupants")+": "+rule.minPassengers);
+                if(rule.hasPlate)addText(tr("native_plate"));
+                if(rule.hasEngine)addText(tr("native_engine"));
+                if(rule.unknownFields.length)
+                    addText(tr("native_other_fields")+": "+
+                        rule.unknownFields.join(", "));
+                if(rule.status==="UNKNOWN"&&!rule.unknownFields.length)
+                    addText(tr("native_uncertain"));
+                nativeDetails.append(line);
+            }
+            item.append(nativeDetails);
             if(!entry.framesKnown)
                 field("existing_times",tr("unknown"));
             else if(!entry.frames.length)
@@ -1261,6 +1298,17 @@
                     line.style.cssText="padding:5px 0;margin:4px 0;"+
                         "border-bottom:1px solid #f1f5f9;font-size:12px;";
                     details.append(line);
+                }
+                const nativeData=inspectNativeVehicleRules(
+                    segment.restrictions?.[item.index-1]);
+                if(nativeData.rows.some(row=>row.status!=="UNCONDITIONAL")||
+                   nativeData.legacyComparison==="DIFFERENT"||
+                   nativeData.legacyComparison==="UNKNOWN"){
+                    const summary=node("p",tr("native_conditions_title")+": "+
+                        nativeData.rows.map(row=>row.group+" #"+row.index+
+                            " ("+row.status+")").join(", "));
+                    summary.style.cssText="font-size:12px;color:#92400e;";
+                    details.append(summary);
                 }
                 if(item.vehicleReview.unmodeledNativeTypes){
                     const warning=node("p",tr("vehicle_compare_unmodeled"));
