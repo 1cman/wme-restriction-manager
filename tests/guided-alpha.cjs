@@ -594,6 +594,43 @@ assert.ok(src.includes('tr("lane_special_pending")') && src.includes('tr("lane_c
  'Warning must distinguish unverified special lane mappings from observed values');
 assert.ok(!/\bupdateSegment\s*\(/.test(src),
  'Proposed scope values must not be submitted to SDK');
+// Alpha 17: WME changes the native panel action when restrictions exist.
+const nativeActions={
+  add:['Aggiungi restrizioni','Aggiungi restrizione','Add restrictions','Add restriction',
+       'Ajouter des restrictions','Añadir restricciones','Beschränkungen hinzufügen',
+       'Adicionar restrições'],
+  edit:['Modifica restrizioni','Modifica restrizione','Edit restrictions','Edit restriction',
+        'Modifier les restrictions','Editar restricciones','Beschränkungen bearbeiten',
+        'Editar restrições']
+};
+for(const [action,names] of Object.entries(nativeActions)){
+ for(const name of names){
+  assert.equal(a.nativeRestrictionAction(name),action,name+' should be recognized');
+  assert.equal(a.nativeRestrictionAction('  + '+name.toUpperCase()+'  '),action,
+    'Native restriction action must support normalized visual labels');
+ }
+}
+for(const unrelated of [
+ 'Modifica segmento','Modifica dettagli','Modifica velocità','Aggiungi passaggio',
+ '1 Restrizioni di Guida','Modifica restrizioni strada','Edit turn restrictions',''
+]){
+ assert.equal(a.nativeRestrictionAction(unrelated),null,
+  'Do not inject guided button next to unrelated native control: '+unrelated);
+}
+assert.ok(src.includes('const nativeEditLabels = new Set('),
+ 'The script must support native edit labels, not just add labels');
+assert.ok(src.includes("button,[role=\"button\"],wz-button,a,[role=\"link\"]"),
+ 'The native anchor must search accessible buttons AND links');
+assert.ok(src.includes("document.querySelectorAll('span,strong,div,p')"),
+ 'Provide a guarded fallback when native edit restrictions has no button semantics');
+assert.ok(src.includes('if(outer.length>1)return null;') &&
+  src.includes('return textLeaves.length===1?textLeaves[0]:null;'),
+ 'Ambiguous matching native actions must fall back to the script sidebar');
+assert.ok(src.includes('nativeButton.addEventListener("pointerdown",event=>event.stopPropagation());') &&
+ src.includes('nativeButton.addEventListener("mousedown",event=>event.stopPropagation());'),
+ 'A nested guided button must not trigger the WME native edit handler');
+assert.ok(src.includes('root.append(launch,node("p",tr("anchor")'),
+ 'The independent sidebar wizard launch must always remain available');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
