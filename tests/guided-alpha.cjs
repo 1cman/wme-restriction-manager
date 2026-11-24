@@ -1056,6 +1056,108 @@ assert.ok(src.includes('tr("vehicle_compare_caution")'),
  'The UI must explain overlapping categories and unverified AND/OR and precedence');
 assert.ok(src.includes('tr("vehicle_compare_unmodeled")'),
  'Native categories outside the four-option shortlist must not be hidden');
+// Alpha 22: inspect native read-only conditions without leaking permit IDs
+// or license-plate values, and recognize identical legacy representations.
+const nativeSimple={vehicleTypes:['MOTORCYCLE'],subscriptions:[],
+ licensePlateNumber:'',engineCapacities:[]};
+assert.deepEqual(a.inspectNativeVehicleCondition(nativeSimple),{
+ status:'UNCONDITIONAL',types:['MOTORCYCLE'],passCount:0,
+ minPassengers:null,hasPlate:false,hasEngine:false,
+ unknownFields:[],conditions:[],verified:false
+});
+const nativeResident={vehicleTypes:['PRIVATE'],subscriptions:['SECRET-PASS-ID'],
+ numPassengers:3,licensePlateNumber:'7'};
+const residentInspection=a.inspectNativeVehicleCondition(nativeResident);
+assert.equal(residentInspection.status,'CONDITIONAL');
+assert.equal(residentInspection.passCount,1);
+assert.equal(residentInspection.minPassengers,3);
+assert.equal(residentInspection.hasPlate,true);
+assert.deepEqual(residentInspection.conditions,['PASS','OCCUPANCY','PLATE']);
+assert.ok(!JSON.stringify(residentInspection).includes('SECRET-PASS-ID'));
+assert.ok(!JSON.stringify(residentInspection).includes('"7"'));
+assert.equal(JSON.stringify(nativeResident).includes('SECRET-PASS-ID'),true,
+ 'The inspection must not modify the source data');
+const nativeEngine=a.inspectNativeVehicleCondition({
+ vehicleTypes:['MOTORCYCLE'],engineType:'UNKNOWN-NATIVE-ENGINE',
+ operator:'LTE',capacityThreshold:125
+});
+assert.equal(nativeEngine.status,'CONDITIONAL');
+assert.equal(nativeEngine.hasEngine,true);
+assert.deepEqual(nativeEngine.conditions,['ENGINE']);
+assert.ok(!JSON.stringify(nativeEngine).includes('UNKNOWN-NATIVE-ENGINE'),
+ 'Private engine values must not be disclosed in diagnostic output');
+const opaqueCondition=a.inspectNativeVehicleCondition({
+ vehicleTypes:['TAXI'],mysteryFlag:true,subscriptions:[]
+});
+assert.equal(opaqueCondition.status,'UNKNOWN');
+assert.deepEqual(opaqueCondition.unknownFields,['mysteryFlag']);
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],numPassengers:0}).status,
+ 'UNKNOWN','Do not assume zero occupants is an SDK neutral default');
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],numPassengers:1}).status,
+ 'UNKNOWN','Do not assume one occupant is an SDK neutral default');
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],subscriptions:[42]}).status,
+ 'UNKNOWN','Invalid native subscription representation must stay unknown');
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:[1024]}).status,'UNKNOWN',
+ 'Numeric vehicle types cannot be silently converted without an SDK mapping');
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:[]}).status,'UNKNOWN');
+assert.equal(a.inspectNativeVehicleCondition(null).status,'UNKNOWN');
+const sameLegacyOriginal={FREE:[{vehicleTypes:['EV'],subscriptions:[]}]};
+const sameLegacyCopy={FREE:[{subscriptions:[],vehicleTypes:['EV']}]};
+assert.notEqual(sameLegacyOriginal,sameLegacyCopy);
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,sameLegacyCopy),'SAME',
+ 'Equivalent but separately allocated deprecated/current fields should compare equal');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,
+ {FREE:[{vehicleTypes:['TAXI']}]}),'DIFFERENT');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,null),'ABSENT');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,{}),'ABSENT');
+const legacyCycle={FREE:[]};legacyCycle.FREE.push(legacyCycle);
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,legacyCycle),'UNKNOWN');
+const legacyMatchingRestriction={defaultType:'BLOCKED',
+ vehicleRules:sameLegacyOriginal,driveProfiles:sameLegacyCopy};
+const legacyMatchingDraft=a.normalizeDraft({
+ direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',
+ vehicleTypes:['EV']},{isAtoB:true});
+const matchingReview=a.reviewVehicleConflictEffects(
+ legacyMatchingRestriction,legacyMatchingDraft,
+ {vehicleRules:{EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],
+  minPassengers:null}}});
+assert.equal(matchingReview.rows.find(row=>row.vehicleType==='EV').existingEffect,'FREE');
+assert.equal(matchingReview.rows.find(row=>row.vehicleType==='EV').relation,'SAME');
+assert.equal(matchingReview.status,'SAME_EFFECT');
+assert.deepEqual(a.inspectNativeVehicleRules(legacyMatchingRestriction),{
+ available:true,legacyComparison:'SAME',
+ rows:[{group:'FREE',index:1,status:'UNCONDITIONAL',types:['EV'],
+  passCount:0,minPassengers:null,hasPlate:false,hasEngine:false,
+  unknownFields:[],conditions:[],verified:false}],verified:false
+});
+assert.equal(a.inspectNativeVehicleRules({vehicleRules:null}).available,false);
+const diagnosticRules={defaultType:'BLOCKED',vehicleRules:{
+ FREE:[{vehicleTypes:['EV'],subscriptions:[]},
+       {vehicleTypes:['PRIVATE'],licensePlateRule:{type:'SUFFIX',value:'9'}}]
+}};
+const conditionDetails=a.inspectNativeVehicleRules(diagnosticRules);
+assert.equal(conditionDetails.rows.length,2);
+assert.equal(conditionDetails.rows[1].hasPlate,true);
+assert.equal(conditionDetails.rows[1].status,'CONDITIONAL');
+assert.ok(!JSON.stringify(conditionDetails).includes('"9"'),
+ 'Plate suffix must not appear in a diagnostic JSON object');
+const diagExisting=a.reviewVehicleConflictEffects(
+ diagnosticRules,legacyMatchingDraft,
+ {vehicleRules:{EV:{requiresPass:false,requiresOccupancy:false,
+ permitIds:[],minPassengers:null}}});
+assert.equal(diagExisting.rows.find(row=>row.vehicleType==='EV').relation,'SAME');
+assert.equal(diagExisting.rows.find(row=>row.vehicleType==='PRIVATE').existingEffect,
+ 'CONDITIONAL');
+assert.ok(src.includes('const diagnostics=inspectNativeVehicleRules(') &&
+ src.includes('item.append(nativeDetails);'),
+ 'Existing restrictions should display native condition diagnostics');
+assert.ok(src.includes('const nativeData=inspectNativeVehicleRules(') &&
+ src.includes('tr("native_conditions_title")'),
+ 'Conflict review must expose condition diagnostics where interpretation is incomplete');
+assert.ok(src.includes('tr("native_conditions_intro")'),
+ 'Diagnostic UI must warn about AND/OR/precedence and conceal private values');
+assert.ok(!/\.updateSegment\s*\(/.test(src),
+ 'No SDK mutations in the read-only diagnostics');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
