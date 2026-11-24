@@ -631,6 +631,121 @@ assert.ok(src.includes('nativeButton.addEventListener("pointerdown",event=>event
  'A nested guided button must not trigger the WME native edit handler');
 assert.ok(src.includes('root.append(launch,node("p",tr("anchor")'),
  'The independent sidebar wizard launch must always remain available');
+// Alpha 18: SDK write-contract review must be pure, deterministic and fail closed.
+const conversionSegment={id:901,isAtoB:true,restrictions:[]};
+const conversionSchedule={startDate:'2026-12-01',endDate:'2026-12-31',
+ weekdays:['MONDAY','FRIDAY'],allDay:false,
+ slots:[{fromTime:'08:00',toTime:'10:00'},{fromTime:'17:00',toTime:'19:00'}]};
+const baseConversion={direction:'FWD',scope:'segment',lane:'lane_none'};
+const noMotor={enabled:false,conditions:[]};
+const localeCountry={id:1,name:'Italy'};
+const redNoVehicles=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:[]},conversionSegment,
+ conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(redNoVehicles.defaultType,'BLOCKED');
+assert.equal(redNoVehicles.overrideType,null);
+assert.deepEqual(redNoVehicles.vehicleConditionRows,[]);
+assert.equal(redNoVehicles.proposedFrameCount,2);
+assert.equal(redNoVehicles.plannedHasToll,null);
+assert.equal(redNoVehicles.status,'BLOCKED');
+assert.equal(redNoVehicles.saveAllowed,false);
+assert.equal(redNoVehicles.verified,false);
+assert.equal(redNoVehicles.sdkWritePayload,null);
+assert.ok(redNoVehicles.blockers.includes('conversion_sdk_contract'));
+assert.ok(redNoVehicles.blockers.includes('conversion_schedule'));
+assert.ok(redNoVehicles.blockers.includes('conversion_safe12'));
+assert.ok(redNoVehicles.blockers.includes('conversion_country'));
+assert.ok(!redNoVehicles.blockers.includes('conversion_preserve'));
+const redSelected=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:['PRIVATE','MOTORCYCLE']},
+ conversionSegment,conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(redSelected.defaultType,'FREE');
+assert.equal(redSelected.overrideType,'BLOCKED');
+assert.deepEqual(redSelected.vehicleConditionRows.map(r=>r.vehicleType),['PRIVATE','MOTORCYCLE']);
+assert.ok(redSelected.vehicleConditionRows.every(row=>row.ruleType==='BLOCKED'));
+assert.equal(redSelected.vehicleConditionRows.find(r=>r.vehicleType==='MOTORCYCLE').engineFilter,'ALL_MOTORCYCLES');
+const motorFilter={enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125}]};
+const redMotor=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']},
+ conversionSegment,conversionSchedule,{},[],motorFilter,localeCountry);
+assert.ok(redMotor.blockers.includes('conversion_engine'));
+assert.equal(redMotor.vehicleConditionRows[0].engineFilter,'MATCHING_ENGINES');
+assert.equal(redMotor.sdkWritePayload,null);
+const greenPerVehicle={
+ PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['resident'],minPassengers:3},
+ EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}
+};
+const greenInput={...baseConversion,restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']};
+const green=a.reviewSdkConversion(greenInput,conversionSegment,conversionSchedule,
+ greenPerVehicle,[{id:'resident',name:'Local permit'}],noMotor,localeCountry);
+assert.equal(green.defaultType,'BLOCKED');
+assert.equal(green.overrideType,'FREE');
+assert.equal(green.vehicleConditionRows[0].vehicleType,'PRIVATE');
+assert.equal(green.vehicleConditionRows[0].access,'CONDITIONAL');
+assert.equal(green.vehicleConditionRows[0].permitCount,1);
+assert.equal(green.vehicleConditionRows[0].minPassengers,3);
+assert.equal(green.vehicleConditionRows[1].vehicleType,'EV');
+assert.equal(green.vehicleConditionRows[1].access,'DIRECT');
+assert.equal(green.vehicleConditionRows[1].permitCount,0);
+assert.equal(green.vehicleConditionRows[1].minPassengers,null);
+assert.ok(green.blockers.includes('conversion_conditions'));
+assert.equal(green.sdkWritePayload,null);
+const greenDirect=a.reviewSdkConversion(greenInput,conversionSegment,conversionSchedule,
+ {},[],noMotor,localeCountry);
+assert.ok(!greenDirect.blockers.includes('conversion_conditions'));
+const toll=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},
+ conversionSegment,conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(toll.defaultType,'TOLL');
+assert.equal(toll.overrideType,'FREE');
+assert.deepEqual(toll.vehicleConditionRows,[{
+ vehicleType:'TAXI',ruleType:'FREE',access:'TOLL_EXEMPT'
+}]);
+assert.equal(toll.plannedHasToll,true);
+assert.ok(toll.blockers.includes('conversion_toll_atomic'));
+assert.equal(toll.sdkWritePayload,null);
+const existingSegment={...conversionSegment,restrictions:[{
+ defaultType:'FREE',editable:false,timeFrames:[{weekdays:1,fromTime:'07:00',toTime:'08:00'}],
+ vehicleRules:{BLOCKED:[{vehicleTypes:['BUS']}]}
+}]};
+const withExisting=a.reviewSdkConversion(greenInput,existingSegment,conversionSchedule,
+ greenPerVehicle,[{id:'resident',name:'Local permit'}],noMotor,localeCountry);
+assert.ok(withExisting.blockers.includes('conversion_preserve'));
+assert.equal(withExisting.existingRestrictionCount,1);
+assert.deepEqual(existingSegment.restrictions[0].vehicleRules,
+ {BLOCKED:[{vehicleTypes:['BUS']}]},'Existing native rules must remain untouched');
+const unknownExisting=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:[]},
+ {...conversionSegment,restrictions:null},
+ conversionSchedule,{},[],noMotor,localeCountry);
+assert.ok(unknownExisting.blockers.includes('conversion_unknown'));
+assert.equal(unknownExisting.budgetStatus,'UNKNOWN');
+const overConversion=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},
+ {...conversionSegment,restrictions:Array.from({length:12},()=>({timeFrames:[]}))},
+ conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(overConversion.budgetStatus,'OVER');
+assert.ok(overConversion.blockers.includes('conversion_overbudget'));
+assert.equal(overConversion.saveAllowed,false);
+assert.throws(()=>a.reviewSdkConversion({...baseConversion,
+ restrictionType:'ALLOWED',vehicleTypes:['PRIVATE']},conversionSegment,
+ conversionSchedule,{PRIVATE:{requiresPass:true,requiresOccupancy:false,
+ permitIds:[],minPassengers:null}},[],noMotor,localeCountry),
+ /Missing vehicle permit/);
+assert.throws(()=>a.reviewSdkConversion({...baseConversion,
+ restrictionType:'TOLL',vehicleTypes:[]},conversionSegment,
+ conversionSchedule,{},[],noMotor,localeCountry),/TOLL requires/);
+assert.ok(src.includes('const conversion=reviewSdkConversion('),
+ 'The wizard summary must show the conversion review');
+assert.ok(src.includes('conversion.sdkWritePayload===null')===false,
+ 'The interface must never treat a missing write payload as a positive validation');
+assert.ok(src.includes('node("summary",tr("conversion_title"))'),
+ 'The conversion review must have a collapsible accessible heading');
+assert.ok(src.includes('node("p",tr("conversion_blocked"))'),
+ 'The conversion review must always warn that saving is unavailable');
+assert.ok(!/\.updateSegment\s*\(/.test(src),
+ 'The read-only SDK conversion review must not call updateSegment');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
