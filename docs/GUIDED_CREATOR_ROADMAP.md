@@ -238,6 +238,29 @@ The SDK [SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/beta/lates
 
 **Regression tests:** blue step 4→7→6 and reverse 6→7→4; green unchanged, red still 4→5→7→6 when motorcycles selected. Verify mandatory exempt vehicles, multiple time bands, `TOLL`/`FREE` preview, single-segment automatic toll flag draft, both-direction warning, no writes, and WME Standard/Beta UI before promotion.
 
+## Alpha 14: calendar for green authorizations and conservative SAFE12 estimate (2026-11-24)
+
+The green **Transito consentito** path now proceeds from **per-vehicle authorization conditions** directly to a **calendar step**, then to the read-only summary. This completes the scheduling step for all three colored intents:
+
+| Intent | Steps after vehicle selection | Calendar semantics |
+| --- | --- | --- |
+| Red `BLOCKED` | Optional experimental motorcycle engine condition, then schedule and summary | Time-window restriction of the prohibition |
+| Green `ALLOWED` | Individual pass/occupancy options, then schedule and summary | Time-window authorization of the selected vehicle classes and their independent conditions |
+| Blue `TOLL` | Schedule and summary, without pass/occupancy | Time-window exemption for selected vehicle classes; planned `hasToll:true` remains a separate all-directions road attribute |
+
+The **same pure date/time validator** powers the new green step: optional start/end date, selected weekdays, whole-day or up to 12 explicit daytime slots. Back from the green schedule returns to the **individual vehicle rules** without losing earlier selections. The summary now includes the actual proposed green time frames; it does not assert an SDK write schema or that a restriction on a segment would automatically block travel outside the listed periods.
+
+**SAFE12 preflight (estimate, never an approval):**
+- A pure `estimateSafe12Budget(existingRestrictions, proposedTimeFrames)` counts the restrictions already on the *selected segment*, their currently reported SDK time frames, and the number of proposed frames.
+- The proposal conservatively assumes **one additional restriction per proposed time frame**, matching the stable 3.2.0's calendar expansion strategy. Thus `projectedRestrictions = existingRestrictions.length + proposedFrames.length`, `projectedFrames = sum(existing.timeFrames.length) + proposedFrames.length`. These are simple arithmetic estimates for a single segment, not the final SDK payload.
+- Status `WITHIN_ESTIMATE` means both totals are at most 12; `OVER` means either exceeds 12; `UNKNOWN` means the existing SDK restrictions or their `timeFrames` are incomplete, or proposed frames are missing or malformed.
+- **None** of these statuses authorizes editing. The stable 3.2.0 checks the complete batch with `assertOperationLimit`, counting every output restriction and every time-frame definition **across all updates**. It also expands holiday and recurrence calendars and handles reapplication and preservation of existing items. The Alpha does **not** yet perform those operations.
+- The summary shows all counts, a clear warning if over-limit or unknown, and an explanation of the conservative assumptions. The read-only prototype never writes the segment, stores data or saves presets.
+
+**Remaining blockers before real writes:** exact `laneScope` / `laneType` mapping and local eligibility; time zone from the selected segment; native WME schedule serialization and recurrence/exclusion handling; how independent green vehicle conditions map to SDK `vehicleRules` AND/OR semantics; retention of existing restrictions and experimental motorcycle conditions; atomic or reversible handling of blue `hasToll:true`; and confirmation in both WME Standard and Beta.
+
+**Manual test:** select a segment with no restrictions, create a green draft with PRIVATE requiring a pass and EV allowed directly, then pick a weekday and two time ranges. Verify the summary preserves the per-vehicle distinction, shows both ranges and a SAFE12 estimate of **2 new restrictions, 2 new time-frame definitions** (derived from the two chosen slots). Next test with an existing segment restriction and compare the counts against that segment's SDK values. Use an existing segment with incomplete restriction metadata to confirm UNKNOWN instead of a guessed count. Do not attempt to save map changes from the Alpha.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
