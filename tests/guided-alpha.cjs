@@ -923,7 +923,7 @@ assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segm
  'Existing restrictions must be visible before filling in a new draft');
 assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,false));'),
  'Existing restrictions remain accessible in the final review');
-assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule));'),
+assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));'),
  'Conflict review must be visible before and in the final summary');
 assert.ok(src.includes('nativeRestrictionAction(') &&
  src.includes('anchor.click();') &&
@@ -935,6 +935,118 @@ assert.ok(src.includes('conflict_uncertain'),
  'Collision analysis must warn about unknown SDK rules and recurring calendars');
 assert.ok(!/\.updateSegment\s*\(/.test(src),
  'Conflict detection must never edit WME via SDK');
+// Alpha 21: safe vehicle-by-vehicle effects, without assuming distinct SDK
+// classes are exclusive and without treating nested conditions as unconditional.
+const simpleMotoNative={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE']}]}
+};
+const simpleMotoSnapshot=JSON.stringify(simpleMotoNative);
+const draftSimple=type=>a.normalizeDraft({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[type]},
+ {isAtoB:true});
+const sameMotor=a.reviewVehicleConflictEffects(
+ simpleMotoNative,draftSimple('MOTORCYCLE'));
+assert.deepEqual(sameMotor.rows.map(r=>[r.vehicleType,r.existingEffect,r.proposedEffect,r.relation]),[
+ ['PRIVATE','FREE','FREE','SAME'],
+ ['EV','FREE','FREE','SAME'],
+ ['MOTORCYCLE','BLOCKED','BLOCKED','SAME'],
+ ['TAXI','FREE','FREE','SAME']
+]);
+assert.equal(sameMotor.status,'SAME_EFFECT');
+assert.equal(sameMotor.verified,false);
+assert.equal(sameMotor.saveAllowed,false);
+const differentTaxi=a.reviewVehicleConflictEffects(simpleMotoNative,draftSimple('TAXI'));
+assert.equal(differentTaxi.status,'POSSIBLE_DIFFERENCE');
+assert.deepEqual(differentTaxi.rows.filter(r=>r.relation==='DIFFERENT').map(r=>r.vehicleType),
+ ['MOTORCYCLE','TAXI']);
+const sameDefaultExisting={...existingBase,restrictions:[{
+ ...existingBase.restrictions[0],vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE']}]}
+}]};
+const differentDraft={direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'BLOCKED',vehicleTypes:['TAXI']};
+const differentOverlap=a.previewRestrictionConflicts(differentDraft,sameDefaultExisting,
+ scheduleOverlap,{motorDraft:{enabled:false,conditions:[]}});
+assert.equal(differentOverlap.status,'POTENTIAL_CONFLICT');
+assert.equal(differentOverlap.items[0].reason,'conflict_reason_vehicle');
+assert.equal(differentOverlap.items[0].vehicleReview.status,'POSSIBLE_DIFFERENCE');
+const sameDraft={...differentDraft,vehicleTypes:['MOTORCYCLE']};
+const sameOverlap=a.previewRestrictionConflicts(sameDraft,sameDefaultExisting,
+ scheduleOverlap,{motorDraft:{enabled:false,conditions:[]}});
+assert.equal(sameOverlap.status,'OVERLAP_REVIEW');
+assert.equal(sameOverlap.items[0].vehicleReview.status,'SAME_EFFECT');
+assert.notEqual(sameOverlap.status,'SEPARATE','Same effects can still be duplicate restrictions');
+const existingWithEV={defaultType:'BLOCKED',vehicleRules:{
+ FREE:[{vehicleTypes:['EV']}]}
+};
+const greenDesign=a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']},{isAtoB:true});
+const greenPerClass={PRIVATE:{requiresPass:true,requiresOccupancy:false,
+ permitIds:['residents'],minPassengers:null},
+ EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}};
+const greenReview=a.reviewVehicleConflictEffects(existingWithEV,greenDesign,
+ {vehicleRules:greenPerClass});
+assert.equal(greenReview.status,'CONDITIONAL');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='EV').proposedEffect,'FREE');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='EV').relation,'SAME');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='PRIVATE').proposedEffect,'CONDITIONAL');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='PRIVATE').relation,'CONDITIONAL');
+assert.equal(a.reviewVehicleConflictEffects(existingWithEV,greenDesign).rows
+ .find(x=>x.vehicleType==='PRIVATE').relation,'UNKNOWN',
+ 'Missing green vehicle-specific state must not become a direct authorization');
+const nativeWithConditions={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE'],licensePlateNumber:'0'}]
+}};
+assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
+ draftSimple('MOTORCYCLE')).rows[2].existingEffect,'CONDITIONAL');
+assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
+ draftSimple('MOTORCYCLE')).rows[2].relation,'CONDITIONAL');
+const nativeUnsupported={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['BUS']}]}
+}};
+const unknownNative=a.reviewVehicleConflictEffects(nativeUnsupported,
+ draftSimple('MOTORCYCLE'));
+assert.equal(unknownNative.unmodeledNativeTypes,true);
+assert.equal(unknownNative.status,'UNKNOWN');
+assert.ok(unknownNative.rows.every(x=>x.existingEffect==='UNKNOWN'));
+const withLegacy={defaultType:'BLOCKED',vehicleRules:{},
+ driveProfiles:{FREE:[{vehicleTypes:['TAXI']}]}};
+assert.equal(a.reviewVehicleConflictEffects(withLegacy,
+ draftSimple('MOTORCYCLE')).status,'UNKNOWN');
+assert.equal(a.reviewVehicleConflictEffects({defaultType:'FREE'},
+ draftSimple('MOTORCYCLE')).status,'UNKNOWN');
+const blue=a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},{isAtoB:true});
+const tollExisting={defaultType:'TOLL',vehicleRules:{
+ FREE:[{vehicleTypes:['TAXI']}]}
+};
+const tollReview=a.reviewVehicleConflictEffects(tollExisting,blue);
+assert.equal(tollReview.status,'SAME_EFFECT');
+assert.equal(tollReview.rows.find(x=>x.vehicleType==='TAXI').existingEffect,'FREE');
+assert.equal(tollReview.rows.find(x=>x.vehicleType==='PRIVATE').proposedEffect,'TOLL');
+const conditionalEngine=a.reviewVehicleConflictEffects(simpleMotoNative,
+ draftSimple('MOTORCYCLE'),{motorDraft:{enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125}]}});
+assert.equal(conditionalEngine.rows.find(x=>x.vehicleType==='MOTORCYCLE').proposedEffect,
+ 'CONDITIONAL');
+assert.equal(conditionalEngine.status,'CONDITIONAL');
+const numericDaysVehicle=a.previewRestrictionConflicts(sameDraft,
+ unknownWeekdays,scheduleOverlap);
+assert.equal(numericDaysVehicle.status,'UNKNOWN',
+ 'Numeric SDK weekdays should still block the final conflict determination');
+assert.ok(numericDaysVehicle.items[0].vehicleReview,
+ 'Vehicle analysis can be displayed as partial evidence even with unknown dates');
+assert.equal(JSON.stringify(simpleMotoNative),simpleMotoSnapshot,
+ 'Vehicle inspection must not mutate the existing restriction');
+assert.ok(src.includes('reviewVehicleConflictEffects(') &&
+ src.includes('const vehicleReview=reviewVehicleConflictEffects('),
+ 'The conflict preflight must actually perform per-vehicle comparisons');
+assert.ok(src.includes('node("summary",tr("vehicle_conflict_title"))'),
+ 'Vehicle-level details must be visible in the conflict viewer');
+assert.ok(src.includes('tr("vehicle_compare_caution")'),
+ 'The UI must explain overlapping categories and unverified AND/OR and precedence');
+assert.ok(src.includes('tr("vehicle_compare_unmodeled")'),
+ 'Native categories outside the four-option shortlist must not be hidden');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
