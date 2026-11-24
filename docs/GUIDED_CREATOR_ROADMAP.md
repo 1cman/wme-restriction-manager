@@ -384,6 +384,27 @@ The maintainer requested two connected protections before any SDK write: **show 
 
 **Manual acceptance tests:** in both WME Standard and Beta, select (a) a segment with no restrictions, (b) one with a known existing restriction and dates, (c) one with multiple restrictions/directions, and (d) one with vehicle-specific conditions not among the wizard's four types. Verify all existing rules are visible before choosing a new draft; the native edit shortcut opens the original restrictions panel without applying anything; different directions/date ranges produce separation only when provable, and undecodable calendars produce `UNKNOWN`. Change an existing restriction in the native editor and confirm the sidebar reflects the change. Do not enable real application until native time-frame and vehicle-rule semantics, complete preservation and full-operation SAFE12 validation are confirmed.
 
+## Alpha 21: per-vehicle conflict effects, conservative precedence (2026-11-24)
+
+The maintainer successfully tested Alpha 20's overlap alert and the direct native **Modifica restrizioni** shortcut. The next step is to compare **vehicle-specific effects** without confusing a global `defaultType` with the `vehicleRules` overriding it.
+
+**Official reference:** [WME SDK BaseRestriction](https://web-assets.waze.com/wme_sdk_docs/production/latest/interfaces/index.SDK.BaseRestriction.html) defines the supported default/override pairings (`BLOCKED` + optional `FREE` rules, `FREE` + `BLOCKED` rules, `TOLL` + `FREE` rules). [SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/production/latest/interfaces/index.SDK.SegmentRestriction.html) includes `vehicleRules`, `laneScope`, `direction` and `timeFrames`. These are **documented model concepts**, not proof of full combined restriction routing semantics or permission to write SDK payloads.
+
+**Implemented in read-only Alpha 21:** `reviewVehicleConflictEffects(existing, normalizedDraft, proposal)` compares the four user-selected categories `PRIVATE`, `EV`, `MOTORCYCLE` and `TAXI` separately. It analyzes a native existing rule only when the rule collection is a narrowly recognizable `{FREE:[{vehicleTypes:[...]}]}` or `{BLOCKED:[{vehicleTypes:[...]}]}` pattern consistent with its `defaultType`. Other native fields, additional conditions, unsupported vehicle types or multiple native rules for the same category are flagged **CONDITIONAL** or **UNKNOWN** rather than converted into unconditional exemptions. A nonempty unverified legacy `driveProfiles` read that may differ from `vehicleRules` also fails closed.
+
+For the proposed restriction, the review distinguishes:
+- Red **all prohibited** versus red **selected prohibited**; optional motorcycle engine matching is `CONDITIONAL`, not a blanket motorcycle ban.
+- Green **default blocked**, each selected vehicle either directly free or conditional on its **own** pass/occupancy requirements. Missing per-vehicle state is `UNKNOWN`, not silently treated as free.
+- Blue **default toll**, with selected vehicle categories marked as toll-free in the semantic proposal.
+
+A four-row comparison lists the existing and proposed category effects and one of `SAME`, `DIFFERENT`, `CONDITIONAL` or `UNKNOWN`. When a physical/time overlap was already established, differing effects for any same named vehicle category can **elevate** the result to **possible conflict** even when top-level default types match. It never classifies physical/time overlap as **definitely separate** solely because vehicle names differ. The per-vehicle detail is still shown as *partial evidence* if time/weekday data are undecodable.
+
+**Hard limitations:** The four WME vehicle types are not assumed mutually exclusive (for example a private car can also be electric). A native rule's AND/OR logic, pass subscriptions, motorcycle engine ranges, number-plate restrictions, multiple overlapping restrictions, precedence/priority and geographic applicability are not fully evaluated. Complex or foreign vehicle groups and repeated native rules are conservatively uncertain. Identical predicted effect labels do **not** mean a new restriction is safe or unnecessary. All reviews report `verified:false` and `saveAllowed:false`; the entire Alpha remains read-only.
+
+**Acceptance in WME Standard and Beta:** select segments with (a) a general prohibition, (b) a native motorcycle-only rule, (c) green authorization for private cars with a pass and EV without a pass, (d) a toll exemption, and (e) unknown/legacy or multi-rule vehicle conditions. Check that the expanded **Confronto per tipo di veicolo** lists the four categories independently and flags partial/unknown results rather than offering a false guarantee. Existing native restrictions remain intact. Stable 3.2.0 is not changed.
+
+**Next milestone:** derive verified effects from the official SDK's full `VehicleRule` model and native editor examples, including country permits, occupancy and motorcycle engine logic; validate SDK weekday bitmask/timeframe semantics. Only after these and the complete SAFE12 operation safety gates are closed can a write preview be considered. No Apply/Save action is enabled.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
