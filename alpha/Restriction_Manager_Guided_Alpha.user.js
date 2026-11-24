@@ -1286,26 +1286,36 @@
                         dialog.append(node("p",dates+" · "+days+" · "+hours));
                     }
                     dialog.append(node("p",tr("red_schedule_intro")));
-                }else{
-                const conditions=normalizeAdvanced(advanced,current.permits);
-                const checked=normalizeDraft(draft,current.segment,conditions);
-                const exceptionLabel=checked.restrictionIntent==="ALLOWED"?"allowed_preview":
-                    checked.restrictionIntent==="BLOCKED"?"blocked_preview":"toll_preview";
-                dialog.append(node("h3",tr("summary")),
-                    node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
-                    node("p",tr("rule_preview")+": "+
-                        tr(checked.defaultType==="BLOCKED"?"allowed_default":"toll_default")+
-                        " (SDK "+checked.defaultType+")"),
-                    node("p",tr(exceptionLabel)+" (SDK "+checked.overrideType+"): "+
-                        (checked.vehicleTypes.length?
-                            checked.vehicleTypes.map(type=>vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", "):
-                            checked.restrictionIntent==="ALLOWED"?tr("all_vehicle_types"):tr("no_exceptions"))),
-                    node("p",tr("occupancy")+": "+(conditions.minPassengers===null?tr("no_condition"):conditions.minPassengers)),
-                    node("p",tr("country_permits")+": "+(conditions.permitIds.length?
-                      conditions.permitIds.map(id=>current.permits?.find(p=>p.id===id)?.name||id).join(", "):tr("no_condition"))));
-                if(checked.restrictionIntent==="ALLOWED")dialog.append(
-                    node("p",tr("others_blocked")),node("p",tr("criteria_unverified")));
-                dialog.append(node("p",tr("plate_note")),node("p",tr("vehicles_unknown")));
+                }else if(draft.restrictionType==="TOLL"){
+                    const checked=normalizeDraft(draft,current.segment);
+                    const schedule=normalizeRedSchedule(redSchedule);
+                    const flag=normalizeTollActivationDraft(checked,[current.segment.id]);
+                    dialog.append(
+                        node("h3",tr("summary")),
+                        node("p",tr(checked.direction)+" · "+tr(checked.scope)+" · "+tr(checked.lane)),
+                        node("p",tr("rule_preview")+": "+tr("toll_default")+
+                            " (SDK "+checked.defaultType+")"),
+                        node("p",tr("toll_preview")+" (SDK "+checked.overrideType+"): "+
+                            checked.vehicleTypes.map(type=>
+                                vehicleLabels[type]?.[LANGS.indexOf(lang)]||type).join(", ")),
+                        node("p",tr("toll_nonexempt")),
+                        node("h4",tr("toll_auto_flag")),
+                        node("p",tr("toll_activation_pending")),
+                        node("p",tr("toll_both_directions")),
+                        node("p","SDK hasToll = "+String(flag.hasToll)+
+                            " · "+tr("inspection_snapshot")+": "+tr("pending"))
+                    );
+                    dialog.append(node("h4",tr("schedule_summary")));
+                    for(const frame of schedule.timeFrames){
+                        const dates=(frame.startDate||tr("no_condition"))+" → "+
+                            (frame.endDate||tr("no_condition"));
+                        const days=frame.weekdays.map(day=>tr(day)).join(", ");
+                        const hours=frame.fromTime===null?tr("schedule_all_day"):
+                            frame.fromTime+"–"+frame.toTime;
+                        dialog.append(node("p",dates+" · "+days+" · "+hours));
+                    }
+                    dialog.append(node("p",tr("toll_schedule_intro")),
+                        node("p",tr("vehicles_unknown")));
                 }
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
