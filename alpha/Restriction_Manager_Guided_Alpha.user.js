@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.18
+// @version      4.0.0-alpha.19
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.18";
+    const VERSION = "4.0.0-alpha.19";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -91,6 +91,19 @@
         conversion_unknown:["Dati SDK esistenti mancanti: impossibile validare la conservazione.","Existing SDK data missing; preservation cannot be validated.","Données SDK existantes manquantes.","Faltan datos SDK existentes.","Bestehende SDK-Daten fehlen.","Dados SDK existentes em falta."],
         conversion_overbudget:["Stima SAFE12 oltre il limite: rivedere il calendario.","SAFE12 estimate exceeds the limit; revise the schedule.","Estimation SAFE12 au-dessus de la limite.","Estimación SAFE12 sobre el límite.","SAFE12-Schätzung überschreitet das Limit.","Estimativa SAFE12 acima do limite."],
         conversion_country:["Disponibilità e permessi locali del Paese/segmento da verificare.","Country/segment rule eligibility and permissions unverified.","Éligibilité du pays/segment à vérifier.","Elegibilidad del país/segmento sin verificar.","Zulässigkeit für Land/Segment ungeprüft.","Elegibilidade do país/segmento por verificar."],
+        preservation_title:["Controllo conservazione restrizioni esistenti","Existing restrictions preservation audit","Audit de conservation des restrictions existantes","Auditoría de conservación de restricciones existentes","Prüfung der Erhaltung vorhandener Beschränkungen","Auditoria de preservação das restrições existentes"],
+        preservation_status:["Esito controllo","Inspection result","Résultat du contrôle","Resultado del control","Prüfergebnis","Resultado da verificação"],
+        preservation_none:["Nessuna restrizione esistente da conservare","No existing restrictions to preserve","Aucune restriction existante à conserver","No hay restricciones que conservar","Keine bestehenden Beschränkungen zu erhalten","Sem restrições existentes para preservar"],
+        preservation_roundtrip:["Sono presenti restrizioni da conservare; serve una conversione di andata e ritorno verificata.","Existing restrictions require a verified read/write round trip.","Les restrictions existantes nécessitent une conversion aller-retour vérifiée.","Las restricciones existentes requieren conversión de ida y vuelta verificada.","Bestehende Beschränkungen brauchen einen geprüften Roundtrip.","As restrições existentes exigem conversão de ida e volta verificada."],
+        preservation_unknown:["Dati insufficienti o non serializzabili: non è possibile confermare la conservazione.","Incomplete or unserializable data: preservation cannot be confirmed.","Données incomplètes ou non sérialisables : conservation non confirmée.","Datos incompletos o no serializables: conservación no confirmada.","Unvollständige oder nicht serialisierbare Daten: Erhaltung ungeprüft.","Dados incompletos ou não serializáveis: preservação não confirmada."],
+        preservation_noneditable:["Restrizioni non modificabili","Non-editable restrictions","Restrictions non modifiables","Restricciones no editables","Nicht bearbeitbare Beschränkungen","Restrições não editáveis"],
+        preservation_editable_unknown:["Restrizioni con modificabilità sconosciuta","Restrictions with unknown editability","Restrictions à éditabilité inconnue","Restricciones con editabilidad desconocida","Beschränkungen mit unbekannter Bearbeitbarkeit","Restrições com editabilidade desconhecida"],
+        preservation_opaque:["Restrizioni con regole veicolo non ancora convertite","Restrictions with unconverted vehicle rules","Restrictions avec règles de véhicules non converties","Restricciones con reglas de vehículos sin convertir","Beschränkungen mit unkonvertierten Fahrzeugregeln","Restrições com regras de veículos não convertidas"],
+        preservation_legacy:["Restrizioni con campi precedenti/deprecati","Restrictions with legacy/deprecated fields","Restrictions avec champs dépréciés","Restricciones con campos obsoletos","Beschränkungen mit veralteten Feldern","Restrições com campos legados"],
+        preservation_incomplete:["Restrizioni con struttura insufficiente","Restrictions with incomplete structure","Restrictions avec structure incomplète","Restricciones con estructura incompleta","Beschränkungen mit unvollständiger Struktur","Restrições com estrutura incompleta"],
+        preservation_frames:["Definizioni temporali già presenti","Existing time-frame definitions","Définitions temporelles existantes","Definiciones temporales existentes","Bestehende Zeitdefinitionen","Definições de tempo existentes"],
+        preservation_warning:["Il controllo legge e conta soltanto: non converte le restrizioni esistenti in oggetti scrivibili. Non autorizza il salvataggio.","Read/count only: does not turn existing restrictions into writable objects. Saving stays blocked.","Lecture et comptage uniquement ; aucune conversion écrivable ni sauvegarde.","Solo lectura/conteo; sin conversión editable ni guardado.","Nur Lesen/Zählen; keine schreibbaren Objekte und kein Speichern.","Apenas leitura/contagem; sem objetos graváveis nem salvamento."],
+        conversion_preservation_gate:["Verifica di conservazione delle restrizioni esistenti non superata.","Existing restriction preservation has not passed verification.","Vérification de conservation non réussie.","Validación de conservación pendiente.","Erhaltung bestehender Beschränkungen ungeprüft.","Verificação de preservação ainda não concluída."],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -515,6 +528,42 @@
         });
         return {vehicles,verified:false};
     }
+    // Only audit documented SDK read-model fields. Never treat a
+    // SegmentRestriction object as an addable SegmentRestrictionData object.
+    function auditRestrictionPreservation(segment) {
+        const unknown={
+            status:"UNKNOWN",count:null,frameCount:null,nonEditable:null,
+            editabilityUnknown:null,opaqueVehicleRules:null,legacyFields:null,
+            incomplete:null,writeReady:false,verified:false
+        };
+        const rows=segment?.restrictions;
+        if(!Array.isArray(rows)||restrictionSnapshot(segment)===null)return unknown;
+        let frameCount=0,nonEditable=0,editabilityUnknown=0,
+            opaqueVehicleRules=0,legacyFields=0,incomplete=0;
+        for(const r of rows){
+            if(!r||typeof r!=="object"||Array.isArray(r)){
+                incomplete++;continue;
+            }
+            if(r.editable===false)nonEditable++;
+            else if(r.editable!==true)editabilityUnknown++;
+            if(!Array.isArray(r.timeFrames)||!["BLOCKED","FREE","TOLL"].includes(r.defaultType)||
+               !r.vehicleRules||typeof r.vehicleRules!=="object"||
+               Array.isArray(r.vehicleRules)){
+                incomplete++;
+            }
+            if(Array.isArray(r.timeFrames))frameCount+=r.timeFrames.length;
+            if(r.vehicleRules&&typeof r.vehicleRules==="object"&&
+               Object.keys(r.vehicleRules).length>0)opaqueVehicleRules++;
+            if(r.disposition!=null||r.driveProfiles!=null)legacyFields++;
+        }
+        if(!Number.isSafeInteger(frameCount))return unknown;
+        return {
+            status:incomplete?"UNKNOWN":rows.length?"REQUIRES_ROUNDTRIP":"NO_EXISTING",
+            count:rows.length,frameCount,nonEditable,editabilityUnknown,
+            opaqueVehicleRules,legacyFields,incomplete,
+            writeReady:false,verified:false
+        };
+    }
     // Deterministic conversion REVIEW, not SegmentRestrictionData and not a
     // Segments.updateSegment payload. Only the top-level rule pairing is
     // supported by the published SDK docs. Everything else fails closed.
@@ -545,12 +594,15 @@
             }));
         }
         const budget=estimateSafe12Budget(segment?.restrictions,dateDraft.timeFrames);
+        const preservation=auditRestrictionPreservation(segment);
         const blockers=["conversion_sdk_contract","conversion_schedule",
             "conversion_lane","conversion_safe12","conversion_country"];
-        if(!Array.isArray(segment?.restrictions))
+        if(preservation.status==="UNKNOWN")
             blockers.push("conversion_unknown");
-        else if(segment.restrictions.length)
+        if(preservation.status==="REQUIRES_ROUNDTRIP")
             blockers.push("conversion_preserve");
+        if(preservation.status!=="NO_EXISTING")
+            blockers.push("conversion_preservation_gate");
         if(budget.status==="OVER")blockers.push("conversion_overbudget");
         if(normalized.restrictionIntent==="ALLOWED"&&
            vehicleConditionRows.some(row=>row.requiresPass||row.requiresOccupancy))
@@ -573,7 +625,7 @@
             plannedHasToll:normalized.restrictionIntent==="TOLL"?true:null,
             existingRestrictionCount:Array.isArray(segment?.restrictions)?
                 segment.restrictions.length:null,
-            budgetStatus:budget.status,blockers:[...new Set(blockers)]
+            budgetStatus:budget.status,preservation,blockers:[...new Set(blockers)]
         };
     }
     async function readPermits(sdk,country) {
@@ -641,7 +693,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
