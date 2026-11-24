@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.15
+// @version      4.0.0-alpha.16
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,11 +18,17 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.15";
+    const VERSION = "4.0.0-alpha.16";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
     const LANES = ["lane_none", "express", "fast", "hov", "public_transport", "carpool_toll_free"];
+    // Candidate update-model names seen in community SDK examples.
+    // Unverified against the active native WME editor; NEVER a write payload.
+    const LANE_SCOPE_CANDIDATES = Object.freeze({
+        segment:"WHOLE_SEGMENT",left:"LEFT_LANE",
+        center:"MIDDLE_LANE",right:"RIGHT_LANE"
+    });
     // Editor-requested wizard shortlist (NOT the complete SDK catalogue).
     // These four categories are the ONLY selectable types in new restriction drafts.
     // This does not imply other SDK types never exist in WME or client routing.
@@ -86,6 +92,14 @@
         public_transport:["Mezzi pubblici","Public transport","Transports publics","Transporte público","Öffentlicher Verkehr","Transportes públicos"],
         carpool_toll_free:["No pedaggio per carpool","Toll-free carpool","Péage gratuit pour covoiturage","Sin peaje para vehículos compartidos","Mautfrei für Fahrgemeinschaften","Sem portagem para boleias"],
         pending:["Opzioni dimostrative: disponibilità per Paese, segmento e direzione ancora da verificare nel pannello nativo.","Design options only: country, segment and direction eligibility still requires native WME verification.","Options de conception : disponibilité à vérifier dans WME.","Opciones de diseño: disponibilidad aún por verificar en WME.","Entwurfsoptionen: Verfügbarkeit in WME noch zu prüfen.","Opções de desenho: disponibilidade ainda por verificar no WME."],
+        lane_check:["Verifica preliminare corsia (sola lettura)","Lane preflight (read-only)","Précontrôle de voie (lecture seule)","Comprobación de carril (solo lectura)","Fahrstreifen-Vorabprüfung (nur lesbar)","Verificação de via (só leitura)"],
+        lane_candidate:["Valore SDK candidato per l'ambito","Candidate SDK scope value","Valeur SDK candidate","Valor SDK candidato de ámbito","Möglicher SDK-Bereichswert","Valor SDK candidato para âmbito"],
+        lane_evidence:["Ambito osservato in restrizioni esistenti","Scope observed in existing restrictions","Portée observée sur restrictions existantes","Ámbito observado en restricciones existentes","Bereich in bestehenden Beschränkungen beobachtet","Âmbito observado em restrições existentes"],
+        lane_special_pending:["La tipologia speciale scelta non ha ancora una conversione SDK verificata.","Selected special lane type does not yet have a verified SDK mapping.","Le type de voie spécial n'a pas encore de correspondance SDK vérifiée.","El carril especial todavía no tiene una correspondencia SDK verificada.","Für den besonderen Fahrstreifentyp fehlt eine geprüfte SDK-Zuordnung.","O tipo de via especial ainda não tem correspondência SDK verificada."],
+        lane_none_requested:["Nessuna tipologia speciale richiesta","No special lane type requested","Aucun type spécial demandé","No se solicitó carril especial","Kein spezieller Fahrstreifentyp gewünscht","Nenhum tipo especial solicitado"],
+        lane_observed_types:["Tipi di corsia già presenti sul segmento (solo confronto)","Lane types already on segment (comparison only)","Types de voies déjà présents sur le segment (comparaison)","Tipos de carril presentes en el segmento (comparación)","Bestehende Fahrstreifentypen des Segments (nur Vergleich)","Tipos de via já existentes no segmento (comparação)"],
+        lane_orientation:["Sinistra/centro/destra vanno interpretati rispetto alla direzione di marcia selezionata; la corrispondenza nativa resta da verificare.","Left/center/right are relative to chosen travel direction; native mapping still needs verification.","Gauche/centre/droite selon le sens choisi ; à vérifier dans WME.","Izquierda/centro/derecha según la dirección elegida; verificar en WME.","Links/Mitte/Rechts bezogen auf die Fahrtrichtung; Prüfung in WME ausstehend.","Esquerda/centro/direita conforme o sentido escolhido; a verificar no WME."],
+        lane_caution:["Valori proposti, non autorizzati per l'applicazione. Un valore già osservato NON dimostra la disponibilità per nuove restrizioni.","Proposed values, not authorized for edits. Seeing a value in existing restrictions does NOT prove new-rule eligibility.","Valeurs proposées, non autorisées en écriture ; présence observée ≠ admissibilité.","Valores propuestos, sin permiso de escritura; observar no prueba disponibilidad.","Vorgeschlagene Werte ohne Schreibfreigabe; Beobachtung beweist keine Verwendbarkeit.","Valores propostos sem autorização de escrita; observação não comprova elegibilidade."],
         restriction_kind:["Che tipo di restrizione vuoi creare?","Which restriction would you like to create?","Quel type de restriction souhaitez-vous créer ?","¿Qué tipo de restricción quieres crear?","Welche Beschränkung möchtest du erstellen?","Que tipo de restrição queres criar?"],
         BLOCKED:["Transito vietato (con eventuali eccezioni)","No entry (with optional exceptions)","Accès interdit (avec exceptions éventuelles)","Acceso prohibido (con excepciones opcionales)","Durchfahrt verboten (mit möglichen Ausnahmen)","Passagem proibida (com exceções opcionais)"],
         ALLOWED:["Transito consentito (solo ai veicoli autorizzati)","Access allowed (authorized traffic only)","Accès autorisé (véhicules autorisés uniquement)","Acceso permitido (solo vehículos autorizados)","Zufahrt erlaubt (nur berechtigte Fahrzeuge)","Acesso permitido (apenas veículos autorizados)"],
@@ -244,6 +258,28 @@
         const term=normalizePermitSearch(search);
         const sorted=sortPermits(permits,locale);
         return term?sorted.filter(permit=>normalizePermitSearch(permit.name).includes(term)):sorted;
+    }
+    function inspectLaneDraft(draft,restrictions) {
+        if(!SCOPES.includes(draft?.scope))throw Error("Invalid lane scope");
+        if(!LANES.includes(draft?.lane))throw Error("Invalid special lane type");
+        const readAvailable=Array.isArray(restrictions);
+        const rows=readAvailable?restrictions:[];
+        const candidate=LANE_SCOPE_CANDIDATES[draft.scope];
+        const observedScope=rows.some(r=>
+            r?.laneScope===candidate||r?.disposition===candidate);
+        const observedLaneTypes=[...new Set(rows
+            .map(r=>r?.laneType)
+            .filter(value=>typeof value==="string"&&value.trim()))].sort();
+        return {
+            designScope:draft.scope,
+            laneScopeCandidate:candidate,
+            observedScope,readAvailable,
+            designLaneType:draft.lane,
+            sdkLaneType:null,
+            laneTypeStatus:draft.lane==="lane_none"?"NONE_REQUESTED":"UNMAPPED",
+            observedLaneTypes,
+            verified:false
+        };
     }
     function normalizeDraft(draft, segment) {
         if (!availableDirections(segment).includes(draft.direction)) throw new Error("Direction unavailable");
@@ -502,7 +538,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -814,7 +850,26 @@
                 }
                 dialog.append(node("p",tr("pending")));
             }
-            if(step===2) dialog.append(node("h3",tr("lane")),options(LANES,draft.lane,v=>draft.lane=v),node("p",tr("pending")));
+            if(step===2) {
+                dialog.append(node("h3",tr("lane")),options(LANES,draft.lane,v=>draft.lane=v));
+                const laneCheck=inspectLaneDraft(draft,current.segment.restrictions);
+                const report=node("div");
+                report.style.cssText="border:1px solid #cbd5e1;padding:10px;"+
+                    "border-radius:8px;background:#f8fafc;margin-top:10px;";
+                report.append(node("h4",tr("lane_check")),
+                    node("p",tr("lane_candidate")+": "+laneCheck.laneScopeCandidate),
+                    node("p",tr("lane_evidence")+": "+
+                        (laneCheck.readAvailable?
+                            (laneCheck.observedScope?tr("found"):tr("inspection_none")):
+                            tr("unknown"))));
+                report.append(node("p",laneCheck.laneTypeStatus==="UNMAPPED"?
+                    tr("lane_special_pending"):tr("lane_none_requested")));
+                report.append(node("p",tr("lane_observed_types")+": "+
+                    (laneCheck.observedLaneTypes.join(", ")||tr("inspection_none"))));
+                report.append(node("p",tr("lane_orientation")),
+                    node("p",tr("lane_caution")));
+                dialog.append(report);
+            }
             if(step===3) {
                 dialog.append(node("h3",tr("restriction_kind")),
                     options(RESTRICTION_TYPES,draft.restrictionType,v=>{
