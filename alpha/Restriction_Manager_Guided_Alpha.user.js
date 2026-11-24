@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.20
+// @version      4.0.0-alpha.21
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.20";
+    const VERSION = "4.0.0-alpha.21";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -134,6 +134,16 @@
         conflict_reason_time:["Periodi non sovrapposti","Non-overlapping periods","Périodes distinctes","Periodos no superpuestos","Zeitlich getrennt","Períodos sem sobreposição"],
         conflict_reason_common:["Direzione/corsia/orario potenzialmente coincidenti","Direction/lane/time may coincide","Direction/voie/horaire peuvent coïncider","Dirección/carril/horario pueden coincidir","Richtung/Spur/Zeit können übereinstimmen","Direção/via/horário podem coincidir"],
         conflict_reason_unknown:["Dati o condizioni SDK insufficienti per escludere sovrapposizioni","SDK data or conditions insufficient to exclude overlaps","Données SDK insuffisantes","Datos SDK insuficientes","SDK-Daten reichen nicht aus","Dados SDK insuficientes"],
+        conflict_reason_vehicle:["Possibili effetti diversi per uno o più tipi di veicolo","Potentially different effects for one or more vehicle classes","Effets potentiellement différents selon le véhicule","Posibles efectos diferentes por tipo de vehículo","Möglicherweise unterschiedliche Wirkungen je Fahrzeugart","Possíveis efeitos diferentes por tipo de veículo"],
+        vehicle_conflict_title:["Confronto per tipo di veicolo (anteprima)","Vehicle-by-vehicle comparison (preview)","Comparaison par véhicule (aperçu)","Comparación por vehículo (vista previa)","Fahrzeugvergleich (Vorschau)","Comparação por tipo de veículo (prévia)"],
+        vehicle_existing_effect:["Regola presente","Existing effect","Effet existant","Efecto existente","Bestehende Wirkung","Efeito existente"],
+        vehicle_proposed_effect:["Nuova regola","Proposed effect","Nouvel effet","Nuevo efecto","Neue Regelwirkung","Nova regra"],
+        vehicle_same:["Stesso effetto previsto","Same proposed effect","Même effet prévu","Mismo efecto previsto","Gleiche vorgesehene Wirkung","Mesmo efeito previsto"],
+        vehicle_different:["Possibile incompatibilità","Potential incompatibility","Incompatibilité possible","Posible incompatibilidad","Mögliche Unvereinbarkeit","Possível incompatibilidade"],
+        vehicle_conditional:["Condizioni ulteriori da verificare","Additional conditions need verification","Conditions supplémentaires à vérifier","Condiciones adicionales por verificar","Zusätzliche Bedingungen prüfen","Condições adicionais a verificar"],
+        vehicle_unknown:["Regola veicolo non interpretabile","Vehicle rule not interpretable","Règle véhicule non interprétable","Regla de vehículo no interpretable","Fahrzeugregel nicht interpretierbar","Regra de veículo não interpretável"],
+        vehicle_compare_caution:["Il confronto riguarda solo le quattro categorie, senza garantire che siano mutuamente esclusive (es. Auto private ed elettriche). Non interpreta ancora combinazioni AND/OR, pass, motori, targhe o precedenza fra restrizioni. Nessun esito autorizza il salvataggio.","Only four categories are compared, without assuming they are mutually exclusive (e.g., private and electric). AND/OR conditions, permits, engines, plates and rule precedence remain unverified. No result authorizes saving.","Quatre catégories comparées, sans présumer de leur exclusivité ; conditions et priorité non vérifiées.","Se comparan cuatro categorías sin asumir que son excluyentes; condiciones y precedencia no verificadas.","Vier Kategorien ohne Annahme ihrer Exklusivität; Bedingungen und Vorrang ungeprüft.","Quatro categorias sem assumir exclusividade; condições e precedência não verificadas."],
+        vehicle_compare_unmodeled:["Sono presenti categorie native diverse dalle quattro selezionabili: il confronto non può escludere interazioni.","Existing native rules include other vehicle types: interactions cannot be excluded.","D’autres catégories natives sont présentes ; interactions inconnues.","Existen otras categorías nativas; interacciones desconocidas.","Andere native Fahrzeugarten vorhanden; Wechselwirkungen ungeklärt.","Existem outras categorias nativas; interações desconhecidas."],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -596,7 +606,95 @@
     }
     // Conservative physical/temporal overlap check: an UNKNOWN result must
     // never be promoted to a guarantee that a new restriction is safe.
-    function previewRestrictionConflicts(draft,segment,schedule) {
+    // Alpha 21: conservative semantic comparison for the four editor-supported
+    // categories. This is NOT a routing-engine evaluator: categories may
+    // intersect, and the relative precedence of multiple restrictions is unknown.
+    function reviewVehicleConflictEffects(existing,normalized,proposal={}) {
+        const types=[...VEHICLE_TYPES];
+        const unknown=()=>Object.fromEntries(types.map(type=>[type,"UNKNOWN"]));
+        const isRuleObject=value=>value!==null&&typeof value==="object"&&
+            !Array.isArray(value);
+        const native=unknown();
+        let nativeKnown=false,unmodeledNativeTypes=false;
+        if(isRuleObject(existing)&&
+           ["BLOCKED","FREE","TOLL"].includes(existing.defaultType)&&
+           isRuleObject(existing.vehicleRules)){
+            const overrides=existing.vehicleRules;
+            const expected=existing.defaultType==="FREE"?"BLOCKED":"FREE";
+            const keys=Object.keys(overrides);
+            const allowed=keys.every(key=>key===expected&&Array.isArray(overrides[key]));
+            // A legacy profile that carries data not present in vehicleRules
+            // is an additional unknown effect; never silently ignore it.
+            const legacy=existing.driveProfiles;
+            const legacyOpaque=isRuleObject(legacy)&&Object.keys(legacy).length>0&&
+                (keys.length===0||legacy!==existing.vehicleRules);
+            if(allowed&&!legacyOpaque&&
+               !(existing.defaultType!=="BLOCKED"&&!keys.length)){
+                for(const type of types)native[type]=existing.defaultType;
+                nativeKnown=true;
+                for(const row of overrides[expected]||[]){
+                    if(!isRuleObject(row)||!Array.isArray(row.vehicleTypes)||
+                       !row.vehicleTypes.length){
+                        nativeKnown=false;break;
+                    }
+                    const raw=row.vehicleTypes;
+                    if(raw.some(type=>typeof type!=="string"||!type.trim())){
+                        nativeKnown=false;break;
+                    }
+                    if(raw.some(type=>!types.includes(type)))
+                        unmodeledNativeTypes=true;
+                    // Additional non-null fields can alter the conditions.
+                    // Never convert them into an unconditional override.
+                    const conditional=Object.keys(row).some(key=>
+                        key!=="vehicleTypes"&&row[key]!==null&&row[key]!==undefined);
+                    for(const type of raw.filter(type=>types.includes(type)))
+                        native[type]=conditional?"CONDITIONAL":expected;
+                }
+            }
+        }
+        if(!nativeKnown||unmodeledNativeTypes){
+            for(const type of types)native[type]="UNKNOWN";
+        }
+        const planned=unknown();
+        const chosen=normalized.vehicleTypes||[];
+        if(["BLOCKED","FREE","TOLL"].includes(normalized.defaultType)){
+            for(const type of types)planned[type]=normalized.defaultType;
+            if(normalized.restrictionIntent==="BLOCKED"){
+                for(const type of chosen){
+                    planned[type]=type==="MOTORCYCLE"&&proposal.motorDraft?.enabled?
+                        "CONDITIONAL":"BLOCKED";
+                }
+            }else if(normalized.restrictionIntent==="TOLL"){
+                for(const type of chosen)planned[type]="FREE";
+            }else if(normalized.restrictionIntent==="ALLOWED"){
+                for(const type of chosen){
+                    const rule=proposal.vehicleRules?.[type];
+                    if(!rule||typeof rule!=="object"){
+                        planned[type]="UNKNOWN";
+                    }else if(rule.requiresPass===true||rule.requiresOccupancy===true){
+                        planned[type]="CONDITIONAL";
+                    }else if(rule.requiresPass===false&&rule.requiresOccupancy===false){
+                        planned[type]="FREE";
+                    }else planned[type]="UNKNOWN";
+                }
+            }
+        }
+        const rows=types.map(type=>{
+            const oldEffect=native[type],newEffect=planned[type];
+            const relation=oldEffect==="UNKNOWN"||newEffect==="UNKNOWN"?"UNKNOWN":
+                oldEffect==="CONDITIONAL"||newEffect==="CONDITIONAL"?"CONDITIONAL":
+                oldEffect===newEffect?"SAME":"DIFFERENT";
+            return {vehicleType:type,existingEffect:oldEffect,proposedEffect:newEffect,
+                relation,verified:false};
+        });
+        return {
+            status:rows.some(r=>r.relation==="DIFFERENT")?"POSSIBLE_DIFFERENCE":
+                rows.some(r=>r.relation==="CONDITIONAL")?"CONDITIONAL":
+                rows.some(r=>r.relation==="UNKNOWN")?"UNKNOWN":"SAME_EFFECT",
+            rows,unmodeledNativeTypes,verified:false,saveAllowed:false
+        };
+    }
+    function previewRestrictionConflicts(draft,segment,schedule,proposal={}) {
         const listed=listExistingRestrictions(segment);
         if(!listed.available)return {status:"UNKNOWN",items:[],verified:false,saveAllowed:false};
         const normalized=normalizeDraft(draft,segment);
@@ -644,7 +742,10 @@
                 return {...base,status:"SEPARATE",reason:"conflict_reason_lane"};
             // A special lane may overlap, but cannot be declared physically
             // distinct merely because its type label differs.
-            if(!entry.framesKnown||!entry.frames.length)return base;
+            const vehicleReview=reviewVehicleConflictEffects(
+                segment.restrictions[entry.index-1],normalized,proposal);
+            const withVehicles={...base,vehicleReview};
+            if(!entry.framesKnown||!entry.frames.length)return withVehicles;
             let uncertain=false,hit=false;
             for(const previous of entry.frames){
                 for(const next of proposed){
@@ -655,13 +756,16 @@
             }
             if(!hit&&!uncertain)
                 return {...base,status:"SEPARATE",reason:"conflict_reason_time"};
-            if(!hit)return base;
+            if(!hit)return withVehicles;
             if(!["BLOCKED","FREE","TOLL"].includes(entry.defaultType))
-                return base;
-            // Even a proven physical overlap is only a POTENTIAL conflict
-            // because complete permit/plate/engine logic is not evaluated.
-            return {...base,status:entry.defaultType===normalized.defaultType?
-                "OVERLAP_REVIEW":"POTENTIAL_CONFLICT",reason:"conflict_reason_common"};
+                return withVehicles;
+            const different=vehicleReview.status==="POSSIBLE_DIFFERENCE";
+            // A mismatch for a specific class elevates risk even when the
+            // top-level default restriction kinds happen to match.
+            return {...withVehicles,
+                status:different||entry.defaultType!==normalized.defaultType?
+                    "POTENTIAL_CONFLICT":"OVERLAP_REVIEW",
+                reason:different?"conflict_reason_vehicle":"conflict_reason_common"};
         });
         const status=!items.length?"NONE":
             items.some(x=>x.status==="POTENTIAL_CONFLICT")?"POTENTIAL_CONFLICT":
@@ -832,7 +936,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
