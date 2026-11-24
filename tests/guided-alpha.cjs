@@ -544,6 +544,56 @@ assert.ok(src.includes('estimateSafe12Budget(') &&
 assert.ok(src.includes('tr("budget_unknown")') &&
  src.includes('tr(estimate.status==="OVER"?"budget_over":"budget_within")'),
  'Budget must be transparent about over-limit and unknown cases');
+// Alpha 16: proposed laneScope values are NOT a verified SDK write contract.
+assert.deepEqual(a.LANE_SCOPE_CANDIDATES,{
+ segment:'WHOLE_SEGMENT',left:'LEFT_LANE',
+ center:'MIDDLE_LANE',right:'RIGHT_LANE'
+});
+for(const scope of a.SCOPES){
+ const report=a.inspectLaneDraft({scope,lane:'lane_none'},[]);
+ assert.deepEqual(report,{
+  designScope:scope,laneScopeCandidate:a.LANE_SCOPE_CANDIDATES[scope],
+  observedScope:false,readAvailable:true,
+  designLaneType:'lane_none',sdkLaneType:null,
+  laneTypeStatus:'NONE_REQUESTED',observedLaneTypes:[],
+  verified:false
+ });
+}
+const existingLaneRows=[
+ {laneScope:'LEFT_LANE',laneType:'HOV'},
+ {disposition:'RIGHT_LANE',laneType:'BUS'},
+ {laneScope:'LEFT_LANE',laneType:'HOV'},
+ {laneScope:null,laneType:null},
+ {laneScope:'WHOLE_SEGMENT',laneType:'EXPRESS'}
+];
+const leftReport=a.inspectLaneDraft({scope:'left',lane:'hov'},existingLaneRows);
+assert.equal(leftReport.laneScopeCandidate,'LEFT_LANE');
+assert.equal(leftReport.observedScope,true);
+assert.equal(leftReport.laneTypeStatus,'UNMAPPED');
+assert.equal(leftReport.sdkLaneType,null,'Do not invent SDK values for special lane types');
+assert.deepEqual(leftReport.observedLaneTypes,['BUS','EXPRESS','HOV']);
+assert.equal(leftReport.verified,false,'Existing values are not proof of new restriction eligibility');
+assert.equal(a.inspectLaneDraft({scope:'right',lane:'lane_none'},existingLaneRows).observedScope,true,
+ 'Read deprecated disposition as evidence, but do not write that deprecated field');
+assert.equal(a.inspectLaneDraft({scope:'center',lane:'fast'},existingLaneRows).observedScope,false);
+const unavailableLane=a.inspectLaneDraft({scope:'segment',lane:'express'},null);
+assert.equal(unavailableLane.readAvailable,false);
+assert.equal(unavailableLane.observedScope,false);
+assert.deepEqual(unavailableLane.observedLaneTypes,[]);
+for(const badScope of [null,'unknown','LEFT_LANE']){
+ assert.throws(()=>a.inspectLaneDraft({scope:badScope,lane:'lane_none'},[]),/Invalid lane scope/);
+}
+for(const badType of [null,'HOV','bus','invented']){
+ assert.throws(()=>a.inspectLaneDraft({scope:'segment',lane:badType},[]),/Invalid special lane type/);
+}
+assert.ok(src.includes('const laneCheck=inspectLaneDraft(draft,current.segment.restrictions);'),
+ 'Show lane evidence in guided lane step');
+assert.ok(src.includes('const laneReport=inspectLaneDraft(draft,current.segment.restrictions);'),
+ 'Show lane scope candidate in all final summaries');
+assert.ok(src.includes('tr("lane_special_pending")') && src.includes('tr("lane_caution")'),
+ 'Warning must distinguish unverified special lane mappings from observed values');
+assert.ok(!/\bupdateSegment\s*\(/.test(src),
+ 'Proposed scope values must not be submitted to SDK');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
