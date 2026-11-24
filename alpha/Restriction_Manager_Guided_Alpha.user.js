@@ -632,6 +632,7 @@
                !(existing.defaultType!=="BLOCKED"&&!keys.length)){
                 for(const type of types)native[type]=existing.defaultType;
                 nativeKnown=true;
+                const seenTypes=new Set();
                 for(const row of overrides[expected]||[]){
                     if(!isRuleObject(row)||!Array.isArray(row.vehicleTypes)||
                        !row.vehicleTypes.length){
@@ -647,8 +648,16 @@
                     // Never convert them into an unconditional override.
                     const conditional=Object.keys(row).some(key=>
                         key!=="vehicleTypes"&&row[key]!==null&&row[key]!==undefined);
-                    for(const type of raw.filter(type=>types.includes(type)))
+                    for(const type of raw.filter(type=>types.includes(type))){
+                        if(seenTypes.has(type)){
+                            // Multiple rules for the same type may combine by
+                            // precedence/OR/AND, which is not yet verified.
+                            native[type]="CONDITIONAL";
+                            continue;
+                        }
+                        seenTypes.add(type);
                         native[type]=conditional?"CONDITIONAL":expected;
+                    }
                 }
             }
         }
