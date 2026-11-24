@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.14
+// @version      4.0.0-alpha.15
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,14 +18,15 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.14";
+    const VERSION = "4.0.0-alpha.15";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
     const LANES = ["lane_none", "express", "fast", "hov", "public_transport", "carpool_toll_free"];
-    // VehicleType and defaultType are documented SDK types. These lists are NOT
-    // an eligibility matrix: local WME permissions and supported combinations
-    // must be verified separately before any write path is enabled.
+    // Editor-requested wizard shortlist (NOT the complete SDK catalogue).
+    // These four categories are the ONLY selectable types in new restriction drafts.
+    // This does not imply other SDK types never exist in WME or client routing.
+    // Local WME eligibility remains unverified until live validation.
     // Wizard intents are deliberately separate from SDK defaultType enums.
     // "ALLOWED" is an editor intent, NOT an SDK RESTRICTION_TYPE.
     const RESTRICTION_TYPES = ["BLOCKED", "ALLOWED", "TOLL"];
@@ -37,11 +38,7 @@
     // BLOCKED without selected types = all blocked. With selected types, default
     // changes to FREE, with explicit BLOCKED rules for the targeted types.
     const DEFAULT_TYPES = Object.freeze({BLOCKED:"BLOCKED",ALLOWED:"BLOCKED",TOLL:"TOLL"});
-    const VEHICLE_TYPES = [
-        "BUS", "CAV", "CLEAN_FUEL", "EV", "HAZARDOUS_MATERIALS",
-        "HOV_2", "HOV_3", "HYBRID", "MOTORCYCLE", "PRIVATE",
-        "PUBLIC_TRANSPORTATION", "RV", "TAXI", "TOWING_VEHICLE", "TRUCK"
-    ];
+    const VEHICLE_TYPES = Object.freeze(["PRIVATE", "EV", "MOTORCYCLE", "TAXI"]);
     const OVERRIDE_TYPES = Object.freeze({BLOCKED:"FREE",ALLOWED:"FREE",TOLL:"FREE"});
     // Visual cues inspired by WME restriction categories (not exact sampled native colors).
     // Only the restriction-kind step uses these colors; selection semantics stay unchanged.
@@ -131,7 +128,7 @@
         others_blocked:["Ogni altro traffico rimane vietato.","All other traffic remains prohibited.","Toute autre circulation reste interdite.","El resto del tráfico sigue prohibido.","Alle anderen Fahrzeuge bleiben gesperrt.","Todo o restante tráfego continua proibido."],
         criteria_unverified:["La combinazione tra categorie, pass e occupanti è ancora una bozza: AND/OR e compatibilità locali non verificati.","Combining vehicle types, permits and occupancy is still a draft: AND/OR and local eligibility are unverified.","Combinaison des critères à vérifier (ET/OU et règles locales).","Combinación de criterios sin verificar (Y/O y normas locales).","Kombination der Kriterien noch ungeprüft (UND/ODER, Länderregeln).","Combinação de critérios por verificar (E/OU e regras locais)."],
         vehicles_toll:["Seleziona almeno un tipo di veicolo esente dal pedaggio.","Select at least one vehicle type to exempt from the toll.","Choisissez au moins un type de véhicule exempté du péage.","Selecciona al menos un tipo de vehículo exento del peaje.","Wähle mindestens eine von der Maut befreite Fahrzeugart.","Seleciona pelo menos um tipo de veículo isento da portagem."],
-        vehicles_unknown:["Le categorie sono tratte dallo SDK: non è ancora verificato se siano disponibili per questo Paese o tipo di restrizione. Nessuna modifica sarà effettuata.","Vehicle types come from the SDK: local availability for this country and restriction is not yet verified. Nothing will be changed.","Types issus du SDK : disponibilité locale non vérifiée. Aucune modification ne sera effectuée.","Tipos del SDK: disponibilidad local no verificada. No se realizarán cambios.","Fahrzeugarten aus dem SDK: lokale Verfügbarkeit noch nicht geprüft. Keine Änderungen.","Tipos do SDK: disponibilidade local não verificada. Sem alterações."],
+        vehicles_unknown:["Elenco limitato a quattro categorie: Auto private, Veicoli elettrici, Motociclette e Taxi. La disponibilità locale delle combinazioni resta da verificare. Nessuna modifica alla mappa.","List limited to four categories: private cars, electric vehicles, motorcycles and taxis. Local rule eligibility is unverified. No map changes.","Liste limitée à quatre catégories : voitures privées, véhicules électriques, motos et taxis. Compatibilité locale non vérifiée. Aucune modification.","Lista limitada a cuatro categorías: coches particulares, vehículos eléctricos, motocicletas y taxis. Compatibilidad local sin verificar. Sin cambios.","Liste auf vier Kategorien begrenzt: private Pkw, Elektrofahrzeuge, Motorräder und Taxis. Lokale Zulässigkeit ungeprüft. Keine Änderungen.","Lista limitada a quatro categorias: automóveis particulares, veículos elétricos, motociclos e táxis. Disponibilidade local por verificar. Sem alterações."],
         select_vehicle:["Seleziona almeno un veicolo per questo tipo di restrizione.","Select at least one vehicle for this restriction type.","Sélectionnez au moins un véhicule pour ce type de restriction.","Selecciona al menos un vehículo para este tipo de restricción.","Wähle mindestens eine Fahrzeugart für diese Beschränkung.","Seleciona pelo menos um veículo para este tipo de restrição."],
         rule_preview:["Regola principale","Default behavior","Règle principale","Regla principal","Grundregel","Regra principal"],
         vehicle_preview:["Eccezione per i veicoli selezionati","Exception for selected vehicles","Exception pour les véhicules choisis","Excepción para vehículos seleccionados","Ausnahme für gewählte Fahrzeuge","Exceção para os veículos selecionados"],
@@ -201,23 +198,12 @@
         found:["Rilevato","Detected","Détecté","Detectado","Erkannt","Detetado"],
         fallback:["Non rilevato: usa questa scheda.","Not detected: use this tab.","Non détecté : utilisez cet onglet.","No detectado: usa esta pestaña.","Nicht erkannt: diesen Tab verwenden.","Não detetado: usa este separador."]
     };
-    // Labels for all 15 documented SDK VehicleType values.
+    // Labels for the four user-selected wizard options, in UI order.
     const vehicleLabels = {
-        BUS:["Autobus","Bus","Bus","Autobús","Bus","Autocarro"],
-        CAV:["Veicolo connesso/autonomo","Connected/automated vehicle","Véhicule connecté/autonome","Vehículo conectado/autónomo","Vernetztes/autonomes Fahrzeug","Veículo conectado/autónomo"],
-        CLEAN_FUEL:["Veicolo a combustibile pulito","Clean-fuel vehicle","Véhicule à carburant propre","Vehículo de combustible limpio","Fahrzeug mit sauberem Kraftstoff","Veículo a combustível limpo"],
-        EV:["Veicolo elettrico","Electric vehicle","Véhicule électrique","Vehículo eléctrico","Elektrofahrzeug","Veículo elétrico"],
-        HAZARDOUS_MATERIALS:["Trasporto merci pericolose","Hazardous materials","Transport de matières dangereuses","Mercancías peligrosas","Gefahrguttransport","Materiais perigosos"],
-        HOV_2:["HOV 2+","HOV 2+","HOV 2+","HOV 2+","HOV 2+","HOV 2+"],
-        HOV_3:["HOV 3+","HOV 3+","HOV 3+","HOV 3+","HOV 3+","HOV 3+"],
-        HYBRID:["Veicolo ibrido","Hybrid vehicle","Véhicule hybride","Vehículo híbrido","Hybridfahrzeug","Veículo híbrido"],
-        MOTORCYCLE:["Motocicletta","Motorcycle","Moto","Motocicleta","Motorrad","Motociclo"],
-        PRIVATE:["Auto privata","Private car","Voiture particulière","Coche particular","Privat-Pkw","Automóvel particular"],
-        PUBLIC_TRANSPORTATION:["Trasporto pubblico","Public transportation","Transport public","Transporte público","Öffentlicher Verkehr","Transporte público"],
-        RV:["Camper","Recreational vehicle","Camping-car","Autocaravana","Wohnmobil","Autocaravana"],
-        TAXI:["Taxi","Taxi","Taxi","Taxi","Taxi","Táxi"],
-        TOWING_VEHICLE:["Veicolo con rimorchio","Towing vehicle","Véhicule tracteur","Vehículo con remolque","Zugfahrzeug","Veículo com reboque"],
-        TRUCK:["Autocarro","Truck","Camion","Camión","Lkw","Camião"]
+        PRIVATE:["Auto private","Private cars","Voitures particulières","Coches particulares","Private Pkw","Automóveis particulares"],
+        EV:["Veicoli elettrici","Electric vehicles","Véhicules électriques","Vehículos eléctricos","Elektrofahrzeuge","Veículos elétricos"],
+        MOTORCYCLE:["Motociclette","Motorcycles","Motos","Motocicletas","Motorräder","Motociclos"],
+        TAXI:["Taxi","Taxis","Taxis","Taxis","Taxis","Táxis"]
     };
     const nativeLabels = new Set(["aggiungi restrizioni","aggiungi restrizione","add restrictions","add restriction","ajouter des restrictions","ajouter une restriction","añadir restricciones","agregar restricciones","añadir restricción","beschränkungen hinzufügen","beschränkung hinzufügen","adicionar restrições","adicionar restrição"]);
     function normalizeLabel(value) {
