@@ -317,6 +317,34 @@ This report is included both immediately after the special-lane selection step a
 3. Confirm the independent button in the RM Guided Alpha tab remains usable even if an inline anchor cannot be detected.
 4. Switch between those segments without reloading and repeat in WME Standard and Beta. No existing restriction is to be changed, and the wizard should still show the existing restriction count from the SDK.
 
+## Alpha 18: deterministic SDK conversion review, always non-writable (2026-11-24)
+
+The maintainer has now **confirmed the Alpha 17 native button fix in both WME Standard and WME Beta**, including segments that already have driving restrictions. This closes the Add/Edit button detection acceptance check for both editor variants.
+
+**Official SDK contracts consulted:**
+- [SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.SegmentRestriction.html) documents `defaultType`, `vehicleRules`, `direction`, `laneScope`, `laneType`, and `timeFrames`. It explicitly allows a `BLOCKED` default with `FREE` exceptions (or none), a `FREE` default with `BLOCKED` vehicle rules, and a `TOLL` default with `FREE` vehicle rules.
+- [Segments.updateSegment](https://web-assets.waze.com/wme_sdk_docs/beta/latest/classes/index.SDK.Segments.html) supports `restrictions?: SegmentRestrictionData[]` and `hasToll?: boolean`; the toll attribute applies to **both** segment directions.
+- These declarations identify **read-model fields and write entry points**, but are not evidence that the Alpha's private engine filters, conditional per-vehicle pass/occupancy groups, country-specific eligibility, or calendar values have been correctly mapped to the real SDK **write** model.
+
+**Implemented in Alpha 18:** `reviewSdkConversion(draft, segment, schedule, vehicleRules, permits, motorDraft, country)` is a pure deterministic function that validates the existing wizard draft and produces a **read-only semantic plan**, not a serialized `SegmentRestrictionData` object. It never calls SDK mutation methods. Its status is unconditionally `BLOCKED`, `saveAllowed:false`, `verified:false`, `sdkWritePayload:null`. The final summary shows a collapsible **SDK conversion review (preview)** with the expected general rule, vehicle-specific override semantics, selected direction, proposed schedule count, the projected `hasToll:true` for blue restrictions, and the remaining verification blockers.
+
+| Wizard scenario | Documented rule pairing only | Preview vehicle treatment (NOT SDK write schema) |
+| --- | --- | --- |
+| Red with no vehicle selection | `defaultType: BLOCKED` | No vehicle override |
+| Red with selected types | `defaultType: FREE`, override `BLOCKED` | Selected PRIVATE/EV/MOTORCYCLE/TAXI are prohibited |
+| Green with selected types | `defaultType: BLOCKED`, override `FREE` | Each selected category independently DIRECT or CONDITIONAL (pass/occupants); all others blocked |
+| Blue with selected types | `defaultType: TOLL`, override `FREE` | Selected types exempt from toll, others toll-paying; plan `hasToll:true` for both directions |
+
+**Blockers are explicit and contextual**, rather than guessing defaults or silently dropping conditions:
+- The full `SegmentRestrictionData` and `AddableVehicleRule` write shape and existing restriction preservation strategy have not been validated end-to-end.
+- Date/time conversion, local segment timezone, native `laneScope`/`laneType` eligibility, country rules and full stable SAFE12 operation budget are not verified.
+- Green permit+occupancy composition and precedence, experimental motorcycle engine operators/codes, and safe coordination of a blue toll flag plus a directional exemption remain conditional blockers.
+- Missing SDK restriction arrays are reported as unknown, and existing restrictions require a separate preservation validation. If the preliminary SAFE12 estimate exceeds the limit, the review explicitly calls out that blocker.
+
+**Automated checks:** red-all versus red-selected, motorcycle engine filtering, green direct EV alongside PRIVATE requiring pass/occupants, toll exemption plus planned `hasToll`, existing unrelated SDK vehicle rules (including BUS) preserved, missing restriction data, SAFE12 over-limit, invalid inputs, and hard read-only safeguards. No real map edits or preset writes; stable 3.2.0 unchanged.
+
+**Next validation milestone:** Verify exact write-model structures and enum mappings in the official current SDK typings and/or a **non-destructive native WME observation**, including the difference between fields returned by the read model (`SegmentRestriction`) and fields accepted by `Segments.updateSegment` (`SegmentRestrictionData`). Do not treat snapshots of existing restrictions as directly writable objects. Verify timing, local timezone and AND/OR semantics; only after that develop an explicit before/after preservation-safe draft operation and full stable SAFE12 validation. No actual Apply/Save action until those checks are passed.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
