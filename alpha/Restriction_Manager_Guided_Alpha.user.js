@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.13
+// @version      4.0.0-alpha.14
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.13";
+    const VERSION = "4.0.0-alpha.14";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -111,6 +111,17 @@
         toll_preview:["Veicoli esentati dal pedaggio","Vehicles exempt from toll","Véhicules exonérés de péage","Vehículos exentos de peaje","Von der Maut ausgenommene Fahrzeuge","Veículos isentos de portagem"],
         toll_vehicle_step:["Quali veicoli vuoi esentare dal pedaggio?","Which vehicles should be exempt from tolls?","Quels véhicules exempter du péage ?","¿Qué vehículos quieres eximir del peaje?","Welche Fahrzeuge sollen von der Maut befreit werden?","Que veículos pretende isentar da portagem?"],
         toll_schedule:["Date e fasce orarie dell'esenzione dal pedaggio","Toll exemption dates and times","Dates et horaires d'exemption de péage","Fechas y horarios de exención del peaje","Daten und Uhrzeiten der Mautbefreiung","Datas e horários da isenção de portagem"],
+        green_schedule:["Date e fasce orarie del transito consentito","Dates and times of permitted traffic","Dates et horaires de circulation autorisée","Fechas y horarios del tráfico permitido","Zeiten der erlaubten Durchfahrt","Datas e horários da circulação autorizada"],
+        green_schedule_intro:["Questi orari riguardano i veicoli autorizzati e le loro condizioni individuali (pass, occupanti). Fuori dai periodi indicati non è definita alcuna autorizzazione da questa bozza. Da verificare in WME.","This schedule applies to authorized vehicle classes and their individual permit/occupancy conditions. Outside these windows this draft grants no permission. Verify in native WME.","Le calendrier concerne les véhicules autorisés et leurs conditions ; à vérifier dans WME.","El calendario se aplica a los vehículos autorizados y sus condiciones; verificar en WME.","Der Zeitplan gilt für die zugelassenen Fahrzeuge und deren Bedingungen; in WME prüfen.","O calendário aplica-se aos veículos autorizados e às respetivas condições; verificar no WME."],
+        budget_heading:["Controllo preliminare SAFE12","Preliminary SAFE12 check","Vérification préliminaire SAFE12","Comprobación preliminar SAFE12","Vorläufige SAFE12-Prüfung","Verificação preliminar SAFE12"],
+        budget_existing:["Restrizioni già presenti","Existing restrictions","Restrictions existantes","Restricciones existentes","Bestehende Beschränkungen","Restrições existentes"],
+        budget_existing_frames:["Definizioni temporali già presenti","Existing time-frame definitions","Définitions horaires existantes","Definiciones temporales existentes","Bestehende Zeitdefinitionen","Definições temporais existentes"],
+        budget_new:["Restrizioni proposte","Proposed restrictions","Restrictions proposées","Restricciones propuestas","Vorgeschlagene Beschränkungen","Restrições propostas"],
+        budget_total:["Totale previsto restrizioni / fasce","Projected total restrictions / frames","Total prévu restrictions / plages","Total previsto restricciones / intervalos","Geplante Gesamtzahl Beschränkungen / Zeitfenster","Total previsto restrições / intervalos"],
+        budget_within:["La stima rientra nel limite SAFE12. Non autorizza ancora il salvataggio: struttura SDK, fuso orario, permessi e calendari avanzati restano da verificare.","Estimate is within SAFE12. Saving is still not authorized: SDK shape, time zone, permissions and advanced calendars remain unverified.","Estimation dans la limite SAFE12 ; écriture non autorisée.","Estimación dentro de SAFE12; escritura no autorizada.","Schätzung innerhalb SAFE12; Speichern weiterhin nicht erlaubt.","Estimativa dentro de SAFE12; gravação ainda não autorizada."],
+        budget_over:["La stima supera SAFE12: prima dell'applicazione occorre ridurre gli elementi o rivedere l'operazione.","Estimate exceeds SAFE12; reduce elements or revise the operation before applying.","Estimation au-dessus de SAFE12 : réduire les éléments.","Estimación supera SAFE12: reduce elementos.","SAFE12 überschritten: Elemente reduzieren.","Estimativa ultrapassa SAFE12: reduza os elementos."],
+        budget_unknown:["Stima non disponibile: dati delle restrizioni esistenti assenti o incompleti. Nessuna ipotesi sui valori mancanti.","Estimate unavailable: existing restriction data missing or incomplete. No assumptions about missing values.","Estimation indisponible : données des restrictions incomplètes.","Estimación no disponible: faltan datos.","Schätzung nicht verfügbar: Bestandsdaten fehlen.","Estimativa indisponível: dados existentes incompletos."],
+        budget_assumption:["Conteggio conservativo: si mantengono le restrizioni presenti e si ipotizza una nuova restrizione per ogni fascia. I limiti vanno ricontrollati sul piano di modifica completo della stabile.","Conservative assumption: retain existing restrictions and add one new restriction per time frame. Recheck against the stable full-operation plan.","Hypothèse prudente : conserver les restrictions et ajouter une restriction par plage.","Supuesto conservador: conservar restricciones y añadir una por franja.","Vorsichtige Annahme: bestehende Regeln plus eine neue Regel je Zeitfenster.","Hipótese prudente: manter restrições e adicionar uma por intervalo."],
         toll_schedule_intro:["Le fasce orarie si applicano all'esenzione dei veicoli scelti. Gli altri restano soggetti al pedaggio. Nessuna modifica viene effettuata in questa Alpha.","Time ranges apply to selected vehicle exemptions. Others remain subject to toll. This Alpha makes no edits.","Les horaires s'appliquent aux véhicules exemptés. Les autres paient le péage. Aucune modification.","Los horarios se aplican a los vehículos exentos. Los demás pagan peaje. Sin cambios en esta Alpha.","Zeitfenster gelten für die befreiten Fahrzeuge. Andere bleiben mautpflichtig. Keine Bearbeitung.","Os horários aplicam-se aos veículos isentos. Outros pagam portagem. Sem alterações."],
         toll_auto_flag:["Strada a pedaggio: attivazione prevista automaticamente","Toll road: automatic activation planned","Route à péage : activation automatique prévue","Vía de peaje: activación automática prevista","Mautstraße: automatische Aktivierung vorgesehen","Estrada com portagem: ativação automática prevista"],
         toll_both_directions:["L'attributo Strada a pedaggio sarà impostato su ENTRAMBE le direzioni del segmento, anche se l'esenzione riguarda un solo senso.","The toll-road flag will apply to BOTH segment directions, even if the exemption is one-way.","Le péage s'appliquera aux DEUX sens du segment, même si l'exemption est unidirectionnelle.","El peaje se aplicará a AMBOS sentidos, incluso con exención unidireccional.","Das Maut-Attribut gilt für BEIDE Fahrtrichtungen, selbst bei einseitiger Befreiung.","A portagem aplica-se aos DOIS sentidos do segmento, mesmo com isenção num sentido."],
@@ -294,16 +305,45 @@
         return {segmentIds:[...segmentIds],hasToll:true,directions:"BOTH",
             required:true,applied:false,verified:false};
     }
+    // Read-only budget estimate. The stable v3.2 final SAFE12 validator must
+    // still inspect ALL updates, advanced calendar expansions, and every item.
+    function estimateSafe12Budget(existingRestrictions, proposedTimeFrames) {
+        const unknown={
+            status:"UNKNOWN",existingRestrictions:null,existingFrames:null,
+            proposedRestrictions:null,proposedFrames:null,
+            projectedRestrictions:null,projectedFrames:null,
+            limit:MAX_DRAFT_TIME_FRAMES,verified:false
+        };
+        if(!Array.isArray(existingRestrictions)||!Array.isArray(proposedTimeFrames)||
+           !proposedTimeFrames.length||proposedTimeFrames.some(frame=>!frame||typeof frame!=="object")||
+           existingRestrictions.some(item=>!item||!Array.isArray(item.timeFrames)))
+            return unknown;
+        const oldFrames=existingRestrictions.reduce((sum,item)=>sum+item.timeFrames.length,0);
+        const newFrames=proposedTimeFrames.length;
+        const projectedRestrictions=existingRestrictions.length+newFrames;
+        const projectedFrames=oldFrames+newFrames;
+        if(!Number.isSafeInteger(oldFrames)||!Number.isSafeInteger(projectedRestrictions)||
+           !Number.isSafeInteger(projectedFrames))return unknown;
+        return {
+            status:projectedRestrictions>MAX_DRAFT_TIME_FRAMES||
+                projectedFrames>MAX_DRAFT_TIME_FRAMES?"OVER":"WITHIN_ESTIMATE",
+            existingRestrictions:existingRestrictions.length,
+            existingFrames:oldFrames,proposedRestrictions:newFrames,proposedFrames:newFrames,
+            projectedRestrictions,projectedFrames,limit:MAX_DRAFT_TIME_FRAMES,
+            verified:false
+        };
+    }
     function nextWizardStep(step,intent,types=[]) {
         if(step===4&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:7;
         if(step===4&&intent==="TOLL")return 7;
-        if(step===5&&intent==="BLOCKED")return 7;
-        if(step===7&&(intent==="BLOCKED"||intent==="TOLL"))return 6;
+        if(step===5&&(intent==="BLOCKED"||intent==="ALLOWED"))return 7;
+        if(step===7&&RESTRICTION_TYPES.includes(intent))return 6;
         return step<6?step+1:null;
     }
     function previousWizardStep(step,intent,types=[]) {
-        if(step===6&&(intent==="BLOCKED"||intent==="TOLL"))return 7;
+        if(step===6&&RESTRICTION_TYPES.includes(intent))return 7;
         if(step===7&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:4;
+        if(step===7&&intent==="ALLOWED")return 5;
         if(step===7&&intent==="TOLL")return 4;
         return step>0?step-1:null;
     }
@@ -476,7 +516,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1133,9 +1173,12 @@
                 }
                 }
             }
-            if(step===7&&(draft.restrictionType==="BLOCKED"||draft.restrictionType==="TOLL")){
-                dialog.append(node("h3",tr(draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule")),
-                    node("p",tr(draft.restrictionType==="TOLL"?"toll_schedule_intro":"red_schedule_intro")));
+            if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType)){
+                const scheduleTitle=draft.restrictionType==="ALLOWED"?"green_schedule":
+                    draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule";
+                const scheduleIntro=draft.restrictionType==="ALLOWED"?"green_schedule_intro":
+                    draft.restrictionType==="TOLL"?"toll_schedule_intro":"red_schedule_intro";
+                dialog.append(node("h3",tr(scheduleTitle)),node("p",tr(scheduleIntro)));
                 const dates=node("div");
                 dates.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;";
                 for(const field of ["startDate","endDate"]){
