@@ -405,6 +405,28 @@ A four-row comparison lists the existing and proposed category effects and one o
 
 **Next milestone:** derive verified effects from the official SDK's full `VehicleRule` model and native editor examples, including country permits, occupancy and motorcycle engine logic; validate SDK weekday bitmask/timeframe semantics. Only after these and the complete SAFE12 operation safety gates are closed can a write preview be considered. No Apply/Save action is enabled.
 
+## Alpha 22: SDK native-condition diagnostics and legacy comparison (2026-11-24)
+
+The maintainer **confirmed the Alpha 21 four-category comparison is displayed separately in WME Standard and Beta**, including the expected warning when an existing native restriction references unsupported vehicle classes or advanced conditions. This closes the UI test only, not the real interpretation or routing precedence test.
+
+**Documentation reviewed:** [DriveProfile](https://www.waze.com/editor/sdk/interfaces/index.SDK.DriveProfile.html) documents the fields `vehicleTypes`, `subscriptions`, `numPassengers` and `licensePlateNumber` in the SDK drive profile model. [BaseRestriction](https://web-assets.waze.com/wme_sdk_docs/production/latest/interfaces/index.SDK.BaseRestriction.html) describes `vehicleRules` and the deprecated `driveProfiles` field. Neither source establishes every neutral numeric default, all nested engine/plate constraints, OR/AND combinations or precedence between overlapping restrictions.
+
+**Delivered in read-only Alpha 22:**
+
+1. `inspectNativeVehicleCondition` reads individual native SDK profile objects **without modifying them**. It identifies vehicle category names, the **count** of subscriptions/pass IDs, occupancy threshold where explicitly represented by an integer of at least 2, whether a plate condition exists, and whether an engine-related condition is present. It flags any unrecognized field names and produces `UNCONDITIONAL`, `CONDITIONAL` or `UNKNOWN` as **diagnostic interpretations**, not proof of a routing outcome.
+2. **Protect sensitive values:** diagnostic output does not contain pass IDs, plate-number values or raw internal engine values. Only the number of passes, presence of a plate/engine condition, known occupant threshold, selected vehicle type names and *unrecognized field names* are displayed.
+3. A missing/invalid category array, unknown rule fields, malformed subscriptions, and unverified `numPassengers` values (including 0 and 1) cause `UNKNOWN`, not an assumed free pass. Simple recognized empty fields (e.g., empty subscriptions, empty license-plate string and empty engine-capacities list) are treated as neutral in the read-only diagnostic **only**; live native behavior still needs verification.
+4. `compareLegacyVehicleRules` now tests structural equality of the **current** and **deprecated** rule collections, even when WME returns distinct object instances with identical data. Only exact, cycle-safe, structurally equivalent plain objects allow treating the two representations as matching. Differences, cyclic/private non-plain data or unknown representations remain unverified and cannot be used to claim safe writing. This reduces an avoidable source of `UNKNOWN` in the Alpha 21 comparison without discarding legacy data.
+5. The already-visible **Restrizioni già presenti sul segmento** section now includes an expandable **Dettaglio condizioni native (diagnostica)** for each rule. The conflict viewer additionally summarizes rule groups that require manual inspection. The four supported wizard classes remain PRIVATE, EV, MOTORCYCLE and TAXI. Other observed native vehicle classes are not discarded or silently converted.
+
+**Safety limits:** This still does not parse/verify country passes, plate parity or suffix rules, specific motor types, SDK numeric weekday bitmasks, conditions combined with AND/OR, vehicle class intersections, or multiple restriction precedence. The `UNKNOWN` and `CONDITIONAL` outcomes remain conservative. Existing native restrictions are not edited, rewritten, exported, or removed. `saveAllowed:false` and `sdkWritePayload:null` are retained. Stable 3.2.0 is untouched.
+
+**Automated tests:** plain native profile; pass plus occupancy plus masked plate; engine presence without exposing its raw value; opaque and invalid attributes; numeric/empty vehicle types; structurally equal vs different vs cyclic legacy profiles; native profile comparison before/after; read-only UI and no write SDK call.
+
+**Suggested live validation:** in both WME Standard and Beta, select a segment with a known native restriction requiring a **pass**, then open **Restrizioni già presenti sul segmento → Restrizione → Dettaglio condizioni native (diagnostica)**. Confirm the pass **count** appears without its ID/value, vehicle types are shown correctly, and the presence of any occupancy/plate/motor condition is reflected accurately. Test a basic native motorcycle restriction and an EV authorization, if available. A screenshot of these diagnostic rows (without private values) will help establish which actual SDK read-model shapes need additional interpretation. No map edits are necessary.
+
+**Next milestone:** confirm real read-model values on WME Standard/Beta, then extend verified native field interpretation and calendar weekday mapping before considering any reversible non-mutating write-model round-trip preview or full SAFE12 validation. Do **not** enable Apply/Save until all remaining write gates have been passed.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
