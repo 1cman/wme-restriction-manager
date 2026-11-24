@@ -1444,6 +1444,22 @@
                 assumption.style.cssText="font-size:12px;color:#475569;";
                 budgetBox.append(assumption);
                 dialog.append(budgetBox);
+                // Repeat the lane preflight at the final review, regardless of
+                // whether the editor went through the red, green or blue path.
+                const laneReport=inspectLaneDraft(draft,current.segment.restrictions);
+                const laneBox=node("section");
+                laneBox.style.cssText="padding:10px;margin-top:12px;"+
+                    "border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;";
+                laneBox.append(node("h4",tr("lane_check")),
+                    node("p",tr("lane_candidate")+": "+laneReport.laneScopeCandidate),
+                    node("p",tr("lane_evidence")+": "+
+                        (laneReport.readAvailable?
+                            (laneReport.observedScope?tr("found"):tr("inspection_none")):
+                            tr("unknown"))),
+                    node("p",laneReport.laneTypeStatus==="UNMAPPED"?
+                        tr("lane_special_pending"):tr("lane_none_requested")),
+                    node("p",tr("lane_caution")));
+                dialog.append(laneBox);
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
