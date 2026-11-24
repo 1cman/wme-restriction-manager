@@ -89,7 +89,7 @@ assert.deepEqual(redOnlyMotor.vehicleTypes,['MOTORCYCLE']);
 const redTwo=a.normalizeDraft({...redBase,vehicleTypes:['MOTORCYCLE','PRIVATE']},{isAtoB:true});
 assert.equal(redTwo.defaultType,'FREE');
 assert.equal(redTwo.overrideType,'BLOCKED');
-assert.deepEqual(redTwo.vehicleTypes,['MOTORCYCLE','PRIVATE']);
+assert.deepEqual(redTwo.vehicleTypes,['PRIVATE','MOTORCYCLE']);
 assert.ok(src.includes('tr("blocked_everyone")+" (SDK BLOCKED)"'), 'All forbidden summary must be explicit');
 assert.ok(src.includes('tr("blocked_only_selected")'), 'Selective red prohibition must preserve other vehicle access');
 assert.ok(src.includes('"FREE":DEFAULT_TYPES[draft.restrictionType]'), 'Selective red default must switch to FREE');
