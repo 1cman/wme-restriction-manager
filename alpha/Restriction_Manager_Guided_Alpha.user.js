@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.21
+// @version      4.0.0-alpha.22
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.21";
+    const VERSION = "4.0.0-alpha.22";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -144,6 +144,18 @@
         vehicle_unknown:["Regola veicolo non interpretabile","Vehicle rule not interpretable","Règle véhicule non interprétable","Regla de vehículo no interpretable","Fahrzeugregel nicht interpretierbar","Regra de veículo não interpretável"],
         vehicle_compare_caution:["Il confronto riguarda solo le quattro categorie, senza garantire che siano mutuamente esclusive (es. Auto private ed elettriche). Non interpreta ancora combinazioni AND/OR, pass, motori, targhe o precedenza fra restrizioni. Nessun esito autorizza il salvataggio.","Only four categories are compared, without assuming they are mutually exclusive (e.g., private and electric). AND/OR conditions, permits, engines, plates and rule precedence remain unverified. No result authorizes saving.","Quatre catégories comparées, sans présumer de leur exclusivité ; conditions et priorité non vérifiées.","Se comparan cuatro categorías sin asumir que son excluyentes; condiciones y precedencia no verificadas.","Vier Kategorien ohne Annahme ihrer Exklusivität; Bedingungen und Vorrang ungeprüft.","Quatro categorias sem assumir exclusividade; condições e precedência não verificadas."],
         vehicle_compare_unmodeled:["Sono presenti categorie native diverse dalle quattro selezionabili: il confronto non può escludere interazioni.","Existing native rules include other vehicle types: interactions cannot be excluded.","D’autres catégories natives sont présentes ; interactions inconnues.","Existen otras categorías nativas; interacciones desconocidas.","Andere native Fahrzeugarten vorhanden; Wechselwirkungen ungeklärt.","Existem outras categorias nativas; interações desconhecidas."],
+        native_conditions_title:["Dettaglio condizioni native (diagnostica)","Native condition details (diagnostic)","Détail des conditions natives (diagnostic)","Detalle de condiciones nativas (diagnóstico)","Native Bedingungsdetails (Diagnose)","Detalhes das condições nativas (diagnóstico)"],
+        native_conditions_intro:["Lettura di campi già presenti nel modello SDK. Non deduce precedenze AND/OR o autorizzazioni reali: i valori dei pass e delle targhe non vengono mostrati.","Reading fields already in the SDK model. Does not infer AND/OR precedence or actual permission. Permit IDs and plate values are not displayed.","Champs SDK observés, sans déduire les priorités ; valeurs de permis et plaques masquées.","Campos SDK observados, sin deducir precedencia; permisos y matrículas ocultos.","SDK-Felder ohne Ableitung von Prioritäten; Ausweise und Kennzeichen verborgen.","Campos SDK observados, sem inferir prioridades; autorizações e matrículas ocultadas."],
+        native_group:["Gruppo regola","Rule group","Groupe de règle","Grupo de regla","Regelgruppe","Grupo de regra"],
+        native_types:["Categorie rilevate","Observed vehicle categories","Catégories observées","Categorías observadas","Beobachtete Fahrzeugarten","Categorias observadas"],
+        native_passes:["Numero di pass rilevati","Observed permit count","Nombre de permis observés","Número de permisos detectados","Anzahl erkannter Berechtigungen","Quantidade de autorizações detetadas"],
+        native_occupants:["Occupanti minimi riportati","Reported minimum occupants","Occupants minimaux déclarés","Ocupantes mínimos indicados","Gemeldete Mindestinsassen","Ocupantes mínimos indicados"],
+        native_plate:["Condizione targa presente (valore nascosto)","License-plate condition present (value hidden)","Condition plaque présente (valeur masquée)","Condición matrícula presente (valor oculto)","Kennzeichenbedingung vorhanden (Wert verborgen)","Condição de matrícula presente (valor ocultado)"],
+        native_engine:["Condizione motore presente (non interpretata)","Engine condition present (not interpreted)","Condition moteur présente (non interprétée)","Condición de motor presente (sin interpretar)","Motorbedingung vorhanden (nicht interpretiert)","Condição de motor presente (não interpretada)"],
+        native_other_fields:["Campi non riconosciuti (solo nomi)","Unrecognized fields (names only)","Champs inconnus (noms uniquement)","Campos desconocidos (solo nombres)","Unbekannte Felder (nur Namen)","Campos desconhecidos (apenas nomes)"],
+        native_uncertain:["Valori o combinazioni ancora da verificare","Values or combinations still unverified","Valeurs ou combinaisons à vérifier","Valores o combinaciones sin verificar","Werte oder Kombinationen ungeprüft","Valores ou combinações por verificar"],
+        native_profiles_equal:["Campi legacy e attuali equivalenti","Legacy and current fields match","Champs anciens et actuels équivalents","Campos antiguos y actuales equivalentes","Alte und neue Felder übereinstimmend","Campos antigos e atuais equivalentes"],
+        native_profiles_differ:["Campi legacy e attuali diversi o non confrontabili","Legacy and current fields differ or cannot be compared","Champs anciens et actuels divergents/incomparables","Campos antiguos y actuales distintos/incomparables","Alte und neue Felder verschieden/nicht vergleichbar","Campos antigos e atuais diferentes/não comparáveis"],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -606,6 +618,112 @@
     }
     // Conservative physical/temporal overlap check: an UNKNOWN result must
     // never be promoted to a guarantee that a new restriction is safe.
+    // SDK DriveProfile documentation describes vehicleTypes, subscriptions,
+    // numPassengers and licensePlateNumber. This is a read-only diagnostic, NOT
+    // a claim about the routing engine's boolean condition/precedence semantics.
+    function inspectNativeVehicleCondition(rule) {
+        const unknown={status:"UNKNOWN",types:[],passCount:null,
+            minPassengers:null,hasPlate:false,hasEngine:false,
+            unknownFields:[],conditions:[],verified:false};
+        if(!rule||typeof rule!=="object"||Array.isArray(rule))return unknown;
+        const keys=new Set([
+            "vehicleTypes","subscriptions","numPassengers",
+            "licensePlateNumber","licensePlateRule","engineType",
+            "capacityThreshold","operator","engineCapacities"
+        ]);
+        const unknownFields=Object.keys(rule).filter(key=>!keys.has(key)).sort();
+        const types=Array.isArray(rule.vehicleTypes)&&
+            rule.vehicleTypes.length&&rule.vehicleTypes.every(x=>
+                typeof x==="string"&&x.trim())?[...new Set(rule.vehicleTypes)]:[];
+        let invalid=!types.length||unknownFields.length>0;
+        const conditions=[];
+        let passCount=null,minPassengers=null,hasPlate=false,hasEngine=false;
+        if(Object.prototype.hasOwnProperty.call(rule,"subscriptions")&&
+           rule.subscriptions!=null){
+            if(!Array.isArray(rule.subscriptions)||rule.subscriptions.some(x=>
+                typeof x!=="string"))invalid=true;
+            else {
+                passCount=rule.subscriptions.length;
+                if(passCount)conditions.push("PASS");
+            }
+        }
+        if(Object.prototype.hasOwnProperty.call(rule,"numPassengers")&&
+           rule.numPassengers!=null){
+            if(!Number.isSafeInteger(rule.numPassengers)||rule.numPassengers<2)
+                invalid=true; // SDK does not establish 0/1 as unrestricted.
+            else{
+                minPassengers=rule.numPassengers;
+                conditions.push("OCCUPANCY");
+            }
+        }
+        const lp=rule.licensePlateNumber;
+        if(lp!=null){
+            if(typeof lp!=="string")invalid=true;
+            else if(lp.length){hasPlate=true;conditions.push("PLATE");}
+        }
+        if(rule.licensePlateRule!=null){
+            hasPlate=true;
+            if(!conditions.includes("PLATE"))conditions.push("PLATE");
+        }
+        for(const field of ["engineType","capacityThreshold","operator","engineCapacities"]){
+            const value=rule[field];
+            if(value==null)continue;
+            if(field==="engineCapacities"&&Array.isArray(value)&&value.length===0)
+                continue;
+            hasEngine=true;
+        }
+        if(hasEngine)conditions.push("ENGINE");
+        return {
+            status:invalid?"UNKNOWN":conditions.length?"CONDITIONAL":"UNCONDITIONAL",
+            types,passCount,minPassengers,hasPlate,hasEngine,
+            unknownFields,conditions,verified:false
+        };
+    }
+    // Only structural equality, never stringification of private data to UI.
+    function compareLegacyVehicleRules(current,legacy) {
+        if(legacy==null||typeof legacy!=="object"||
+           Array.isArray(legacy)||!Object.keys(legacy).length)return "ABSENT";
+        if(current===legacy)return "SAME";
+        const stable=value=>{
+            const seen=new WeakSet();
+            const serialize=(item,depth)=>{
+                if(depth>25)throw Error("Depth limit");
+                if(item===null||typeof item!=="object"){
+                    if(typeof item==="function"||typeof item==="symbol"||
+                       typeof item==="undefined")throw Error("Unsupported value");
+                    return item;
+                }
+                if(seen.has(item))throw Error("Cycle or shared reference");
+                seen.add(item);
+                if(Array.isArray(item))return item.map(x=>serialize(x,depth+1));
+                if(Object.getPrototypeOf(item)!==Object.prototype&&
+                   Object.getPrototypeOf(item)!==null)throw Error("Non-plain");
+                return Object.fromEntries(Object.keys(item).sort().map(key=>
+                    [key,serialize(item[key],depth+1)]));
+            };
+            return JSON.stringify(serialize(value,0));
+        };
+        try{return stable(current)===stable(legacy)?"SAME":"DIFFERENT";}
+        catch(_){return "UNKNOWN";}
+    }
+    function inspectNativeVehicleRules(restriction) {
+        const groups=restriction?.vehicleRules;
+        if(!groups||typeof groups!=="object"||Array.isArray(groups))
+            return {available:false,legacyComparison:"UNKNOWN",rows:[],verified:false};
+        const rows=[];
+        for(const group of Object.keys(groups).sort()){
+            if(!Array.isArray(groups[group])){
+                rows.push({group,index:1,...inspectNativeVehicleCondition(null)});
+                continue;
+            }
+            groups[group].forEach((rule,index)=>
+                rows.push({group,index:index+1,...inspectNativeVehicleCondition(rule)}));
+        }
+        return {available:true,
+            legacyComparison:compareLegacyVehicleRules(
+                groups,restriction?.driveProfiles),
+            rows,verified:false};
+    }
     // Alpha 21: conservative semantic comparison for the four editor-supported
     // categories. This is NOT a routing-engine evaluator: categories may
     // intersect, and the relative precedence of multiple restrictions is unknown.
@@ -625,9 +743,10 @@
             const allowed=keys.every(key=>key===expected&&Array.isArray(overrides[key]));
             // A legacy profile that carries data not present in vehicleRules
             // is an additional unknown effect; never silently ignore it.
-            const legacy=existing.driveProfiles;
-            const legacyOpaque=isRuleObject(legacy)&&Object.keys(legacy).length>0&&
-                (keys.length===0||legacy!==existing.vehicleRules);
+            const legacyComparison=compareLegacyVehicleRules(
+                overrides,existing.driveProfiles);
+            const legacyOpaque=legacyComparison==="DIFFERENT"||
+                legacyComparison==="UNKNOWN";
             if(allowed&&!legacyOpaque&&
                !(existing.defaultType!=="BLOCKED"&&!keys.length)){
                 for(const type of types)native[type]=existing.defaultType;
@@ -644,10 +763,10 @@
                     }
                     if(raw.some(type=>!types.includes(type)))
                         unmodeledNativeTypes=true;
-                    // Additional non-null fields can alter the conditions.
-                    // Never convert them into an unconditional override.
-                    const conditional=Object.keys(row).some(key=>
-                        key!=="vehicleTypes"&&row[key]!==null&&row[key]!==undefined);
+                    // Only independently recognizable, unconditional profile
+                    // objects can be considered simple overrides. Permit,
+                    // occupancy, plate and engine values remain conditional.
+                    const condition=inspectNativeVehicleCondition(row);
                     for(const type of raw.filter(type=>types.includes(type))){
                         if(seenTypes.has(type)){
                             // Multiple rules for the same type may combine by
@@ -656,7 +775,8 @@
                             continue;
                         }
                         seenTypes.add(type);
-                        native[type]=conditional?"CONDITIONAL":expected;
+                        native[type]=condition.status==="UNCONDITIONAL"?expected:
+                            condition.status==="CONDITIONAL"?"CONDITIONAL":"UNKNOWN";
                     }
                 }
             }
@@ -945,7 +1065,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
