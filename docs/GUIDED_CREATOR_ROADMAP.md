@@ -278,6 +278,27 @@ The choice of four is based on the editor's desired client-facing workflow; this
 
 **Regression test:** In all three colored flows, confirm that the vehicle selection offers exactly PRIVATE, EV, MOTORCYCLE and TAXI (translated appropriately), that the red empty selection still prohibits all, that green and blue still require a choice, and that green pass/occupancy conditions remain independently scoped to each chosen type. Verify that a pre-existing WME restriction for a vehicle type outside the shortlist remains visible in the read-only inspector and is never rewritten. The Alpha remains read-only; stable 3.2.0 is untouched.
 
+## Alpha 16: proposed laneScope mapping and observed SDK comparison (2026-11-24)
+
+The editor accepted Alpha 15's four-category vehicle shortlist. The next blocker remains the difference between **wizard design labels** and the native WME SDK fields for lane restrictions.
+
+**Sources / confidence:** The official [SDK SegmentRestriction reference](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.SegmentRestriction.html) confirms `laneScope` (with deprecated `disposition`) and specialized `laneType`, but does not by itself prove the current editor's accepted **write** enum combinations for each country/road/direction. [Community userscript source showing the four update-model scope names](https://greasyfork.org/en/scripts/528552-wme-ezroad-mod/code) is useful secondary evidence for a mapping candidate, **not an official permission or cross-version compatibility guarantee**.
+
+**New read-only pure model in Alpha 16:** `inspectLaneDraft({scope,lane},existingRestrictions)` compares the selected wizard scope with observed SDK `laneScope` (or deprecated `disposition`) in already-existing restrictions on the selected segment. It always returns `verified:false`, cannot submit data to the WME SDK, and does not silently choose a specialized `laneType`.
+
+| Wizard scope (design label) | Candidate update-model value (NOT write-authorized) |
+| --- | --- |
+| `segment` | `WHOLE_SEGMENT` |
+| `left` | `LEFT_LANE` |
+| `center` | `MIDDLE_LANE` |
+| `right` | `RIGHT_LANE` |
+
+The analysis displays (a) candidate scope, (b) whether that exact scope was previously observed on the selected segment, (c) the list of lane-type strings observed on its existing restrictions, and (d) a warning that left/center/right must be interpreted relative to the selected **travel direction**. An observed value is not proof of support for creating new restrictions. For `lane_none`, the script records no requested specialized lane type; for `express`, `fast`, `hov`, `public_transport` or `carpool_toll_free`, the mapping is deliberately **UNMAPPED** and never converted to a guessed SDK enum. If the existing restriction data is unavailable, the analysis reports unknown/unavailable rather than inventing evidence.
+
+This report is included both immediately after the special-lane selection step and in the final read-only summary of **red BLOCKED**, **green ALLOWED**, and **blue TOLL**. Alpha 15 vehicle filtering, SAFE12 estimates, the per-vehicle conditions, the schedule, and the stable 3.2.0 remain unchanged.
+
+**Manual verification before a real edit:** In WME Standard and Beta, inspect a segment with an existing native whole-segment or single-lane restriction, selecting an appropriate travel direction. Compare the report's candidate `laneScope`, existing observed scope, and lane-type strings against the native panel. Repeat on a segment with no existing restrictions (observed values should be empty, not inferred). Separately test each specialized lane type in the native WME editor before establishing its SDK code and country availability. Do **not** enable writes until mapping, edit permissions, permissions by country and segment, and full SAFE12 handling are verified.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
