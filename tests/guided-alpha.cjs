@@ -825,6 +825,116 @@ assert.ok(src.includes('node("p",tr("preservation_warning"))'),
  'The audit must warn that it never creates a writable SDK payload');
 assert.ok(!/\.updateSegment\s*\(/.test(src),
  'Preservation audit must not invoke SDK writes');
+// Alpha 20: show all existing restrictions and catch only defensible overlaps.
+const existingBase={id:77,isAtoB:true,isBtoA:true,isTwoWay:true,restrictions:[{
+ defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ description:'Evening rule',editable:true,isExpired:false,
+ timeFrames:[{startDate:'2026-12-01',endDate:'2026-12-31',
+  weekdays:['MONDAY','FRIDAY'],fromTime:'08:00',toTime:'11:00',timeZone:'Europe/Rome'}],
+ vehicleRules:{BLOCKED:[{vehicleTypes:['BUS']}]}
+}]};
+const beforeExisting=JSON.stringify(existingBase);
+const listed=a.listExistingRestrictions(existingBase);
+assert.equal(listed.available,true);
+assert.equal(listed.entries.length,1);
+assert.deepEqual(listed.entries[0],{
+ index:1,defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',
+ laneType:null,editable:true,expired:false,description:'Evening rule',
+ frames:[{startDate:'2026-12-01',endDate:'2026-12-31',
+  fromTime:'08:00',toTime:'11:00',weekdays:['MONDAY','FRIDAY'],
+  timeZone:'Europe/Rome'}],framesKnown:true,
+ ruleGroups:['BLOCKED'],verified:false
+});
+assert.equal(JSON.stringify(existingBase),beforeExisting,
+ 'Listing existing restrictions must not mutate the SDK segment');
+assert.deepEqual(a.listExistingRestrictions({id:77,restrictions:null}),
+ {available:false,entries:[],verified:false});
+assert.deepEqual(a.listExistingRestrictions({id:77,restrictions:[]}),
+ {available:true,entries:[],verified:false});
+const draftOverlap={direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'BLOCKED',vehicleTypes:[]};
+const scheduleOverlap={startDate:'2026-12-01',endDate:'2026-12-31',
+ weekdays:['MONDAY'],allDay:false,
+ slots:[{fromTime:'09:00',toTime:'10:00'}]};
+const verify=(segment,draft,schedule,status)=>{
+ const result=a.previewRestrictionConflicts(draft,segment,schedule);
+ assert.equal(result.status,status);
+ assert.equal(result.saveAllowed,false);
+ assert.equal(result.verified,false);
+ return result;
+};
+const overlap=verify(existingBase,draftOverlap,scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.equal(overlap.items[0].status,'POTENTIAL_CONFLICT');
+assert.equal(overlap.items[0].reason,'conflict_reason_common');
+verify({...existingBase,restrictions:[{...existingBase.restrictions[0],
+ defaultType:'BLOCKED'}]},draftOverlap,scheduleOverlap,'OVERLAP_REVIEW');
+const reverseOnly={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ direction:'REV'}]};
+assert.equal(verify(reverseOnly,draftOverlap,scheduleOverlap,'SEPARATE').items[0].reason,
+ 'conflict_reason_direction');
+const separateLane={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ laneScope:'LEFT_LANE'}]};
+assert.equal(verify(separateLane,{...draftOverlap,scope:'right'},
+ scheduleOverlap,'SEPARATE').items[0].reason,'conflict_reason_lane');
+const separateDates={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
+ endDate:'2026-11-30'}]}]};
+assert.equal(verify(separateDates,draftOverlap,scheduleOverlap,'SEPARATE').items[0].reason,
+ 'conflict_reason_time');
+const separateDays={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],weekdays:['TUESDAY']}]}]};
+verify(separateDays,draftOverlap,scheduleOverlap,'SEPARATE');
+const separateHours={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
+ fromTime:'11:00',toTime:'13:00'}]}]};
+verify(separateHours,draftOverlap,scheduleOverlap,'SEPARATE');
+const unknownWeekdays={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],weekdays:127}]}]};
+verify(unknownWeekdays,draftOverlap,scheduleOverlap,'UNKNOWN');
+const unknownDirection={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ direction:null}]};
+verify(unknownDirection,draftOverlap,scheduleOverlap,'UNKNOWN');
+const overnightTime={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
+ fromTime:'22:00',toTime:'06:00'}]}]};
+verify(overnightTime,draftOverlap,scheduleOverlap,'UNKNOWN');
+verify({...existingBase,restrictions:[]},draftOverlap,scheduleOverlap,'NONE');
+verify({id:77,isAtoB:true,restrictions:null},draftOverlap,scheduleOverlap,'UNKNOWN');
+const mixedExisting={...existingBase,restrictions:[
+ reverseOnly.restrictions[0],existingBase.restrictions[0],unknownWeekdays.restrictions[0]
+]};
+const mixedResult=verify(mixedExisting,draftOverlap,scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.deepEqual(mixedResult.items.map(x=>x.status),
+ ['SEPARATE','POTENTIAL_CONFLICT','UNKNOWN']);
+assert.equal(JSON.stringify(existingBase),beforeExisting,
+ 'Conflict analysis cannot modify existing native restrictions');
+const greenOverlap=verify(existingBase,{...draftOverlap,
+ restrictionType:'ALLOWED',vehicleTypes:['PRIVATE']},
+ scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.equal(greenOverlap.saveAllowed,false);
+const tollOverlap=verify(existingBase,{...draftOverlap,
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},
+ scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.equal(tollOverlap.saveAllowed,false);
+assert.ok(src.includes('function renderExistingRestrictionList(') &&
+ src.includes('root.append(renderExistingRestrictionList(context.segment,true));'),
+ 'Existing restrictions must be visible immediately in the guided sidebar');
+assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,true));'),
+ 'Existing restrictions must be visible before filling in a new draft');
+assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,false));'),
+ 'Existing restrictions remain accessible in the final review');
+assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule));'),
+ 'Conflict review must be visible before and in the final summary');
+assert.ok(src.includes('nativeRestrictionAction(') &&
+ src.includes('anchor.click();') &&
+ src.includes('if(dialog?.open)dialog.close();'),
+ 'Existing restrictions must be edited only in the native WME panel after a user click');
+assert.ok(src.includes('restrictionSnapshot(context?.segment)'),
+ 'Sidebar must refresh after a restriction change even if count stays unchanged');
+assert.ok(src.includes('conflict_uncertain'),
+ 'Collision analysis must warn about unknown SDK rules and recurring calendars');
+assert.ok(!/\.updateSegment\s*\(/.test(src),
+ 'Conflict detection must never edit WME via SDK');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
