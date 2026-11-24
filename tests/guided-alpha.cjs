@@ -16,9 +16,9 @@ assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['unlisted']
 assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['pass1']},null),/Unrecognized country permit/);
 assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:'pass1'},null),/Invalid permits/);
 assert.ok(src.includes('if(step===6) {'),'Advanced step must precede the summary');
-assert.ok(src.includes('const conditions=normalizeAdvanced(advanced,current.permits);') &&
-          src.includes('normalizeDraft(draft,current.segment,conditions);'),
-  'Next handler must validate advanced conditions and whitelist before reaching summary');
+assert.ok(src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);') &&
+          src.includes('normalizeDraft(draft,current.segment);'),
+  'Next handler must validate per-vehicle advanced conditions before reaching summary');
 assert.ok(src.includes('JSON.stringify(fresh.permits)!==JSON.stringify(current.permits)'),
   'Changes to country permit choices must abort the wizard');
 assert.deepEqual(a.availableDirections({isAtoB:true}),['FWD']);
@@ -253,11 +253,46 @@ assert.equal(a.nextWizardStep(7,'BLOCKED',['MOTORCYCLE']),6);
 assert.equal(a.previousWizardStep(6,'BLOCKED',['MOTORCYCLE']),7);
 assert.equal(a.previousWizardStep(7,'BLOCKED',['MOTORCYCLE']),5);
 assert.equal(a.previousWizardStep(5,'BLOCKED',['MOTORCYCLE']),4);
-for(const intent of ['ALLOWED','TOLL']){
- assert.equal(a.nextWizardStep(4,intent,['MOTORCYCLE']),5);
- assert.equal(a.nextWizardStep(5,intent,['MOTORCYCLE']),6);
- assert.equal(a.previousWizardStep(6,intent,['MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(4,'ALLOWED',['MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(5,'ALLOWED',['MOTORCYCLE']),6);
+assert.equal(a.previousWizardStep(6,'ALLOWED',['MOTORCYCLE']),5);
+// The blue exemption skips advanced pass/occupancy/plate conditions entirely.
+for(const types of [['PRIVATE'],['BUS','TAXI'],['MOTORCYCLE','EV']]){
+ assert.equal(a.nextWizardStep(4,'TOLL',types),7);
+ assert.equal(a.nextWizardStep(7,'TOLL',types),6);
+ assert.equal(a.previousWizardStep(6,'TOLL',types),7);
+ assert.equal(a.previousWizardStep(7,'TOLL',types),4);
 }
+const tollDraft=a.normalizeDraft({
+ direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'TOLL',vehicleTypes:['BUS','TAXI']
+},{isAtoB:true});
+assert.equal(tollDraft.defaultType,'TOLL');
+assert.equal(tollDraft.overrideType,'FREE');
+assert.deepEqual(tollDraft.vehicleTypes,['BUS','TAXI']);
+assert.deepEqual(a.normalizeTollActivationDraft(tollDraft,[101]),{
+ segmentIds:[101],hasToll:true,directions:'BOTH',
+ required:true,applied:false,verified:false
+});
+const multiToll=a.normalizeTollActivationDraft(tollDraft,[101,202]);
+assert.deepEqual(multiToll.segmentIds,[101,202]);
+assert.throws(()=>a.normalizeTollActivationDraft(
+ {...tollDraft,restrictionIntent:'BLOCKED'},[101]),/Toll intent required/);
+for(const bad of [[],[0],[-3],['101'],[1,1],[1.5]]){
+ assert.throws(()=>a.normalizeTollActivationDraft(tollDraft,bad),/Invalid toll target segments/);
+}
+assert.ok(src.includes('if(step===4&&intent==="TOLL")return 7;'),
+ 'Toll must bypass advanced pass and occupancy screens');
+assert.ok(src.includes('if(step===7&&intent==="TOLL")return 4;'),
+ 'Toll back navigation goes directly to selected vehicle types');
+assert.ok(src.includes('normalizeTollActivationDraft(checked,[current.segment.id])'),
+ 'The automatic toll flag draft must target the selected segment');
+assert.ok(src.includes('node("h4",tr("toll_auto_flag"))'),
+ 'Toll summary must preview the automatic flag');
+assert.ok(src.includes('node("h3",tr(draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule"))'),
+ 'Toll must display dedicated localized date/time heading');
+assert.ok(!/\bupdateSegment\s*\(/.test(src),
+ 'No segment write is allowed in the read-only Alpha');
 const redSchedule={
  startDate:'2026-12-01',endDate:'2027-01-15',
  weekdays:['MONDAY','FRIDAY'],allDay:false,
@@ -343,8 +378,8 @@ const sampleRaw={W:{model:{segments:{getObjectById:()=>({
 })}}}};
 assert.deepEqual(a.observedMotorTypes(sampleRaw,1),['NATIVE-X']);
 assert.deepEqual(a.observedMotorTypes({},1),[]);
-assert.ok(src.includes('if(step===7&&draft.restrictionType==="BLOCKED")'),
- 'Date and time screen must be red-only');
+assert.ok(src.includes('if(step===7&&(draft.restrictionType==="BLOCKED"||draft.restrictionType==="TOLL"))'),
+ 'Date and time screen must include red and blue, not green');
 assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
  'Next navigation must use intent-aware flow');
 assert.ok(src.includes('const previous=previousWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
