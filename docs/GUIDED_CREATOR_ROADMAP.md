@@ -345,6 +345,25 @@ The maintainer has now **confirmed the Alpha 17 native button fix in both WME St
 
 **Next validation milestone:** Verify exact write-model structures and enum mappings in the official current SDK typings and/or a **non-destructive native WME observation**, including the difference between fields returned by the read model (`SegmentRestriction`) and fields accepted by `Segments.updateSegment` (`SegmentRestrictionData`). Do not treat snapshots of existing restrictions as directly writable objects. Verify timing, local timezone and AND/OR semantics; only after that develop an explicit before/after preservation-safe draft operation and full stable SAFE12 validation. No actual Apply/Save action until those checks are passed.
 
+## Alpha 19: preservation audit before any restrictions write (2026-11-24)
+
+The maintainer has **tested Alpha 18's SDK conversion review in WME and confirmed a positive result**. This closes the read-only semantic review check for the tested editor environment; it does not establish SDK write compatibility.
+
+**Source distinction:** [SegmentRestriction](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.SegmentRestriction.html) is the documented SDK *read model*. [Segments.updateSegment](https://web-assets.waze.com/wme_sdk_docs/beta/latest/classes/index.SDK.Segments.html) accepts a `restrictions?: SegmentRestrictionData[]` **write-model array**. The exact conversion of all existing read-model restrictions to addable data, including legacy/private properties, conditions and noneditable restrictions, must **not** be assumed. The docs do not confirm an implicit preservation/merge behavior for unrelated restrictions, so this remains a critical gate.
+
+**New in Alpha 19:** pure `auditRestrictionPreservation(segment)` returns a read-only per-segment aggregate status:
+- `NO_EXISTING` — SDK explicitly reports an empty existing restriction array. This means there is no existing restriction to preserve, **not that an SDK write is authorized**.
+- `REQUIRES_ROUNDTRIP` — SDK reports one or more structurally readable restrictions; a safe native read/write round trip is mandatory before attempting to append any new restriction.
+- `UNKNOWN` — the restrictions array is missing, cannot be fingerprinted, is circular/unserializable, or one or more entries do not expose a minimally recognizable read model. This must fail closed.
+
+The audit counts existing restrictions, reported time-frame definitions, those with `editable:false`, those without a known `editable` boolean, rules with nonempty or otherwise opaque `vehicleRules` objects, presence of deprecated `disposition` / `driveProfiles` fields, and incomplete read-model entries. **No individual existing restriction IDs, vehicle rules, descriptions, plate data, country permits or raw objects are exported or displayed.** An opaque or noneditable rule is *never* discarded: it is flagged as requiring future conversion/preservation validation. Even a fully empty segment returns `writeReady:false` and `verified:false`.
+
+The Alpha 18 `reviewSdkConversion` now includes this preservation report, and adds contextual blockers for unknown data and unverified read/write round trips. Its `saveAllowed:false`, `sdkWritePayload:null` and unconditional `BLOCKED` status remain unchanged. The wizard's final read-only summary displays the audit's status and aggregate counts in a localized sub-section.
+
+**Automated safety tests:** no-existing, unknown missing-array, existing editable/noneditable/unknown editability, existing unsupported SDK types (including BUS and HAZARDOUS_MATERIALS) retained untouched, deprecated fields, incomplete data, cycles, review integration, immutable input, missing write payload and no SDK mutation. Stable 3.2.0 is untouched.
+
+**Next gate for development:** obtain authoritative current SDK write-model typings for `SegmentRestrictionData`, `AddableVehicleRule`, `TimeFrame`, `RestrictionSegmentLaneScope` and `RestrictionSegmentLaneType`. Compare against actual native structures in WME Standard and Beta, including empty, editable and noneditable restrictions and legacy/experimental motorcycle conditions. Only then implement a **non-mutating, round-trip-preserving** preview with exact existing restrictions and proposed additions. Add full SAFE12 operation validation and exact timezone behavior before a write path can ever be enabled.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
