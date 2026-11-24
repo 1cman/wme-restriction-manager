@@ -746,6 +746,85 @@ assert.ok(src.includes('node("p",tr("conversion_blocked"))'),
  'The conversion review must always warn that saving is unavailable');
 assert.ok(!/\.updateSegment\s*\(/.test(src),
  'The read-only SDK conversion review must not call updateSegment');
+// Alpha 19: preserve ALL existing native restrictions; never serialize read model
+// as SegmentRestrictionData, and never interpret unknown vehicle rules as writable.
+const noRestrictionAudit=a.auditRestrictionPreservation({id:10,isAtoB:true,restrictions:[]});
+assert.deepEqual(noRestrictionAudit,{
+ status:'NO_EXISTING',count:0,frameCount:0,nonEditable:0,editabilityUnknown:0,
+ opaqueVehicleRules:0,legacyFields:0,incomplete:0,writeReady:false,verified:false
+});
+const untouchedNative={id:20,isAtoB:true,restrictions:[
+ {defaultType:'BLOCKED',editable:false,timeFrames:[{fromTime:'08:00',toTime:'10:00'}],
+  vehicleRules:{FREE:[{vehicleTypes:['BUS']}]},disposition:'RIGHT_LANE'},
+ {defaultType:'FREE',editable:true,timeFrames:[],vehicleRules:{BLOCKED:[{
+  vehicleTypes:['HAZARDOUS_MATERIALS']}]},driveProfiles:{BLOCKED:[]}},
+ {defaultType:'TOLL',timeFrames:[{},{}],vehicleRules:{}}
+]};
+const beforeNative=JSON.stringify(untouchedNative);
+const audited=a.auditRestrictionPreservation(untouchedNative);
+assert.deepEqual(audited,{
+ status:'REQUIRES_ROUNDTRIP',count:3,frameCount:3,nonEditable:1,
+ editabilityUnknown:1,opaqueVehicleRules:2,legacyFields:2,
+ incomplete:0,writeReady:false,verified:false
+});
+assert.equal(JSON.stringify(untouchedNative),beforeNative,
+ 'The preservation audit must never alter any native restrictions');
+const incompleteNative={id:22,isBtoA:true,restrictions:[
+ {defaultType:'BLOCKED',editable:true,vehicleRules:{},timeFrames:[]},
+ {defaultType:'INVALID',editable:true,vehicleRules:{},timeFrames:[]},
+ {defaultType:'FREE',editable:true,timeFrames:[]}
+]};
+const missing=a.auditRestrictionPreservation(incompleteNative);
+assert.equal(missing.status,'UNKNOWN');
+assert.equal(missing.count,3);
+assert.equal(missing.incomplete,2);
+assert.equal(missing.writeReady,false);
+assert.deepEqual(a.auditRestrictionPreservation({id:23,restrictions:null}),{
+ status:'UNKNOWN',count:null,frameCount:null,nonEditable:null,
+ editabilityUnknown:null,opaqueVehicleRules:null,legacyFields:null,
+ incomplete:null,writeReady:false,verified:false
+});
+const circularSegment={id:24,restrictions:[{
+ defaultType:'FREE',editable:true,timeFrames:[],vehicleRules:{BLOCKED:[]}
+}]};
+circularSegment.restrictions[0].vehicleRules.SELF=circularSegment.restrictions;
+assert.equal(a.auditRestrictionPreservation(circularSegment).status,'UNKNOWN',
+ 'Circular or unserializable native data must fail closed');
+const sampleReviewSchedule={startDate:'',endDate:'',weekdays:['MONDAY'],
+ allDay:true,slots:[]};
+const liveReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ untouchedNative,sampleReviewSchedule,{},[],{enabled:false,conditions:[]},
+ {id:1,name:'Italy'});
+assert.equal(liveReview.preservation.status,'REQUIRES_ROUNDTRIP');
+assert.ok(liveReview.blockers.includes('conversion_preservation_gate'));
+assert.ok(liveReview.blockers.includes('conversion_preserve'));
+assert.equal(liveReview.saveAllowed,false);
+assert.equal(liveReview.sdkWritePayload,null);
+const noNativeReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {id:25,isAtoB:true,restrictions:[]},sampleReviewSchedule,{},
+ [],{enabled:false,conditions:[]},{id:1,name:'Italy'});
+assert.equal(noNativeReview.preservation.status,'NO_EXISTING');
+assert.ok(!noNativeReview.blockers.includes('conversion_preservation_gate'));
+assert.equal(noNativeReview.saveAllowed,false,
+ 'No existing restrictions does NOT authorize SDK mutation');
+const unknownNativeReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {id:26,isAtoB:true,restrictions:null},sampleReviewSchedule,{},
+ [],{enabled:false,conditions:[]},{id:1,name:'Italy'});
+assert.equal(unknownNativeReview.preservation.status,'UNKNOWN');
+assert.ok(unknownNativeReview.blockers.includes('conversion_unknown'));
+assert.ok(unknownNativeReview.blockers.includes('conversion_preservation_gate'));
+assert.ok(src.includes('const audit=conversion.preservation;'),
+ 'Read-only summary must show the preservation audit');
+assert.ok(src.includes('node("h4",tr("preservation_title"))') &&
+ src.includes('node("p",tr("preservation_status")'),
+ 'Audit heading and status must be localized');
+assert.ok(src.includes('node("p",tr("preservation_warning"))'),
+ 'The audit must warn that it never creates a writable SDK payload');
+assert.ok(!/\.updateSegment\s*\(/.test(src),
+ 'Preservation audit must not invoke SDK writes');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
