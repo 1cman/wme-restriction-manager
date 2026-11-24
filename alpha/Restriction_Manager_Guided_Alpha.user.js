@@ -1585,6 +1585,38 @@
                         tr("lane_special_pending"):tr("lane_none_requested")),
                     node("p",tr("lane_caution")));
                 dialog.append(laneBox);
+                // Read-only design review. Never pass this object to updateSegment.
+                const conversion=reviewSdkConversion(
+                    draft,current.segment,redSchedule,vehicleRules,
+                    current.permits,motorDraft,current.country
+                );
+                const details=node("details");
+                details.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
+                    "padding:10px;margin-top:12px;background:#f8fafc;";
+                const heading=node("summary",tr("conversion_title"));
+                heading.style.cssText="font-weight:600;cursor:pointer;";
+                details.append(heading);
+                const put=(key,value)=>details.append(node("p",tr(key)+": "+value));
+                put("conversion_default",conversion.defaultType);
+                put("conversion_direction",conversion.directionDesign);
+                put("conversion_overrides",conversion.overrideType?
+                    conversion.overrideType+" · "+conversion.vehicleConditionRows.map(
+                        row=>row.vehicleType).join(", "):
+                    tr("conversion_no_override"));
+                put("conversion_frames",String(conversion.proposedFrameCount));
+                if(conversion.plannedHasToll===true)
+                    put("conversion_toll","hasToll: true ("+tr("toll_both_directions")+")");
+                const blocked=node("p",tr("conversion_blocked"));
+                blocked.style.cssText="font-weight:600;color:#991b1b;";
+                blocked.setAttribute("role","status");
+                details.append(blocked,node("h4",tr("conversion_blockers")));
+                const reasons=node("ul");
+                reasons.style.cssText="padding-left:22px;line-height:1.5;";
+                for(const reason of conversion.blockers){
+                    reasons.append(node("li",tr(reason)));
+                }
+                details.append(reasons);
+                dialog.append(details);
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
