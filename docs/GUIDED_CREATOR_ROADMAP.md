@@ -261,6 +261,23 @@ The **same pure date/time validator** powers the new green step: optional start/
 
 **Manual test:** select a segment with no restrictions, create a green draft with PRIVATE requiring a pass and EV allowed directly, then pick a weekday and two time ranges. Verify the summary preserves the per-vehicle distinction, shows both ranges and a SAFE12 estimate of **2 new restrictions, 2 new time-frame definitions** (derived from the two chosen slots). Next test with an existing segment restriction and compare the counts against that segment's SDK values. Use an existing segment with incomplete restriction metadata to confirm UNKNOWN instead of a guessed count. Do not attempt to save map changes from the Alpha.
 
+## Alpha 15: editor-approved four-vehicle shortlist (2026-11-24)
+
+Following successful live checks of the green path (per-vehicle pass remains off for EV and time bands are created correctly), the editor requested that new restriction creation expose **only** these four categories, in this exact order:
+
+| Italian UI label | SDK VehicleType identifier |
+| --- | --- |
+| Auto private | `PRIVATE` |
+| Veicoli elettrici | `EV` |
+| Motociclette | `MOTORCYCLE` |
+| Taxi | `TAXI` |
+
+This deliberately narrows the **Guided Creator user interface** and its pure validation models, not the entire SDK or the WME read-only model. Other documented SDK vehicle identifiers are no longer selectable for new red, green or blue drafts and are rejected if supplied to `selectedVehicleTypes`, `normalizeDraft` or `normalizeVehicleRules`. The locale labels remain available in all six Alpha languages. The read-only SDK inspection, change fingerprint and existing-restriction preservation research must still recognize native restrictions involving other vehicle types: **do not remove or rewrite existing WME rules** just because their vehicle type is not in this shortlist.
+
+The choice of four is based on the editor's desired client-facing workflow; this alone does **not prove** that every omitted SDK vehicle identifier is universally unsupported by Waze navigation in every country or version. Future changes to the shortlist require separate verified WME/client findings and an explicit product decision.
+
+**Regression test:** In all three colored flows, confirm that the vehicle selection offers exactly PRIVATE, EV, MOTORCYCLE and TAXI (translated appropriately), that the red empty selection still prohibits all, that green and blue still require a choice, and that green pass/occupancy conditions remain independently scoped to each chosen type. Verify that a pre-existing WME restriction for a vehicle type outside the shortlist remains visible in the read-only inspector and is never rewritten. The Alpha remains read-only; stable 3.2.0 is untouched.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
