@@ -878,7 +878,7 @@ assert.equal(verify(separateLane,{...draftOverlap,scope:'right'},
  scheduleOverlap,'SEPARATE').items[0].reason,'conflict_reason_lane');
 const separateDates={...existingBase,restrictions:[{...existingBase.restrictions[0],
  timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
- endDate:'2026-11-30'}]}]};
+ startDate:'2026-11-01',endDate:'2026-11-30'}]}]};
 assert.equal(verify(separateDates,draftOverlap,scheduleOverlap,'SEPARATE').items[0].reason,
  'conflict_reason_time');
 const separateDays={...existingBase,restrictions:[{...existingBase.restrictions[0],
