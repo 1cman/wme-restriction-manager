@@ -889,6 +889,130 @@
         anchor.insertAdjacentElement("afterend",nativeButton);
         return true;
     }
+    function nativeEditActionAvailable(){
+        const anchor=findNativeAnchor();
+        return anchor&&nativeRestrictionAction(
+            anchor.innerText||anchor.getAttribute("aria-label")||anchor.textContent
+        )==="edit";
+    }
+    function openNativeEditRestrictions(){
+        // A direct, explicit user gesture only; never simulate a map edit.
+        const anchor=findNativeAnchor();
+        if(!anchor||nativeRestrictionAction(
+            anchor.innerText||anchor.getAttribute("aria-label")||anchor.textContent
+        )!=="edit")return;
+        if(dialog?.open)dialog.close();
+        anchor.click();
+    }
+    function renderExistingRestrictionList(segment,expanded=false){
+        const data=listExistingRestrictions(segment);
+        const wrap=node("details");
+        wrap.open=expanded;
+        wrap.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
+            "margin-top:10px;padding:9px;background:#f8fafc;";
+        const heading=node("summary",tr("existing_list")+
+            " · "+(data.available?data.entries.length:tr("unknown")));
+        heading.style.cssText="font-weight:600;cursor:pointer;";
+        wrap.append(heading);
+        if(!data.available){
+            wrap.append(node("p",tr("existing_unknown")));
+            return wrap;
+        }
+        if(!data.entries.length){
+            wrap.append(node("p",tr("existing_none")));
+            return wrap;
+        }
+        for(const entry of data.entries){
+            const item=node("details");
+            item.open=data.entries.length===1;
+            item.style.cssText="border:1px solid #e2e8f0;border-radius:6px;"+
+                "padding:8px;margin:7px 0;background:#fff;";
+            const title=node("summary",
+                tr("existing_rule")+" "+entry.index+" · "+
+                (entry.defaultType||tr("unknown"))+" · "+
+                (entry.direction||tr("unknown")));
+            title.style.cssText="font-weight:600;cursor:pointer;";
+            item.append(title);
+            const field=(label,value)=>{
+                const p=node("p",tr(label)+": "+
+                    (value===null||value===undefined||value===""?
+                        tr("unknown"):String(value)));
+                p.style.cssText="margin:5px 0;overflow-wrap:anywhere;";
+                item.append(p);
+            };
+            field("existing_kind",entry.defaultType);
+            field("existing_direction",entry.direction);
+            field("existing_scope",entry.laneScope);
+            field("existing_lane",entry.laneType);
+            field("existing_editability",entry.editable===null?null:
+                tr(entry.editable?"existing_yes":"existing_no"));
+            if(entry.expired!==null)
+                field("existing_expired",tr(entry.expired?"existing_yes":"existing_no"));
+            if(entry.description)
+                field("existing_description",entry.description);
+            field("existing_rules",entry.ruleGroups.join(", ")||tr("inspection_none"));
+            if(!entry.framesKnown)
+                field("existing_times",tr("unknown"));
+            else if(!entry.frames.length)
+                field("existing_times",tr("inspection_none"));
+            else{
+                const subtitle=node("p",tr("existing_times")+": "+entry.frames.length);
+                subtitle.style.cssText="font-weight:600;margin:8px 0 4px;";
+                item.append(subtitle);
+                for(const [i,frame] of entry.frames.entries()){
+                    const dates=(frame.startDate||"…")+" → "+(frame.endDate||"…");
+                    const times=(frame.fromTime||"…")+" – "+(frame.toTime||"…");
+                    const weekdays=Array.isArray(frame.weekdays)?
+                        frame.weekdays.join(", "):frame.weekdays;
+                    const p=node("p",(i+1)+". "+dates+" · "+times+
+                        " · "+tr("existing_weekdays")+": "+(weekdays||tr("unknown"))+
+                        " · "+(frame.timeZone||tr("unknown")));
+                    p.style.cssText="margin:4px 0 4px 10px;overflow-wrap:anywhere;font-size:12px;";
+                    item.append(p);
+                }
+            }
+            wrap.append(item);
+        }
+        if(nativeEditActionAvailable()){
+            const edit=button(tr("edit_native"),openNativeEditRestrictions);
+            edit.style.marginTop="8px";
+            wrap.append(edit);
+        }
+        const help=node("p",tr("edit_native_hint"));
+        help.style.cssText="font-size:12px;color:#475569;margin-top:7px;";
+        wrap.append(help);
+        return wrap;
+    }
+    function renderConflictPreflight(draft,segment,schedule){
+        const report=previewRestrictionConflicts(draft,segment,schedule);
+        const wrap=node("section");
+        wrap.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
+            "padding:10px;margin-top:12px;background:#f8fafc;";
+        const heading=node("h4",tr("conflict_title"));
+        heading.style.cssText="margin:2px 0 8px;";
+        wrap.append(heading);
+        const textOf=status=>status==="POTENTIAL_CONFLICT"?"conflict_potential":
+            status==="OVERLAP_REVIEW"?"conflict_overlap":
+            status==="SEPARATE"?"conflict_separate":
+            status==="NONE"?"conflict_absent":"conflict_unknown";
+        const colorOf=status=>status==="POTENTIAL_CONFLICT"?"#b91c1c":
+            status==="SEPARATE"||status==="NONE"?"#286244":"#92400e";
+        const headline=node("p",tr(textOf(report.status)));
+        headline.setAttribute("role","status");
+        headline.style.cssText="font-weight:700;color:"+colorOf(report.status)+";";
+        wrap.append(headline);
+        for(const item of report.items){
+            const p=node("p",tr("existing_rule")+" "+item.index+": "+
+                tr(textOf(item.status))+" — "+tr(item.reason));
+            p.style.cssText="padding:6px 8px;margin:5px 0;background:#fff;"+
+                "border-left:3px solid "+colorOf(item.status)+";border-radius:4px;";
+            wrap.append(p);
+        }
+        const note=node("p",tr("conflict_uncertain"));
+        note.style.cssText="font-size:12px;color:#7c2d12;margin-top:10px;";
+        wrap.append(note);
+        return wrap;
+    }
     function renderPanel() {
         const root = pane.querySelector("#"+ID+"-root");
         if (!root) return;
@@ -899,6 +1023,7 @@
         const launch=button(tr("launch"),openWizard);
         launch.disabled=!availableDirections(context.segment).length;
         root.append(launch,node("p",tr("anchor")+": "+(nativeButton?.isConnected?tr("found"):tr("fallback"))));
+        root.append(renderExistingRestrictionList(context.segment,true));
         const inspection=inspectRestrictionCapabilities(context.segment);
         const details=node("details");
         details.style.cssText="margin-top:10px;padding:10px;border:1px solid #d1d5db;"+
@@ -935,7 +1060,8 @@
             lang=LANGS.includes(candidate)?candidate:"en";
             context=await readContext(sdk);
             const injected=placeNative();
-            const key=JSON.stringify([lang,context?.segment.id,context?.country,availableDirections(context?.segment),context?.segment.restrictions?.length,injected]);
+            const key=JSON.stringify([lang,context?.segment.id,context?.country,
+                availableDirections(context?.segment),restrictionSnapshot(context?.segment),injected]);
             if (key!==lastKey) { lastKey=key; renderPanel(); }
         } catch (_) { context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();} }
         finally { refreshing=false; }
@@ -1155,7 +1281,11 @@
         }
         function render(){
             dialog.replaceChildren(node("h2",tr("launch")),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
-            if(step===0) dialog.append(node("h3",tr("direction")),options(availableDirections(current.segment),draft.direction,v=>draft.direction=v));
+            if(step===0) {
+                dialog.append(renderExistingRestrictionList(current.segment,true));
+                dialog.append(node("h3",tr("direction")),
+                    options(availableDirections(current.segment),draft.direction,v=>draft.direction=v));
+            }
             if(step===1) {
                 dialog.append(node("h3",tr("scope")),options(SCOPES,draft.scope,v=>{draft.scope=v;}));
                 if (!SCOPES.includes(draft.scope)) {
@@ -1599,6 +1729,9 @@
                     add.disabled=redSchedule.slots.length>=MAX_DRAFT_TIME_FRAMES;
                     dialog.append(add);
                 }
+                if(isScheduleValid()){
+                    dialog.append(renderConflictPreflight(draft,current.segment,redSchedule));
+                }
                 if(!isScheduleValid()){
                     const error=node("p",tr("schedule_invalid"));
                     error.setAttribute("role","alert");
@@ -1776,6 +1909,8 @@
                         tr("lane_special_pending"):tr("lane_none_requested")),
                     node("p",tr("lane_caution")));
                 dialog.append(laneBox);
+                dialog.append(renderExistingRestrictionList(current.segment,false));
+                dialog.append(renderConflictPreflight(draft,current.segment,redSchedule));
                 // Read-only design review. Never pass this object to updateSegment.
                 const conversion=reviewSdkConversion(
                     draft,current.segment,redSchedule,vehicleRules,
