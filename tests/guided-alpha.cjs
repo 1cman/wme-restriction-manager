@@ -1001,6 +1001,15 @@ assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
  draftSimple('MOTORCYCLE')).rows[2].existingEffect,'CONDITIONAL');
 assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
  draftSimple('MOTORCYCLE')).rows[2].relation,'CONDITIONAL');
+const nativeRepeated={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE']},
+          {vehicleTypes:['MOTORCYCLE']}]}
+};
+const repeated=a.reviewVehicleConflictEffects(nativeRepeated,
+ draftSimple('MOTORCYCLE'));
+assert.equal(repeated.rows.find(row=>row.vehicleType==='MOTORCYCLE').existingEffect,
+ 'CONDITIONAL','Multiple native rules for a category need precedence verification');
+assert.equal(repeated.status,'CONDITIONAL');
 const nativeUnsupported={defaultType:'FREE',vehicleRules:{
  BLOCKED:[{vehicleTypes:['BUS']}]
 }};
