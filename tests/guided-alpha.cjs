@@ -1002,7 +1002,7 @@ assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
 assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
  draftSimple('MOTORCYCLE')).rows[2].relation,'CONDITIONAL');
 const nativeUnsupported={defaultType:'FREE',vehicleRules:{
- BLOCKED:[{vehicleTypes:['BUS']}]}
+ BLOCKED:[{vehicleTypes:['BUS']}]
 }};
 const unknownNative=a.reviewVehicleConflictEffects(nativeUnsupported,
  draftSimple('MOTORCYCLE'));
