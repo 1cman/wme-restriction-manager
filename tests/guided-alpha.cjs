@@ -132,8 +132,9 @@ assert.ok(src.includes('if (step===4 && (draft.restrictionType==="TOLL"||draft.r
   'Advance must enforce selection, not just disable the button');
 assert.ok(src.includes('(step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length)'),
   'Next button must be disabled when green whitelist has no vehicle');
-assert.ok(src.includes('normalizeDraft(draft,current.segment,conditions);'),
-  'Advanced draft must be validated before proceeding and in the summary');
+assert.ok(src.includes('normalizeDraft(draft,current.segment);') &&
+          src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);'),
+  'Advanced vehicle draft must be validated before proceeding and in the summary');
 assert.ok(src.includes('draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft)'),
   'ALLOWED requires vehicle types irrespective of passes and occupancy');
 assert.ok(src.includes('advanced.minPassengers=null;') && src.includes('advanced.permitIds=[];'),
