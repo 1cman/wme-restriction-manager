@@ -603,7 +603,14 @@
             return true;
         }
         removeNative();
-        nativeButton=button(tr("launch"),openWizard);
+        nativeButton=button(tr("launch"),event=>{
+            // An unlabelled WME click target may wrap the "Edit restrictions"
+            // text; never let our click bubble into its native edit handler.
+            event.stopPropagation();
+            openWizard();
+        });
+        nativeButton.addEventListener("pointerdown",event=>event.stopPropagation());
+        nativeButton.addEventListener("mousedown",event=>event.stopPropagation());
         nativeButton.id=ID+"-native";
         nativeButton.style.display="block";
         nativeButton.style.margin="6px 0";
