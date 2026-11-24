@@ -299,6 +299,24 @@ This report is included both immediately after the special-lane selection step a
 
 **Manual verification before a real edit:** In WME Standard and Beta, inspect a segment with an existing native whole-segment or single-lane restriction, selecting an appropriate travel direction. Compare the report's candidate `laneScope`, existing observed scope, and lane-type strings against the native panel. Repeat on a segment with no existing restrictions (observed values should be empty, not inferred). Separately test each specialized lane type in the native WME editor before establishing its SDK code and country availability. Do **not** enable writes until mapping, edit permissions, permissions by country and segment, and full SAFE12 handling are verified.
 
+## Alpha 17: native 'Edit restrictions' anchor and editor-confirmed lane UI (2026-11-24)
+
+**Live WME observation supplied by the editor:** when a selected segment already has driving restrictions, its sidebar shows the native action **Modifica restrizioni** rather than the **Aggiungi restrizioni** action visible on an unrestricted segment. The previous Alpha launcher only recognized native "add" labels, which made the *inline* guided button disappear precisely when existing restrictions were present. The RM Guided Alpha sidebar tab remained an independent fallback.
+
+**Fix in read-only Alpha 17:**
+- Recognize native **add** and **edit** restriction actions in Italian, English, French, Spanish, German and Portuguese using exact normalized text matching, not a broad substring match. Do not replace or click the original WME action.
+- Search native button/custom-button/link controls; if none is present, allow a unique visible exact-label text leaf as a fallback for WME builds that use a role-less clickable element. Multiple competing matches are intentionally rejected (script-sidebar fallback).
+- Insert **Crea restrizione guidata** adjacent to the currently detected native action and refresh its location when WME switches between Add and Edit. A click on the guided button does not bubble to the underlying native handler.
+- Keep the persistent independent launch button in the **RM Guided Alpha** sidebar and all existing draft validation safeguards. No real editing, overwriting of native restrictions, preset modification or SDK write action is enabled.
+
+**Lane validation update:** the editor directly confirmed that the wizard's **four scope choices** (whole segment, left, center, right) and **six lane-type choices** (none, express, fast, HOV, public transport, carpool toll-free) appear and can be selected in their WME native restriction interface. This is observed **native UI availability**, not a test of the exact underlying SDK write payload or every country/road combination. Alpha 16's proposed laneScope enum mapping remains unverified for writes; do not conflate a native label with an accepted serialized SDK value.
+
+**Manual regression protocol:**
+1. Select a segment with **zero** existing driving restrictions: the WME action should be Add and the inline guided button should appear immediately beside it.
+2. Select a segment with **one or more** restrictions: the WME action should be Edit and the inline guided button should likewise appear, without launching the native edit view when clicked.
+3. Confirm the independent button in the RM Guided Alpha tab remains usable even if an inline anchor cannot be detected.
+4. Switch between those segments without reloading and repeat in WME Standard and Beta. No existing restriction is to be changed, and the wizard should still show the existing restriction count from the SDK.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
