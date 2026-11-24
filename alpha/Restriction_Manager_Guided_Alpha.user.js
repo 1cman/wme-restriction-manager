@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.12
+// @version      4.0.0-alpha.13
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.12";
+    const VERSION = "4.0.0-alpha.13";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -92,7 +92,7 @@
         restriction_kind:["Che tipo di restrizione vuoi creare?","Which restriction would you like to create?","Quel type de restriction souhaitez-vous créer ?","¿Qué tipo de restricción quieres crear?","Welche Beschränkung möchtest du erstellen?","Que tipo de restrição queres criar?"],
         BLOCKED:["Transito vietato (con eventuali eccezioni)","No entry (with optional exceptions)","Accès interdit (avec exceptions éventuelles)","Acceso prohibido (con excepciones opcionales)","Durchfahrt verboten (mit möglichen Ausnahmen)","Passagem proibida (com exceções opcionais)"],
         ALLOWED:["Transito consentito (solo ai veicoli autorizzati)","Access allowed (authorized traffic only)","Accès autorisé (véhicules autorisés uniquement)","Acceso permitido (solo vehículos autorizados)","Zufahrt erlaubt (nur berechtigte Fahrzeuge)","Acesso permitido (apenas veículos autorizados)"],
-        TOLL:["Transito a pedaggio (con possibili esenzioni)","Toll road (with optional exemptions)","Accès à péage (avec exemptions éventuelles)","Acceso con peaje (con posibles exenciones)","Mautpflichtig (mit möglichen Ausnahmen)","Via com portagem (com possíveis isenções)"],
+        TOLL:["Transito esente da pedaggio","Toll-free passage exemption","Exemption de péage","Tránsito exento de peaje","Mautbefreite Durchfahrt","Trânsito isento de portagem"],
         vehicle_step:["Per quali veicoli vuoi definire un'eccezione?","Which vehicles should receive an exception?","Quels véhicules reçoivent une exception ?","¿Qué vehículos tendrán una excepción?","Welche Fahrzeuge sollen eine Ausnahme erhalten?","Que veículos devem ter uma exceção?"], 
         blocked_vehicle_step:["A quali veicoli vuoi vietare il transito?","Which vehicles should be prohibited?","Quels véhicules doivent être interdits ?","¿Qué vehículos quieres prohibir?","Welche Fahrzeugarten sollen gesperrt werden?","Que veículos pretende proibir?"],
         vehicles_optional:["Nessuna selezione = transito vietato a TUTTI. Seleziona uno o più tipi di veicolo per vietare il transito SOLO a quelli scelti; gli altri restano autorizzati.","No selection = ALL vehicles prohibited. Select vehicle types to prohibit ONLY those types; others remain allowed.","Aucun choix : TOUS les véhicules interdits. Sinon seuls les types choisis sont interdits.","Sin selección: TODOS prohibidos. Con selección, solo se prohíben los tipos elegidos.","Ohne Auswahl: ALLE Fahrzeuge gesperrt. Mit Auswahl nur die gewählten Arten.","Sem seleção: TODOS proibidos. Com seleção apenas os tipos escolhidos."],
@@ -109,6 +109,13 @@
         motor_ban_all:["Tutte le motociclette selezionate sono vietate, senza distinzioni di motore.","All selected motorcycles are prohibited regardless of engine.","Toutes les motos sélectionnées sont interdites, sans condition moteur.","Todas las motos seleccionadas están prohibidas, sin condición de motor.","Alle gewählten Motorräder sind unabhängig vom Motor gesperrt.","Todas as motas selecionadas são proibidas independentemente do motor."],
         motor_ban_conditional:["Solo le motociclette che soddisfano le condizioni motore indicate saranno vietate (anteprima sperimentale).","Only motorcycles matching engine conditions are prohibited (experimental preview).","Seules les motos correspondant aux conditions moteur sont interdites (aperçu).","Solo motos con las condiciones de motor indicadas están prohibidas (vista previa).","Nur Motorräder mit den Motorbedingungen sind gesperrt (Vorschau).","Só as motas com as condições do motor são proibidas (pré-visualização)."],
         toll_preview:["Veicoli esentati dal pedaggio","Vehicles exempt from toll","Véhicules exonérés de péage","Vehículos exentos de peaje","Von der Maut ausgenommene Fahrzeuge","Veículos isentos de portagem"],
+        toll_vehicle_step:["Quali veicoli vuoi esentare dal pedaggio?","Which vehicles should be exempt from tolls?","Quels véhicules exempter du péage ?","¿Qué vehículos quieres eximir del peaje?","Welche Fahrzeuge sollen von der Maut befreit werden?","Que veículos pretende isentar da portagem?"],
+        toll_schedule:["Date e fasce orarie dell'esenzione dal pedaggio","Toll exemption dates and times","Dates et horaires d'exemption de péage","Fechas y horarios de exención del peaje","Daten und Uhrzeiten der Mautbefreiung","Datas e horários da isenção de portagem"],
+        toll_schedule_intro:["Le fasce orarie si applicano all'esenzione dei veicoli scelti. Gli altri restano soggetti al pedaggio. Nessuna modifica viene effettuata in questa Alpha.","Time ranges apply to selected vehicle exemptions. Others remain subject to toll. This Alpha makes no edits.","Les horaires s'appliquent aux véhicules exemptés. Les autres paient le péage. Aucune modification.","Los horarios se aplican a los vehículos exentos. Los demás pagan peaje. Sin cambios en esta Alpha.","Zeitfenster gelten für die befreiten Fahrzeuge. Andere bleiben mautpflichtig. Keine Bearbeitung.","Os horários aplicam-se aos veículos isentos. Outros pagam portagem. Sem alterações."],
+        toll_auto_flag:["Strada a pedaggio: attivazione prevista automaticamente","Toll road: automatic activation planned","Route à péage : activation automatique prévue","Vía de peaje: activación automática prevista","Mautstraße: automatische Aktivierung vorgesehen","Estrada com portagem: ativação automática prevista"],
+        toll_both_directions:["L'attributo Strada a pedaggio sarà impostato su ENTRAMBE le direzioni del segmento, anche se l'esenzione riguarda un solo senso.","The toll-road flag will apply to BOTH segment directions, even if the exemption is one-way.","Le péage s'appliquera aux DEUX sens du segment, même si l'exemption est unidirectionnelle.","El peaje se aplicará a AMBOS sentidos, incluso con exención unidireccional.","Das Maut-Attribut gilt für BEIDE Fahrtrichtungen, selbst bei einseitiger Befreiung.","A portagem aplica-se aos DOIS sentidos do segmento, mesmo com isenção num sentido."],
+        toll_activation_pending:["Anteprima: hasToll = true. Verrà predisposto insieme all'esenzione al momento dell'applicazione guidata; questa Alpha non modifica WME.","Preview: hasToll = true. Intended for guided application together with exemption; this Alpha does not edit WME.","Aperçu : hasToll = true ; aucune modification dans cette Alpha.","Vista previa: hasToll = true; esta Alpha no modifica WME.","Vorschau: hasToll = true; diese Alpha bearbeitet WME nicht.","Pré-visualização: hasToll = true; esta Alpha não altera o WME."],
+        toll_nonexempt:["Gli altri veicoli restano soggetti al pedaggio.","All other vehicles remain subject to toll.","Les autres véhicules restent soumis au péage.","Los demás vehículos pagan peaje.","Andere Fahrzeuge bleiben mautpflichtig.","Os outros veículos continuam sujeitos a portagem."],
         all_vehicle_types:["Qualsiasi categoria che soddisfi le condizioni avanzate (da verificare nel WME nativo)","Any vehicle type meeting advanced criteria (verify in native WME)","Toute catégorie répondant aux conditions avancées (à vérifier dans WME)","Cualquier tipo que cumpla las condiciones avanzadas (verificar en WME)","Alle Typen, die die Bedingungen erfüllen (in WME prüfen)","Qualquer categoria que cumpra as condições (verificar no WME)"],
         others_blocked:["Ogni altro traffico rimane vietato.","All other traffic remains prohibited.","Toute autre circulation reste interdite.","El resto del tráfico sigue prohibido.","Alle anderen Fahrzeuge bleiben gesperrt.","Todo o restante tráfego continua proibido."],
         criteria_unverified:["La combinazione tra categorie, pass e occupanti è ancora una bozza: AND/OR e compatibilità locali non verificati.","Combining vehicle types, permits and occupancy is still a draft: AND/OR and local eligibility are unverified.","Combinaison des critères à vérifier (ET/OU et règles locales).","Combinación de criterios sin verificar (Y/O y normas locales).","Kombination der Kriterien noch ungeprüft (UND/ODER, Länderregeln).","Combinação de critérios por verificar (E/OU e regras locais)."],
@@ -276,15 +283,28 @@
     // Read-only whitelist draft: every selected vehicle has its own rules.
     // No conditions means directly allowed; conditions on a different vehicle
     // never imply a requirement for this one.
+    // Planned toll flag mutation, deliberately NEVER executed in the read-only Alpha.
+    // SDK Segments.updateSegment({segmentId,hasToll:true}) sets BOTH directions.
+    function normalizeTollActivationDraft(draft,segmentIds) {
+        if(draft?.restrictionIntent!=="TOLL")throw Error("Toll intent required");
+        if(!Array.isArray(segmentIds)||!segmentIds.length||
+           segmentIds.some(id=>!Number.isSafeInteger(id)||id<=0)||
+           new Set(segmentIds).size!==segmentIds.length)
+            throw Error("Invalid toll target segments");
+        return {segmentIds:[...segmentIds],hasToll:true,directions:"BOTH",
+            required:true,applied:false,verified:false};
+    }
     function nextWizardStep(step,intent,types=[]) {
         if(step===4&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:7;
+        if(step===4&&intent==="TOLL")return 7;
         if(step===5&&intent==="BLOCKED")return 7;
-        if(step===7&&intent==="BLOCKED")return 6;
+        if(step===7&&(intent==="BLOCKED"||intent==="TOLL"))return 6;
         return step<6?step+1:null;
     }
     function previousWizardStep(step,intent,types=[]) {
-        if(step===6&&intent==="BLOCKED")return 7;
+        if(step===6&&(intent==="BLOCKED"||intent==="TOLL"))return 7;
         if(step===7&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:4;
+        if(step===7&&intent==="TOLL")return 4;
         return step>0?step-1:null;
     }
     function normalizeMotorDraft(value,hasMotorcycle) {
@@ -456,7 +476,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -785,7 +805,7 @@
             }
             if(step===4) {
                 dialog.append(node("h3",tr(draft.restrictionType==="BLOCKED"?"blocked_vehicle_step":
-                    draft.restrictionType==="ALLOWED"?"allowed_step":"vehicle_step")));
+                    draft.restrictionType==="ALLOWED"?"allowed_step":"toll_vehicle_step")));
                 const helpKey = draft.restrictionType==="BLOCKED"?"vehicles_optional":
                     draft.restrictionType==="ALLOWED"?"vehicles_allowed":"vehicles_toll";
                 dialog.append(node("p",tr(helpKey)));
@@ -810,6 +830,11 @@
                     all.append(label);
                 }
                 dialog.append(all);
+                if(draft.restrictionType==="TOLL"){
+                    dialog.append(node("p",tr("toll_auto_flag")));
+                    dialog.append(node("p",tr("toll_both_directions")));
+                    dialog.append(node("p",tr("toll_activation_pending")));
+                }
                 if((draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED") && !draft.vehicleTypes.length) {
                     const warning=node("p",tr(draft.restrictionType==="ALLOWED"?"allowed_required":"select_vehicle"));
                     warning.setAttribute("role","alert");warning.style.cssText="color:#c62828;font-weight:600;";
@@ -1108,8 +1133,9 @@
                 }
                 }
             }
-            if(step===7&&draft.restrictionType==="BLOCKED"){
-                dialog.append(node("h3",tr("red_schedule")),node("p",tr("red_schedule_intro")));
+            if(step===7&&(draft.restrictionType==="BLOCKED"||draft.restrictionType==="TOLL")){
+                dialog.append(node("h3",tr(draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule")),
+                    node("p",tr(draft.restrictionType==="TOLL"?"toll_schedule_intro":"red_schedule_intro")));
                 const dates=node("div");
                 dates.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;";
                 for(const field of ["startDate","endDate"]){
