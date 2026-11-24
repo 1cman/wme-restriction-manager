@@ -1087,8 +1087,8 @@
         wrap.append(help);
         return wrap;
     }
-    function renderConflictPreflight(draft,segment,schedule){
-        const report=previewRestrictionConflicts(draft,segment,schedule);
+    function renderConflictPreflight(draft,segment,schedule,proposal={}){
+        const report=previewRestrictionConflicts(draft,segment,schedule,proposal);
         const wrap=node("section");
         wrap.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
             "padding:10px;margin-top:12px;background:#f8fafc;";
@@ -1111,6 +1111,38 @@
             p.style.cssText="padding:6px 8px;margin:5px 0;background:#fff;"+
                 "border-left:3px solid "+colorOf(item.status)+";border-radius:4px;";
             wrap.append(p);
+            if(item.vehicleReview&&item.status!=="SEPARATE"){
+                const details=node("details");
+                details.style.cssText="padding:7px 9px;margin:2px 0 10px;"+
+                    "border:1px solid #e2e8f0;border-radius:6px;background:#fff;";
+                const header=node("summary",tr("vehicle_conflict_title"));
+                header.style.cssText="font-weight:600;cursor:pointer;";
+                details.append(header);
+                for(const result of item.vehicleReview.rows){
+                    const name=vehicleLabels[result.vehicleType]?.[LANGS.indexOf(lang)]||
+                        result.vehicleType;
+                    const description=result.relation==="DIFFERENT"?"vehicle_different":
+                        result.relation==="SAME"?"vehicle_same":
+                        result.relation==="CONDITIONAL"?"vehicle_conditional":
+                        "vehicle_unknown";
+                    const line=node("p",name+" — "+
+                        tr("vehicle_existing_effect")+": "+result.existingEffect+
+                        " · "+tr("vehicle_proposed_effect")+": "+result.proposedEffect+
+                        " · "+tr(description));
+                    line.style.cssText="padding:5px 0;margin:4px 0;"+
+                        "border-bottom:1px solid #f1f5f9;font-size:12px;";
+                    details.append(line);
+                }
+                if(item.vehicleReview.unmodeledNativeTypes){
+                    const warning=node("p",tr("vehicle_compare_unmodeled"));
+                    warning.style.cssText="color:#92400e;font-weight:600;";
+                    details.append(warning);
+                }
+                const caveat=node("p",tr("vehicle_compare_caution"));
+                caveat.style.cssText="font-size:12px;color:#7c2d12;";
+                details.append(caveat);
+                wrap.append(details);
+            }
         }
         const note=node("p",tr("conflict_uncertain"));
         note.style.cssText="font-size:12px;color:#7c2d12;margin-top:10px;";
@@ -1834,7 +1866,7 @@
                     dialog.append(add);
                 }
                 if(isScheduleValid()){
-                    dialog.append(renderConflictPreflight(draft,current.segment,redSchedule));
+                    dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
                 }
                 if(!isScheduleValid()){
                     const error=node("p",tr("schedule_invalid"));
@@ -2014,7 +2046,7 @@
                     node("p",tr("lane_caution")));
                 dialog.append(laneBox);
                 dialog.append(renderExistingRestrictionList(current.segment,false));
-                dialog.append(renderConflictPreflight(draft,current.segment,redSchedule));
+                dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
                 // Read-only design review. Never pass this object to updateSegment.
                 const conversion=reviewSdkConversion(
                     draft,current.segment,redSchedule,vehicleRules,
