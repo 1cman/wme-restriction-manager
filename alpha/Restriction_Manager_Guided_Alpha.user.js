@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.17
+// @version      4.0.0-alpha.18
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.17";
+    const VERSION = "4.0.0-alpha.18";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -71,6 +71,26 @@
         inspection_warn:["Questi valori provengono solo da restrizioni già presenti sul segmento. NON certificano le opzioni disponibili per crearne una nuova, né verificano le API interne, la lingua o il fuso orario del segmento.","These values come only from existing segment restrictions. They do NOT certify support for new rules or verify private APIs, UI locale or segment time zone.","Valeurs des restrictions existantes uniquement ; aucune garantie de prise en charge de nouvelles règles.","Solo valores de restricciones existentes; no garantizan compatibilidad para nuevas reglas.","Nur Werte vorhandener Beschränkungen; keine Garantie für neue Regeln.","Apenas valores de restrições existentes; não garantem suporte para regras novas."],
         inspection_snapshot:["Controllo variazioni delle restrizioni SDK","SDK restriction change check","Contrôle des modifications SDK","Comprobación de cambios SDK","SDK-Beschränkungsänderungen prüfen","Verificação de alterações SDK"],
         inspection_changed:["Le restrizioni SDK del segmento sono cambiate durante la procedura. Ricomincia per aggiornare la bozza.","Segment SDK restrictions changed during the wizard. Restart to refresh the draft.","Les restrictions SDK ont changé ; recommencez.","Las restricciones SDK cambiaron; reinicia.","SDK-Beschränkungen geändert; bitte neu starten.","Restrições SDK alteradas; reinicie."],
+        conversion_title:["Verifica di conversione SDK (anteprima)","SDK conversion review (preview)","Contrôle de conversion SDK (aperçu)","Revisión de conversión SDK (vista previa)","SDK-Konvertierungsprüfung (Vorschau)","Revisão de conversão SDK (prévia)"],
+        conversion_default:["Regola generale prevista","Planned default rule","Règle générale prévue","Regla general prevista","Vorgesehene Grundregel","Regra geral prevista"],
+        conversion_overrides:["Regole per i veicoli previste","Planned vehicle rules","Règles de véhicules prévues","Reglas de vehículos previstas","Vorgesehene Fahrzeugregeln","Regras de veículos previstas"],
+        conversion_direction:["Direzione scelta (bozza)","Selected direction (draft)","Sens choisi (brouillon)","Dirección elegida (borrador)","Gewählte Richtung (Entwurf)","Direção escolhida (rascunho)"],
+        conversion_frames:["Periodi proposti","Proposed time periods","Périodes proposées","Periodos propuestos","Vorgesehene Zeiträume","Períodos propostos"],
+        conversion_toll:["Attributo pedaggio da predisporre","Toll attribute to plan","Attribut péage prévu","Atributo peaje previsto","Geplantes Maut-Attribut","Atributo portagem previsto"],
+        conversion_no_override:["Nessuna regola specifica per veicoli","No vehicle-specific rules","Aucune règle par véhicule","Sin reglas para vehículos","Keine fahrzeugspezifischen Regeln","Sem regras específicas de veículos"],
+        conversion_blocked:["Salvataggio non disponibile: conversione SDK ancora da verificare.","Saving unavailable: SDK conversion is not fully verified.","Enregistrement indisponible : conversion SDK à vérifier.","Guardado no disponible: conversión SDK pendiente.","Speichern nicht verfügbar: SDK-Konvertierung ungeprüft.","Gravação indisponível: conversão SDK por verificar."],
+        conversion_blockers:["Verifiche ancora necessarie","Outstanding verification steps","Vérifications nécessaires","Verificaciones pendientes","Noch ausstehende Prüfungen","Verificações pendentes"],
+        conversion_sdk_contract:["Formato di scrittura completo delle restrizioni e regole veicolo non ancora verificato.","Complete SDK write contract for restrictions and vehicle rules unverified.","Format d'écriture SDK des règles à vérifier.","Formato SDK de escritura de reglas sin verificar.","SDK-Schreibformat für Regeln ungeprüft.","Formato SDK para gravação de regras não verificado."],
+        conversion_schedule:["Conversione calendari/fuso orario del segmento non verificata.","Calendar serialization and segment time zone unverified.","Calendrier et fuseau horaire du segment à vérifier.","Calendario y zona horaria del segmento sin verificar.","Kalender und Segmentzeitzone ungeprüft.","Calendário e fuso horário do segmento por verificar."],
+        conversion_lane:["Valori laneScope/laneType e autorizzazioni locali da verificare per la scrittura.","laneScope/laneType values and local write eligibility need validation.","laneScope/laneType et droits locaux à vérifier.","laneScope/laneType y permisos locales sin verificar.","laneScope/laneType und lokale Berechtigungen ungeprüft.","laneScope/laneType e permissões locais por verificar."],
+        conversion_safe12:["Controllo SAFE12 completo sull'operazione non ancora eseguito.","Full SAFE12 operation budget has not run.","Contrôle complet SAFE12 non exécuté.","Control completo SAFE12 no ejecutado.","Vollständige SAFE12-Prüfung noch nicht durchgeführt.","Verificação completa SAFE12 não executada."],
+        conversion_preserve:["Conservazione delle restrizioni esistenti da verificare senza modifiche o perdite.","Existing restriction preservation has not been verified.","Préservation des restrictions existantes à vérifier.","Conservación de restricciones existentes sin verificar.","Erhalt bestehender Beschränkungen ungeprüft.","Preservação das restrições existentes por verificar."],
+        conversion_conditions:["Combinazione e precedenza delle condizioni pass/occupanti da verificare.","Permit/occupancy condition combination and precedence unverified.","Conditions permis/occupants à vérifier.","Combinación permiso/ocupantes sin verificar.","Kombination von Berechtigungen/Insassen ungeprüft.","Combinação de autorizações/ocupantes por verificar."],
+        conversion_engine:["Codici SDK dei motori e condizioni sperimentali non verificati.","Experimental engine rules and SDK codes unverified.","Codes moteur expérimentaux non vérifiés.","Códigos de motor experimentales sin verificar.","Experimentelle Motorcodes ungeprüft.","Códigos experimentais de motor por verificar."],
+        conversion_toll_atomic:["Impostazione pedaggio per entrambi i sensi ed esenzione da applicare con controllo unitario.","Both-direction toll flag and exemption need coordinated verification.","Péage bidirectionnel et exemption à vérifier ensemble.","Peaje bidireccional y exención necesitan revisión conjunta.","Maut in beiden Richtungen und Befreiung gemeinsam prüfen.","Portagem nos dois sentidos e isenção exigem verificação conjunta."],
+        conversion_unknown:["Dati SDK esistenti mancanti: impossibile validare la conservazione.","Existing SDK data missing; preservation cannot be validated.","Données SDK existantes manquantes.","Faltan datos SDK existentes.","Bestehende SDK-Daten fehlen.","Dados SDK existentes em falta."],
+        conversion_overbudget:["Stima SAFE12 oltre il limite: rivedere il calendario.","SAFE12 estimate exceeds the limit; revise the schedule.","Estimation SAFE12 au-dessus de la limite.","Estimación SAFE12 sobre el límite.","SAFE12-Schätzung überschreitet das Limit.","Estimativa SAFE12 acima do limite."],
+        conversion_country:["Disponibilità e permessi locali del Paese/segmento da verificare.","Country/segment rule eligibility and permissions unverified.","Éligibilité du pays/segment à vérifier.","Elegibilidad del país/segmento sin verificar.","Zulässigkeit für Land/Segment ungeprüft.","Elegibilidade do país/segmento por verificar."],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -495,6 +515,67 @@
         });
         return {vehicles,verified:false};
     }
+    // Deterministic conversion REVIEW, not SegmentRestrictionData and not a
+    // Segments.updateSegment payload. Only the top-level rule pairing is
+    // supported by the published SDK docs. Everything else fails closed.
+    function reviewSdkConversion(draft,segment,schedule,vehicleRules,permits,motorDraft,country) {
+        const normalized=normalizeDraft(draft,segment);
+        const dateDraft=normalizeRedSchedule(schedule);
+        let vehicleConditionRows=[];
+        let motorMode=null;
+        if(normalized.restrictionIntent==="ALLOWED"){
+            const rows=normalizeVehicleRules(normalized.vehicleTypes,vehicleRules,permits);
+            vehicleConditionRows=rows.vehicles.map(row=>({
+                vehicleType:row.vehicleType,ruleType:"FREE",access:row.access,
+                requiresPass:row.requiresPass,requiresOccupancy:row.requiresOccupancy,
+                permitCount:row.permitIds.length,minPassengers:row.minPassengers
+            }));
+        }else if(normalized.restrictionIntent==="BLOCKED"){
+            const motor=normalizeMotorDraft(motorDraft,
+                normalized.vehicleTypes.includes("MOTORCYCLE"));
+            motorMode=normalized.vehicleTypes.includes("MOTORCYCLE")?motor.mode:null;
+            vehicleConditionRows=normalized.vehicleTypes.map(type=>({
+                vehicleType:type,ruleType:"BLOCKED",
+                access:"PROHIBITED",
+                engineFilter:type==="MOTORCYCLE"?motor.mode:null
+            }));
+        }else{
+            vehicleConditionRows=normalized.vehicleTypes.map(type=>({
+                vehicleType:type,ruleType:"FREE",access:"TOLL_EXEMPT"
+            }));
+        }
+        const budget=estimateSafe12Budget(segment?.restrictions,dateDraft.timeFrames);
+        const blockers=["conversion_sdk_contract","conversion_schedule",
+            "conversion_lane","conversion_safe12","conversion_country"];
+        if(!Array.isArray(segment?.restrictions))
+            blockers.push("conversion_unknown");
+        else if(segment.restrictions.length)
+            blockers.push("conversion_preserve");
+        if(budget.status==="OVER")blockers.push("conversion_overbudget");
+        if(normalized.restrictionIntent==="ALLOWED"&&
+           vehicleConditionRows.some(row=>row.requiresPass||row.requiresOccupancy))
+            blockers.push("conversion_conditions");
+        if(motorMode==="MATCHING_ENGINES")
+            blockers.push("conversion_engine");
+        if(normalized.restrictionIntent==="TOLL")
+            blockers.push("conversion_toll_atomic");
+        // Do not infer segment timezone from the user's browser or UI language.
+        // Do not copy/write private or noneditable existing restrictions.
+        return {
+            status:"BLOCKED",saveAllowed:false,verified:false,sdkWritePayload:null,
+            restrictionIntent:normalized.restrictionIntent,
+            defaultType:normalized.defaultType,
+            overrideType:vehicleConditionRows.length?normalized.overrideType:null,
+            directionDesign:normalized.direction,
+            laneScopeDesign:normalized.scope,laneTypeDesign:normalized.lane,
+            vehicleConditionRows,
+            proposedFrameCount:dateDraft.timeFrames.length,
+            plannedHasToll:normalized.restrictionIntent==="TOLL"?true:null,
+            existingRestrictionCount:Array.isArray(segment?.restrictions)?
+                segment.restrictions.length:null,
+            budgetStatus:budget.status,blockers:[...new Set(blockers)]
+        };
+    }
     async function readPermits(sdk,country) {
         if(!country||typeof sdk?.DataModel?.Countries?.getById!=="function")return null;
         const countryId=Number(country.id);
@@ -560,7 +641,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
