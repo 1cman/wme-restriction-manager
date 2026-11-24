@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.16
+// @version      4.0.0-alpha.17
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.16";
+    const VERSION = "4.0.0-alpha.17";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -219,9 +219,31 @@
         MOTORCYCLE:["Motociclette","Motorcycles","Motos","Motocicletas","Motorräder","Motociclos"],
         TAXI:["Taxi","Taxis","Taxis","Taxis","Taxis","Táxis"]
     };
-    const nativeLabels = new Set(["aggiungi restrizioni","aggiungi restrizione","add restrictions","add restriction","ajouter des restrictions","ajouter une restriction","añadir restricciones","agregar restricciones","añadir restricción","beschränkungen hinzufügen","beschränkung hinzufügen","adicionar restrições","adicionar restrição"]);
+    // The native action changes when a selected segment already has restrictions.
+    // Treat ADD and EDIT as distinct actions; never click either native control.
+    const nativeAddLabels = new Set([
+        "aggiungi restrizioni","aggiungi restrizione",
+        "add restrictions","add restriction",
+        "ajouter des restrictions","ajouter une restriction",
+        "añadir restricciones","agregar restricciones","añadir restricción",
+        "beschränkungen hinzufügen","beschränkung hinzufügen",
+        "adicionar restrições","adicionar restrição"
+    ]);
+    const nativeEditLabels = new Set([
+        "modifica restrizioni","modifica restrizione",
+        "edit restrictions","edit restriction",
+        "modifier les restrictions","modifier la restriction",
+        "editar restricciones","modificar restricciones","editar restricción","modificar restricción",
+        "beschränkungen bearbeiten","beschränkung bearbeiten",
+        "editar restrições","modificar restrições","editar restrição"
+    ]);
     function normalizeLabel(value) {
         return String(value || "").normalize("NFKC").replace(/^[+\s]+/,"").replace(/\s+/g," ").trim().toLowerCase();
+    }
+    function nativeRestrictionAction(value) {
+        const normalized=normalizeLabel(value);
+        return nativeAddLabels.has(normalized)?"add":
+            nativeEditLabels.has(normalized)?"edit":null;
     }
     function availableDirections(segment) {
         const a = segment?.isAtoB === true || segment?.isTwoWay === true;
@@ -538,7 +560,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -549,13 +571,28 @@
     function button(text, handler) { const b = node("button",text); b.type="button"; b.addEventListener("click",handler); b.style.cssText="padding:8px 12px;border:1px solid #9ca3af;border-radius:6px;background:#eff6ff;color:#174c86;cursor:pointer;font:inherit;"; return b; }
     function removeNative() { nativeButton?.remove(); nativeButton = null; }
     function findNativeAnchor() {
-        // Exact localized label, visible native button only; fail closed on ambiguity.
-        const candidates = [...document.querySelectorAll('button,[role="button"],wz-button')]
-            .filter(el => !el.closest("#"+ID+"-root,#"+ID+"-dialog") && el.id !== ID+"-native" && !el.closest('[role="dialog"],dialog') &&
-                el.getClientRects().length && !el.disabled && el.getAttribute("aria-disabled") !== "true" &&
-                nativeLabels.has(normalizeLabel(el.innerText || el.getAttribute("aria-label") || el.textContent)));
-        const outer = candidates.filter(el => !candidates.some(other => other !== el && other.contains(el)));
-        return outer.length === 1 ? outer[0] : null;
+        // The native panel uses "Add restrictions" when empty, "Edit restrictions"
+        // when the segment has existing rules. Never invoke the native action.
+        // Match exact localized labels only, and fail closed on ambiguous matches.
+        const visible=el=>!el.closest("#"+ID+"-root,#"+ID+"-dialog") &&
+            el.id!==ID+"-native"&&!el.closest('[role="dialog"],dialog') &&
+            el.getClientRects().length>0 &&
+            !el.disabled&&el.getAttribute("aria-disabled")!=="true";
+        const recognized=el=>nativeRestrictionAction(
+            el.innerText||el.getAttribute("aria-label")||el.textContent);
+        const controls=[...document.querySelectorAll(
+            'button,[role="button"],wz-button,a,[role="link"]'
+        )].filter(el=>visible(el)&&recognized(el));
+        const outer=controls.filter(el=>!controls.some(other=>
+            other!==el&&other.contains(el)));
+        if(outer.length===1)return outer[0];
+        if(outer.length>1)return null;
+        // Some WME builds render "Modifica restrizioni" as a click target
+        // without an explicit button role. Anchor beside its exact text leaf.
+        const textLeaves=[...document.querySelectorAll('span,strong,div,p')]
+            .filter(el=>visible(el)&&recognized(el)&&
+                ![...el.children].some(child=>recognized(child)));
+        return textLeaves.length===1?textLeaves[0]:null;
     }
     function placeNative() {
         if (!context || !availableDirections(context.segment).length) { removeNative(); return false; }
