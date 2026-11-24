@@ -1667,7 +1667,29 @@
                 for(const reason of conversion.blockers){
                     reasons.append(node("li",tr(reason)));
                 }
-                details.append(reasons);
+                details.append(reasons,node("h4",tr("preservation_title")));
+                const audit=conversion.preservation;
+                const auditMessage=audit.status==="NO_EXISTING"?"preservation_none":
+                    audit.status==="REQUIRES_ROUNDTRIP"?"preservation_roundtrip":
+                    "preservation_unknown";
+                details.append(node("p",tr("preservation_status")+": "+tr(auditMessage)));
+                if(audit.count!==null){
+                    const entries=[
+                        ["budget_existing",audit.count],
+                        ["preservation_frames",audit.frameCount],
+                        ["preservation_noneditable",audit.nonEditable],
+                        ["preservation_editable_unknown",audit.editabilityUnknown],
+                        ["preservation_opaque",audit.opaqueVehicleRules],
+                        ["preservation_legacy",audit.legacyFields],
+                        ["preservation_incomplete",audit.incomplete]
+                    ];
+                    for(const [key,count] of entries){
+                        details.append(node("p",tr(key)+": "+count));
+                    }
+                }
+                const preservationWarning=node("p",tr("preservation_warning"));
+                preservationWarning.style.cssText="color:#991b1b;font-weight:600;";
+                details.append(preservationWarning);
                 dialog.append(details);
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
