@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.19
+// @version      4.0.0-alpha.20
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.19";
+    const VERSION = "4.0.0-alpha.20";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -104,6 +104,36 @@
         preservation_frames:["Definizioni temporali già presenti","Existing time-frame definitions","Définitions temporelles existantes","Definiciones temporales existentes","Bestehende Zeitdefinitionen","Definições de tempo existentes"],
         preservation_warning:["Il controllo legge e conta soltanto: non converte le restrizioni esistenti in oggetti scrivibili. Non autorizza il salvataggio.","Read/count only: does not turn existing restrictions into writable objects. Saving stays blocked.","Lecture et comptage uniquement ; aucune conversion écrivable ni sauvegarde.","Solo lectura/conteo; sin conversión editable ni guardado.","Nur Lesen/Zählen; keine schreibbaren Objekte und kein Speichern.","Apenas leitura/contagem; sem objetos graváveis nem salvamento."],
         conversion_preservation_gate:["Verifica di conservazione delle restrizioni esistenti non superata.","Existing restriction preservation has not passed verification.","Vérification de conservation non réussie.","Validación de conservación pendiente.","Erhaltung bestehender Beschränkungen ungeprüft.","Verificação de preservação ainda não concluída."],
+        existing_list:["Restrizioni già presenti sul segmento","Existing segment restrictions","Restrictions déjà présentes sur le segment","Restricciones existentes en el segmento","Vorhandene Segmentbeschränkungen","Restrições já presentes no segmento"],
+        existing_none:["Nessuna restrizione presente","No existing restrictions","Aucune restriction présente","No hay restricciones","Keine bestehenden Beschränkungen","Nenhuma restrição existente"],
+        existing_unknown:["Impossibile leggere l'elenco: controllo del conflitto non disponibile.","Unable to read the list: conflict check unavailable.","Liste indisponible : analyse impossible.","No se puede leer la lista; comprobación no disponible.","Liste nicht verfügbar; Konfliktprüfung unmöglich.","Lista indisponível: verificação de conflitos impossível."],
+        existing_rule:["Restrizione","Restriction","Restriction","Restricción","Beschränkung","Restrição"],
+        existing_kind:["Regola generale","Default rule","Règle générale","Regla general","Grundregel","Regra geral"],
+        existing_direction:["Direzione","Direction","Direction","Dirección","Richtung","Direção"],
+        existing_scope:["Ambito corsia","Lane scope","Portée de voie","Ámbito de carril","Fahrstreifenbereich","Âmbito de via"],
+        existing_lane:["Tipo di corsia","Lane type","Type de voie","Tipo de carril","Fahrstreifentyp","Tipo de via"],
+        existing_times:["Validità temporale","Time validity","Validité temporelle","Validez temporal","Zeitliche Gültigkeit","Validade temporal"],
+        existing_weekdays:["Giorni SDK","SDK weekdays","Jours SDK","Días SDK","SDK-Wochentage","Dias SDK"],
+        existing_rules:["Tipi di regole veicolo (non convertite)","Vehicle rule groups (unconverted)","Groupes de règles véhicule (non converties)","Grupos de reglas de vehículo (sin convertir)","Fahrzeugregelgruppen (nicht konvertiert)","Grupos de regras de veículo (não convertidos)"],
+        existing_editability:["Modificabilità","Editability","Modifiabilité","Modificabilidad","Bearbeitbarkeit","Editabilidade"],
+        existing_expired:["Scaduta","Expired","Expirée","Caducada","Abgelaufen","Expirada"],
+        existing_description:["Descrizione","Description","Description","Descripción","Beschreibung","Descrição"],
+        existing_yes:["Sì","Yes","Oui","Sí","Ja","Sim"],
+        existing_no:["No","No","Non","No","Nein","Não"],
+        edit_native:["Modifica nel pannello WME","Edit in native WME panel","Modifier dans WME","Editar en el panel WME","Im WME-Panel bearbeiten","Editar no painel WME"],
+        edit_native_hint:["Apre il pannello originale di WME: la procedura guidata non modifica restrizioni esistenti.","Opens the original WME editor; the wizard does not change existing restrictions.","Ouvre l'éditeur natif WME, sans modification guidée.","Abre el editor nativo WME, sin cambiar reglas existentes.","Öffnet den nativen WME-Editor ohne Regeländerung.","Abre o editor nativo WME sem alterar as regras."],
+        conflict_title:["Controllo preventivo conflitti (sola lettura)","Conflict preflight (read-only)","Précontrôle des conflits (lecture seule)","Comprobación de conflictos (solo lectura)","Konfliktprüfung (nur lesbar)","Verificação de conflitos (só leitura)"],
+        conflict_potential:["Possibile conflitto","Potential conflict","Conflit possible","Posible conflicto","Möglicher Konflikt","Possível conflito"],
+        conflict_overlap:["Sovrapposizione da valutare","Overlap requires review","Chevauchement à examiner","Solapamiento por revisar","Überlappung prüfen","Sobreposição a avaliar"],
+        conflict_unknown:["Da verificare","Needs verification","À vérifier","Por verificar","Zu überprüfen","Por verificar"],
+        conflict_separate:["Nessuna sovrapposizione rilevata nel confronto verificabile","No overlap found in the verifiable comparison","Aucun chevauchement dans la comparaison vérifiable","Sin solapamiento en la comparación verificable","Keine Überschneidung im prüfbaren Vergleich","Sem sobreposição na comparação verificável"],
+        conflict_absent:["Nessuna restrizione esistente da confrontare","No existing restrictions to compare","Aucune restriction à comparer","No hay restricciones que comparar","Keine bestehenden Beschränkungen zum Vergleich","Sem restrições para comparar"],
+        conflict_uncertain:["Il controllo non interpreta ancora tutti i profili veicolo, pass, motori, targhe, i giorni SDK numerici o le ricorrenze. Un risultato favorevole non autorizza il salvataggio.","The check cannot yet interpret all vehicle rules, permits, engines, plates, numeric SDK weekdays or recurrences. A favorable result never permits saving.","Profils véhicule, permis, moteurs, plaques et calendriers partiellement inconnus. Aucune écriture.","Reglas de vehículo, permisos, motores, matrículas y calendarios parcialmente desconocidos. Sin guardado.","Fahrzeugregeln, Berechtigungen, Motoren, Kennzeichen und Kalender nicht vollständig geprüft. Kein Speichern.","Regras de veículos, autorizações, motores, matrículas e calendários ainda parcialmente desconhecidos. Sem gravação."],
+        conflict_reason_direction:["Direzioni separate","Separate directions","Directions distinctes","Direcciones separadas","Getrennte Richtungen","Direções separadas"],
+        conflict_reason_lane:["Corsie separate","Separate lanes","Voies distinctes","Carriles separados","Getrennte Fahrstreifen","Vias separadas"],
+        conflict_reason_time:["Periodi non sovrapposti","Non-overlapping periods","Périodes distinctes","Periodos no superpuestos","Zeitlich getrennt","Períodos sem sobreposição"],
+        conflict_reason_common:["Direzione/corsia/orario potenzialmente coincidenti","Direction/lane/time may coincide","Direction/voie/horaire peuvent coïncider","Dirección/carril/horario pueden coincidir","Richtung/Spur/Zeit können übereinstimmen","Direção/via/horário podem coincidir"],
+        conflict_reason_unknown:["Dati o condizioni SDK insufficienti per escludere sovrapposizioni","SDK data or conditions insufficient to exclude overlaps","Données SDK insuffisantes","Datos SDK insuficientes","SDK-Daten reichen nicht aus","Dados SDK insuficientes"],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -530,6 +560,115 @@
     }
     // Only audit documented SDK read-model fields. Never treat a
     // SegmentRestriction object as an addable SegmentRestrictionData object.
+    // Read only. Data exposed here is taken from the selected SDK Segment.
+    // No implicit conversion of vehicle rules or native calendars is attempted.
+    function listExistingRestrictions(segment) {
+        if(!Array.isArray(segment?.restrictions))
+            return {available:false,entries:[],verified:false};
+        const primitive=value=>(typeof value==="string"||typeof value==="number")?
+            String(value):null;
+        return {available:true,verified:false,
+            entries:segment.restrictions.map((r,index)=>{
+                const frames=Array.isArray(r?.timeFrames)?
+                    r.timeFrames.map(frame=>({
+                        startDate:primitive(frame?.startDate),endDate:primitive(frame?.endDate),
+                        fromTime:primitive(frame?.fromTime),toTime:primitive(frame?.toTime),
+                        weekdays:Array.isArray(frame?.weekdays)?
+                            frame.weekdays.map(primitive):primitive(frame?.weekdays),
+                        timeZone:primitive(frame?.timeZone)
+                    })):[];
+                const groups=r?.vehicleRules&&typeof r.vehicleRules==="object"&&
+                    !Array.isArray(r.vehicleRules)?Object.keys(r.vehicleRules).sort():[];
+                return {
+                    index:index+1,
+                    defaultType:primitive(r?.defaultType),
+                    direction:primitive(r?.direction),
+                    laneScope:primitive(r?.laneScope??r?.disposition),
+                    laneType:primitive(r?.laneType),
+                    editable:r?.editable===true?true:r?.editable===false?false:null,
+                    expired:r?.isExpired===true?true:r?.isExpired===false?false:null,
+                    description:typeof r?.description==="string"?r.description.slice(0,200):null,
+                    frames,framesKnown:Array.isArray(r?.timeFrames),
+                    ruleGroups:groups,verified:false
+                };
+            })
+        };
+    }
+    // Conservative physical/temporal overlap check: an UNKNOWN result must
+    // never be promoted to a guarantee that a new restriction is safe.
+    function previewRestrictionConflicts(draft,segment,schedule) {
+        const listed=listExistingRestrictions(segment);
+        if(!listed.available)return {status:"UNKNOWN",items:[],verified:false,saveAllowed:false};
+        const normalized=normalizeDraft(draft,segment);
+        const proposed=normalizeRedSchedule(schedule).timeFrames;
+        const targetScope=LANE_SCOPE_CANDIDATES[normalized.scope];
+        const directionSet=value=>value==="BOTH"?["FWD","REV"]:
+            value==="FWD"||value==="REV"?[value]:null;
+        const isIso=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
+            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+        const windowOverlap=(existing,planned)=>{
+            // Returns false only when a reliable separation is proven.
+            if(!existing||typeof existing!=="object")return null;
+            const dates=[existing.startDate,existing.endDate];
+            if(dates.some(x=>x!==null&&x!==undefined&&!isIso(x)))return null;
+            const begin=existing.startDate??null,finish=existing.endDate??null;
+            if(begin&&finish&&begin>finish)return null;
+            if((finish&&planned.startDate&&finish<planned.startDate)||
+               (planned.endDate&&begin&&planned.endDate<begin))return false;
+            const wk=existing.weekdays;
+            if(Array.isArray(wk)){
+                if(!wk.length||wk.some(x=>!WEEKDAYS.includes(x)))return null;
+                if(!wk.some(x=>planned.weekdays.includes(x)))return false;
+            }else if(wk!==null&&wk!==undefined)return null;
+            else return null; // SDK weekday bitmasks and null meaning unverified.
+            const re=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
+            const eFrom=existing.fromTime??null,eTo=existing.toTime??null;
+            if((eFrom===null)!==(eTo===null))return null;
+            if(eFrom!==null&&(!re.test(eFrom)||!re.test(eTo)||eFrom>=eTo))
+                return null;
+            if(planned.fromTime===null||eFrom===null)return true;
+            return eFrom<planned.toTime&&planned.fromTime<eTo;
+        };
+        const items=listed.entries.map(entry=>{
+            const base={index:entry.index,status:"UNKNOWN",reason:"conflict_reason_unknown",
+                verified:false};
+            const left=directionSet(normalized.direction),right=directionSet(entry.direction);
+            if(!left||!right)return base;
+            if(!left.some(x=>right.includes(x)))
+                return {...base,status:"SEPARATE",reason:"conflict_reason_direction"};
+            if(!entry.laneScope||!targetScope)return base;
+            const known=new Set(Object.values(LANE_SCOPE_CANDIDATES));
+            if(!known.has(entry.laneScope))return base;
+            if(entry.laneScope!=="WHOLE_SEGMENT"&&targetScope!=="WHOLE_SEGMENT"&&
+                entry.laneScope!==targetScope)
+                return {...base,status:"SEPARATE",reason:"conflict_reason_lane"};
+            // A special lane may overlap, but cannot be declared physically
+            // distinct merely because its type label differs.
+            if(!entry.framesKnown||!entry.frames.length)return base;
+            let uncertain=false,hit=false;
+            for(const previous of entry.frames){
+                for(const next of proposed){
+                    const result=windowOverlap(previous,next);
+                    if(result===true)hit=true;
+                    if(result===null)uncertain=true;
+                }
+            }
+            if(!hit&&!uncertain)
+                return {...base,status:"SEPARATE",reason:"conflict_reason_time"};
+            if(!hit)return base;
+            if(!["BLOCKED","FREE","TOLL"].includes(entry.defaultType))
+                return base;
+            // Even a proven physical overlap is only a POTENTIAL conflict
+            // because complete permit/plate/engine logic is not evaluated.
+            return {...base,status:entry.defaultType===normalized.defaultType?
+                "OVERLAP_REVIEW":"POTENTIAL_CONFLICT",reason:"conflict_reason_common"};
+        });
+        const status=!items.length?"NONE":
+            items.some(x=>x.status==="POTENTIAL_CONFLICT")?"POTENTIAL_CONFLICT":
+            items.some(x=>x.status==="OVERLAP_REVIEW")?"OVERLAP_REVIEW":
+            items.some(x=>x.status==="UNKNOWN")?"UNKNOWN":"SEPARATE";
+        return {status,items,verified:false,saveAllowed:false};
+    }
     function auditRestrictionPreservation(segment) {
         const unknown={
             status:"UNKNOWN",count:null,frameCount:null,nonEditable:null,
@@ -693,7 +832,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
