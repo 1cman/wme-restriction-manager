@@ -34,12 +34,28 @@ assert.equal(a.LANES.length,6);
 assert.deepEqual(a.RESTRICTION_TYPES,['BLOCKED','ALLOWED','TOLL']);
 assert.deepEqual(a.DEFAULT_TYPES,{BLOCKED:'BLOCKED',ALLOWED:'BLOCKED',TOLL:'TOLL'});
 assert.ok(!a.RESTRICTION_TYPES.includes('FREE'),'Do not confuse wizard intents with SDK defaultType FREE');
-assert.equal(a.VEHICLE_TYPES.length,15);
-assert.equal(new Set(a.VEHICLE_TYPES).size,15);
+assert.deepEqual(a.VEHICLE_TYPES,['PRIVATE','EV','MOTORCYCLE','TAXI']);
+assert.equal(new Set(a.VEHICLE_TYPES).size,4);
+const excludedSdkTypes=[
+ 'BUS','CAV','CLEAN_FUEL','HAZARDOUS_MATERIALS','HOV_2','HOV_3',
+ 'HYBRID','PUBLIC_TRANSPORTATION','RV','TOWING_VEHICLE','TRUCK'
+];
+for(const excluded of excludedSdkTypes){
+ assert.throws(()=>a.selectedVehicleTypes([excluded]),/Invalid vehicle selection/);
+ for(const restrictionType of a.RESTRICTION_TYPES){
+  assert.throws(()=>a.normalizeDraft({
+   direction:'FWD',scope:'segment',lane:'lane_none',
+   restrictionType,vehicleTypes:[excluded]
+  },{isAtoB:true}),/Invalid vehicle selection/);
+ }
+ assert.throws(()=>a.normalizeVehicleRules([excluded],{},null),/Invalid vehicle selection/);
+}
+assert.deepEqual(a.selectedVehicleTypes(['TAXI','PRIVATE','EV','MOTORCYCLE']),
+ ['PRIVATE','EV','MOTORCYCLE','TAXI']);
 assert.equal(a.OVERRIDE_TYPES.BLOCKED,'FREE');
 assert.equal(a.OVERRIDE_TYPES.ALLOWED,'FREE');
 assert.equal(a.OVERRIDE_TYPES.TOLL,'FREE');
-assert.deepEqual(a.selectedVehicleTypes(['TAXI','BUS','TAXI']),['BUS','TAXI']);
+assert.deepEqual(a.selectedVehicleTypes(['TAXI','PRIVATE','TAXI']),['PRIVATE','TAXI']);
 assert.throws(()=>a.selectedVehicleTypes(['INVENTED']));
 assert.throws(()=>a.selectedVehicleTypes('BUS'));
 assert.ok(!a.SCOPES.includes('scope_none'));
@@ -84,14 +100,14 @@ assert.ok(src.includes('motor_select_fuel') && src.includes('motor_select_electr
 assert.ok(src.includes('motor_limit_cc') && src.includes('motor_limit_kw'), 'Native-style cc/kW thresholds missing');
 
 for (const restrictionType of a.RESTRICTION_TYPES) {
-  const draft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:['MOTORCYCLE','TRUCK']};
+  const draft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:['MOTORCYCLE','TAXI']};
   const result=a.normalizeDraft(draft,{isAtoB:true});
   assert.equal(result.restrictionIntent,restrictionType);
   assert.equal(result.defaultType,restrictionType==='BLOCKED'?'FREE':a.DEFAULT_TYPES[restrictionType]);
   assert.equal(result.overrideType,restrictionType==='BLOCKED'?'BLOCKED':a.OVERRIDE_TYPES[restrictionType]);
-  assert.deepEqual(result.vehicleTypes,['MOTORCYCLE','TRUCK']);
+  assert.deepEqual(result.vehicleTypes,['MOTORCYCLE','TAXI']);
   assert.equal(result.verified,false);
-  assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TRUCK'],'Input must not be modified');
+  assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TAXI'],'Input must not be modified');
 }
 for (const restrictionType of ['ALLOWED','TOLL']) {
   const expected=restrictionType==='ALLOWED'?/ALLOWED requires at least one authorized vehicle type/:/TOLL requires explicit vehicle exemption rules/;
@@ -101,7 +117,7 @@ for (const restrictionType of ['ALLOWED','TOLL']) {
 const whitelist={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']};
 assert.deepEqual(a.normalizeDraft(whitelist,{isAtoB:true}),{
  direction:'FWD',scope:'segment',lane:'lane_none',restrictionIntent:'ALLOWED',
- defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:['EV','PRIVATE'],verified:false
+ defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:['PRIVATE','EV'],verified:false
 });
 const passOnly={...whitelist,vehicleTypes:[]};
 assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:['pass1']}),false);
@@ -169,21 +185,29 @@ assert.ok(src.includes('advanced.permitIds=advanced.permitIds.includes(id)?'),
   'Autocomplete and checkboxes must share a persistent selection');
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
   'Next button must still guard scope');
+// Alpha 15: only the four editor-requested categories are valid in a new draft.
+assert.ok(src.includes('const VEHICLE_TYPES = Object.freeze(["PRIVATE", "EV", "MOTORCYCLE", "TAXI"]);'));
+assert.ok(src.includes('for (const type of VEHICLE_TYPES)'),
+ 'The wizard must render exclusively the validated shortlist');
+assert.ok(src.includes('selectedVehicleTypes(draft.vehicleTypes)'),
+ 'Next validation must reject types outside the shortlist');
+assert.ok(!src.includes('for (const type of ["BUS"'),
+ 'The wizard must not hardcode previously exposed SDK categories');
 // Alpha 9: conditions are attached to INDIVIDUAL authorized vehicle types.
-const selectedVehicles=['PRIVATE','MOTORCYCLE','EV','HYBRID'];
+const selectedVehicles=['PRIVATE','MOTORCYCLE','EV','TAXI'];
 const vehicleRules={
   PRIVATE:{requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null},
   MOTORCYCLE:{requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null},
   EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null},
-  HYBRID:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}
+  TAXI:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}
 };
 const knownPermits=[{id:'zone',name:'ZTL zone'}];
 const mixed=a.normalizeVehicleRules(selectedVehicles,vehicleRules,knownPermits);
 assert.equal(mixed.verified,false);
 assert.deepEqual(mixed.vehicles.map(v=>[v.vehicleType,v.access]),[
-  ['EV','DIRECT'],['HYBRID','DIRECT'],['MOTORCYCLE','CONDITIONAL'],['PRIVATE','CONDITIONAL']
+  ['PRIVATE','CONDITIONAL'],['EV','DIRECT'],['MOTORCYCLE','CONDITIONAL'],['TAXI','DIRECT']
 ]);
-for(const direct of ['EV','HYBRID']){
+for(const direct of ['EV','TAXI']){
   const row=mixed.vehicles.find(v=>v.vehicleType===direct);
   assert.deepEqual(row.permitIds,[]);
   assert.equal(row.minPassengers,null);
@@ -200,8 +224,8 @@ assert.deepEqual(a.normalizeVehicleRules(['EV'],{},null).vehicles[0],{
   requiresOccupancy:false,permitIds:[],minPassengers:null
 });
 const minOnly={PRIVATE:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:3}};
-assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles[0].access,'DIRECT');
-assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles[1].minPassengers,3);
+assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles.find(v=>v.vehicleType==='EV').access,'DIRECT');
+assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles.find(v=>v.vehicleType==='PRIVATE').minPassengers,3);
 const both={PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['zone'],minPassengers:2}};
 assert.equal(a.normalizeVehicleRules(['PRIVATE'],both,knownPermits).vehicles[0].access,'CONDITIONAL');
 assert.throws(()=>a.normalizeVehicleRules([],{},knownPermits),/No authorized vehicle/);
@@ -243,7 +267,7 @@ assert.ok(src.includes('if(rule.access==="DIRECT")box.append(node("p",tr("direct
 assert.ok(src.includes('(step===5&&!isAdvancedValid())'),
   'Next button must be blocked on invalid per-vehicle requirements');
 // Alpha 10 red flow: skip permits/occupancy entirely, except optional motorcycle engine.
-for(const types of [[],['PRIVATE'],['TRUCK']]){
+for(const types of [[],['PRIVATE'],['TAXI']]){
  assert.equal(a.nextWizardStep(4,'BLOCKED',types),7);
  assert.equal(a.previousWizardStep(7,'BLOCKED',types),4);
 }
@@ -260,7 +284,7 @@ assert.equal(a.nextWizardStep(7,'ALLOWED',['MOTORCYCLE']),6);
 assert.equal(a.previousWizardStep(6,'ALLOWED',['MOTORCYCLE']),7);
 assert.equal(a.previousWizardStep(7,'ALLOWED',['MOTORCYCLE']),5);
 // The blue exemption skips advanced pass/occupancy/plate conditions entirely.
-for(const types of [['PRIVATE'],['BUS','TAXI'],['MOTORCYCLE','EV']]){
+for(const types of [['PRIVATE'],['PRIVATE','TAXI'],['MOTORCYCLE','EV']]){
  assert.equal(a.nextWizardStep(4,'TOLL',types),7);
  assert.equal(a.nextWizardStep(7,'TOLL',types),6);
  assert.equal(a.previousWizardStep(6,'TOLL',types),7);
@@ -268,11 +292,11 @@ for(const types of [['PRIVATE'],['BUS','TAXI'],['MOTORCYCLE','EV']]){
 }
 const tollDraft=a.normalizeDraft({
  direction:'FWD',scope:'segment',lane:'lane_none',
- restrictionType:'TOLL',vehicleTypes:['BUS','TAXI']
+ restrictionType:'TOLL',vehicleTypes:['PRIVATE','TAXI']
 },{isAtoB:true});
 assert.equal(tollDraft.defaultType,'TOLL');
 assert.equal(tollDraft.overrideType,'FREE');
-assert.deepEqual(tollDraft.vehicleTypes,['BUS','TAXI']);
+assert.deepEqual(tollDraft.vehicleTypes,['PRIVATE','TAXI']);
 assert.deepEqual(a.normalizeTollActivationDraft(tollDraft,[101]),{
  segmentIds:[101],hasToll:true,directions:'BOTH',
  required:true,applied:false,verified:false
