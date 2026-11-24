@@ -284,7 +284,7 @@
     // No conditions means directly allowed; conditions on a different vehicle
     // never imply a requirement for this one.
     // Planned toll flag mutation, deliberately NEVER executed in the read-only Alpha.
-    // SDK Segments.updateSegment({segmentId,hasToll:true}) sets BOTH directions.
+    // SDK segment toll updates set BOTH traffic directions; do not invoke here.
     function normalizeTollActivationDraft(draft,segmentIds) {
         if(draft?.restrictionIntent!=="TOLL")throw Error("Toll intent required");
         if(!Array.isArray(segmentIds)||!segmentIds.length||
@@ -1302,8 +1302,8 @@
                         node("h4",tr("toll_auto_flag")),
                         node("p",tr("toll_activation_pending")),
                         node("p",tr("toll_both_directions")),
-                        node("p","SDK hasToll = "+String(flag.hasToll)+
-                            " · "+tr("inspection_snapshot")+": "+tr("pending"))
+                        node("p","hasToll: "+String(flag.hasToll)+
+                            " · "+tr("toll_activation_pending"))
                     );
                     dialog.append(node("h4",tr("schedule_summary")));
                     for(const frame of schedule.timeFrames){
