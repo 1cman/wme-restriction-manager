@@ -428,6 +428,22 @@ const sampleRaw={W:{model:{segments:{getObjectById:()=>({
 })}}}};
 assert.deepEqual(a.observedMotorTypes(sampleRaw,1),['NATIVE-X']);
 assert.deepEqual(a.observedMotorTypes({},1),[]);
+assert.equal(a.countInternalEngineConditions(sampleRaw,1),2);
+const rawSegmentWith=restrictions=>({W:{model:{segments:{
+ getObjectById:()=>({attributes:{restrictions}})
+}}}});
+const profileWith=conditions=>({getDriveProfileList:group=>{
+ assert.equal(group,'BLOCKED');
+ return {getDriveProfiles:()=>[{getEngineCapacities:()=>conditions}]};
+}});
+assert.equal(a.countInternalEngineConditions(rawSegmentWith([
+ profileWith([{attributes:{engineType:'PRIVATE-MOTOR-VALUE'}}]),profileWith([{}])
+]),1),2,'Only the segment-wide count is returned');
+assert.equal(a.countInternalEngineConditions(rawSegmentWith([profileWith([])]),1),0);
+for(const page of [{},rawSegmentWith([{}]),rawSegmentWith([profileWith(Array(2))]),
+ rawSegmentWith([profileWith(null)]),rawSegmentWith([{getDriveProfileList(){throw Error('Unavailable');}}])]){
+ assert.equal(a.countInternalEngineConditions(page,1),null,'Unavailable data must not look like zero conditions');
+}
 assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType))'),
  'Date and time screen must include red, green and blue');
 assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
@@ -902,9 +918,44 @@ assert.deepEqual(partialAudit.entries[0].issues.slice(0,5),[
  {field:'timeFrames[0].toTime',reason:'preservation_snapshot_undefined'},
  {field:'vehicleRules.BLOCKED[0].minPassengers',reason:'preservation_snapshot_undefined'}
 ]);
-assert.ok(partialAudit.entries[0].issues.some(issue=>issue.field==='driveProfiles / vehicleRules'));
+assert.ok(!partialAudit.entries[0].issues.some(issue=>issue.field==='driveProfiles / vehicleRules'),
+ 'A partially unreadable current rule does not establish a difference from the previous one');
 assert.deepEqual(partialAudit.entries[1],{index:2,issues:[]});
 assert.doesNotMatch(JSON.stringify(partialAudit),/PRIVATE-|ENDS_WITH_7/);
+const withSdkAliases=(rule,aliases)=>{
+ for(const key of aliases)Object.defineProperty(rule,key,{enumerable:true, get(){
+  preservationGetterCalls++;throw new Error('PRIVATE-GETTER-ERROR');
+ }});
+ return rule;
+};
+const nativeAliasRule=()=>withSdkAliases({...publicSoleRule,vehicleTypes:['MOTORCYCLE']},
+ ['numPassengers','licensePlateNumber']);
+const dynamicAliases=withSdkAliases({
+ ...publicRestriction,vehicleRules:{BLOCKED:[nativeAliasRule()]},driveProfiles:{BLOCKED:[nativeAliasRule()]},
+ timeFrames:[withSdkAliases({...publicFrame},['daysOfMonth'])]
+},['disposition']);
+const aliasAudit=a.auditRestrictionPreservation({restrictions:[dynamicAliases]});
+assert.equal(a.restrictionSnapshot({restrictions:[dynamicAliases]}),null);
+assert.equal(preservationGetterCalls,0,'Deprecation recognition must not evaluate native getters');
+assert.equal(aliasAudit.status,'UNKNOWN');
+assert.equal(aliasAudit.writeReady,false);
+assert.deepEqual(aliasAudit.entries[0].issues,[
+ {field:'disposition',reason:'preservation_snapshot_alias'},
+ {field:'driveProfiles.BLOCKED[0].licensePlateNumber',reason:'preservation_snapshot_alias'},
+ {field:'driveProfiles.BLOCKED[0].numPassengers',reason:'preservation_snapshot_alias'},
+ {field:'timeFrames[0].daysOfMonth',reason:'preservation_snapshot_alias'},
+ {field:'vehicleRules.BLOCKED[0].licensePlateNumber',reason:'preservation_snapshot_alias'},
+ {field:'vehicleRules.BLOCKED[0].numPassengers',reason:'preservation_snapshot_alias'},
+ {field:'vehicleRules.BLOCKED[0]',reason:'native_engine_review'}
+]);
+const unrelatedGetterAudit=a.auditRestrictionPreservation({restrictions:[withSdkAliases({
+ ...publicRestriction,disposition:'RIGHT_LANE',driveProfiles:{BLOCKED:[]}
+},['description'])]});
+assert.deepEqual(unrelatedGetterAudit.entries[0].issues,[
+ {field:'description',reason:'preservation_snapshot_accessor'},
+ {field:'disposition / laneScope',reason:'preservation_field_alias'},
+ {field:'driveProfiles / vehicleRules',reason:'preservation_field_alias'}
+]);
 
 class NativeRule {
  constructor(fields){Object.assign(this,fields);}
@@ -1147,16 +1198,16 @@ const sameMotor=a.reviewVehicleConflictEffects(
 assert.deepEqual(sameMotor.rows.map(r=>[r.vehicleType,r.existingEffect,r.proposedEffect,r.relation]),[
  ['PRIVATE','FREE','FREE','SAME'],
  ['EV','FREE','FREE','SAME'],
- ['MOTORCYCLE','BLOCKED','BLOCKED','SAME'],
+ ['MOTORCYCLE','UNKNOWN','BLOCKED','UNKNOWN'],
  ['TAXI','FREE','FREE','SAME']
 ]);
-assert.equal(sameMotor.status,'SAME_EFFECT');
+assert.equal(sameMotor.status,'UNKNOWN','Public SDK cannot exclude an engine filter');
 assert.equal(sameMotor.verified,false);
 assert.equal(sameMotor.saveAllowed,false);
 const differentTaxi=a.reviewVehicleConflictEffects(simpleMotoNative,draftSimple('TAXI'));
 assert.equal(differentTaxi.status,'POSSIBLE_DIFFERENCE');
 assert.deepEqual(differentTaxi.rows.filter(r=>r.relation==='DIFFERENT').map(r=>r.vehicleType),
- ['MOTORCYCLE','TAXI']);
+ ['TAXI']);
 const sameDefaultExisting={...existingBase,restrictions:[{
  ...existingBase.restrictions[0],vehicleRules:{
  BLOCKED:[{vehicleTypes:['MOTORCYCLE']}]}
@@ -1172,8 +1223,8 @@ const sameDraft={...differentDraft,vehicleTypes:['MOTORCYCLE']};
 const sameOverlap=a.previewRestrictionConflicts(sameDraft,sameDefaultExisting,
  scheduleOverlap,{motorDraft:{enabled:false,conditions:[]}});
 assert.equal(sameOverlap.status,'OVERLAP_REVIEW');
-assert.equal(sameOverlap.items[0].vehicleReview.status,'SAME_EFFECT');
-assert.notEqual(sameOverlap.status,'SEPARATE','Same effects can still be duplicate restrictions');
+assert.equal(sameOverlap.items[0].vehicleReview.status,'UNKNOWN');
+assert.notEqual(sameOverlap.status,'SEPARATE','An unknown motor filter cannot exclude a conflict');
 const existingWithEV={defaultType:'BLOCKED',vehicleRules:{
  FREE:[{vehicleTypes:['EV']}]}
 };
@@ -1215,8 +1266,12 @@ for(const rules of [
 const repeated=a.reviewVehicleConflictEffects(nativeRepeated,
  draftSimple('MOTORCYCLE'));
 assert.equal(repeated.rows.find(row=>row.vehicleType==='MOTORCYCLE').existingEffect,
- 'CONDITIONAL','Multiple native rules for a category need precedence verification');
-assert.equal(repeated.status,'CONDITIONAL');
+ 'UNKNOWN','Repeated motorcycle rules may have unreported motor filters');
+assert.equal(repeated.status,'UNKNOWN');
+const repeatedTaxi=a.reviewVehicleConflictEffects({defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['TAXI']},{vehicleTypes:['TAXI']}]
+}},draftSimple('TAXI'));
+assert.equal(repeatedTaxi.status,'CONDITIONAL','Multiple native rules for a category need precedence verification');
 const nativeUnsupported={defaultType:'FREE',vehicleRules:{
  BLOCKED:[{vehicleTypes:['BUS']}]
 }};
@@ -1245,7 +1300,7 @@ const conditionalEngine=a.reviewVehicleConflictEffects(simpleMotoNative,
  {engineType:'FUEL',operator:'LT',capacityThreshold:125}]}});
 assert.equal(conditionalEngine.rows.find(x=>x.vehicleType==='MOTORCYCLE').proposedEffect,
  'CONDITIONAL');
-assert.equal(conditionalEngine.status,'CONDITIONAL');
+assert.equal(conditionalEngine.status,'UNKNOWN');
 const numericDaysVehicle=a.previewRestrictionConflicts(sameDraft,
  unknownWeekdays,scheduleOverlap);
 assert.equal(numericDaysVehicle.status,'UNKNOWN',
@@ -1268,7 +1323,7 @@ assert.ok(src.includes('tr("vehicle_compare_unmodeled")'),
 const nativeSimple={vehicleTypes:['MOTORCYCLE'],subscriptions:[],
  licensePlateNumber:'',engineCapacities:[]};
 assert.deepEqual(a.inspectNativeVehicleCondition(nativeSimple),{
- status:'UNCONDITIONAL',types:['MOTORCYCLE'],passCount:0,
+ status:'UNKNOWN',types:['MOTORCYCLE'],passCount:0,
  minPassengers:null,occupancyFields:[],occupancyStatus:'NOT_REPORTED',
  hasPlate:false,hasEngine:false,
  unknownFields:[],conditions:[],verified:false
@@ -1445,7 +1500,7 @@ for(const fields of [
  assert.ok(!JSON.stringify(plate).includes('PRIVATE-SUFFIX'));
  assert.ok(!JSON.stringify(plate).includes('ENDS_WITH_'));
 }
-assert.equal(a.inspectNativeVehicleCondition({...nativeSimple,licensePlateRule:null}).status,
+assert.equal(a.inspectNativeVehicleCondition({...nativeSimple,vehicleTypes:['TAXI'],licensePlateRule:null}).status,
  'UNCONDITIONAL','The documented null and legacy empty value indicate no observed plate condition');
 const diagExisting=a.reviewVehicleConflictEffects(
  diagnosticRules,legacyMatchingDraft,

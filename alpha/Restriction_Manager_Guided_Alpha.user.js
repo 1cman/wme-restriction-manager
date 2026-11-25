@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.30
+// @version      4.0.0-alpha.31
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.30";
+    const VERSION = "4.0.0-alpha.31";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -118,9 +118,11 @@
         preservation_field_outside:["Campi fuori dal modello pubblico","Fields outside the public model","Champs hors du modèle public","Campos fuera del modelo público","Felder außerhalb des öffentlichen Modells","Campos fora do modelo público"],
         preservation_field_shape:["Struttura da verificare","Shape to verify","Structure à vérifier","Estructura por verificar","Struktur prüfen","Estrutura a verificar"],
         preservation_field_alias:["Dato precedente assente dal campo attuale o discordante","Legacy data missing from or different in the current field","Donnée héritée absente du champ actuel ou différente","Dato anterior ausente o distinto en el campo actual","Altdaten fehlen im aktuellen Feld oder weichen ab","Dado antigo ausente ou diferente no campo atual"],
+        preservation_alias_unknown:["Confronto tra i campi precedenti e attuali non verificabile","Legacy and current fields could not be compared","Comparaison des champs anciens et actuels impossible","No se pudieron comparar los campos antiguos y actuales","Alte und aktuelle Felder konnten nicht verglichen werden","Não foi possível comparar os campos antigos e atuais"],
         preservation_field_permission:["Modificabilità da verificare","Editability to verify","Modifiabilité à vérifier","Editabilidad por verificar","Bearbeitbarkeit prüfen","Editabilidade a verificar"],
         preservation_snapshot_undefined:["Valore non definito nello SDK","Undefined SDK value","Valeur SDK indéfinie","Valor SDK indefinido","Nicht definierter SDK-Wert","Valor SDK indefinido"],
         preservation_snapshot_accessor:["Proprietà con accesso dinamico","Accessor property","Propriété avec accesseur","Propiedad con un método de acceso","Zugriffseigenschaft","Propriedade com método de acesso"],
+        preservation_snapshot_alias:["Alias SDK deprecato con accesso dinamico","Deprecated SDK accessor","Alias SDK obsolète avec accesseur","Alias SDK obsoleto con método de acceso","Veralteter SDK-Alias mit Zugriffsmethode","Alias SDK obsoleto com método de acesso"],
         preservation_snapshot_cycle:["Riferimento circolare","Circular reference","Référence circulaire","Referencia circular","Zirkulärer Verweis","Referência circular"],
         preservation_snapshot_object:["Oggetto con prototipo non confrontabile","Object with an unsupported prototype","Objet avec un prototype non pris en charge","Objeto con prototipo no compatible","Objekt mit nicht unterstütztem Prototyp","Objeto com protótipo incompatível"],
         preservation_snapshot_array:["Elenco non confrontabile per elementi mancanti o proprietà aggiuntive","Array with missing items or additional properties","Liste avec éléments manquants ou propriétés supplémentaires","Lista con elementos ausentes o propiedades adicionales","Liste mit fehlenden Elementen oder zusätzlichen Eigenschaften","Lista com elementos em falta ou propriedades adicionais"],
@@ -181,7 +183,11 @@
         native_other_fields:["Campi non riconosciuti (solo nomi)","Unrecognized fields (names only)","Champs inconnus (noms uniquement)","Campos desconocidos (solo nombres)","Unbekannte Felder (nur Namen)","Campos desconhecidos (apenas nomes)"],
         native_uncertain:["Valori o combinazioni ancora da verificare","Values or combinations still unverified","Valeurs ou combinaisons à vérifier","Valores o combinaciones sin verificar","Werte oder Kombinationen ungeprüft","Valores ou combinações por verificar"],
         native_profiles_equal:["Campi legacy e attuali equivalenti","Legacy and current fields match","Champs anciens et actuels équivalents","Campos antiguos y actuales equivalentes","Alte und neue Felder übereinstimmend","Campos antigos e atuais equivalentes"],
-        native_profiles_differ:["Campi legacy e attuali diversi o non confrontabili","Legacy and current fields differ or cannot be compared","Champs anciens et actuels divergents/incomparables","Campos antiguos y actuales distintos/incomparables","Alte und neue Felder verschieden/nicht vergleichbar","Campos antigos e atuais diferentes/não comparáveis"],
+        native_profiles_differ:["Campi precedenti e attuali diversi","Legacy and current fields differ","Champs anciens et actuels différents","Campos antiguos y actuales distintos","Alte und aktuelle Felder unterscheiden sich","Campos antigos e atuais diferentes"],
+        native_engine_review:["Condizioni motore da verificare nel pannello nativo WME.","Check engine conditions in the native WME panel.","Vérifier les conditions de motorisation dans le panneau WME natif.","Comprueba las condiciones de motor en el panel nativo de WME.","Motorbedingungen im WME-eigenen Dialog prüfen.","Verificar as condições de motor no painel nativo do WME."],
+        native_engine_check:["Conta le condizioni motore nel modello interno","Count engine conditions in the internal model","Compter les conditions moteur dans le modèle interne","Contar las condiciones de motor en el modelo interno","Motorbedingungen im internen Modell zählen","Contar as condições de motor no modelo interno"],
+        native_engine_count:["Condizioni motore rilevate sul segmento (modello interno)","Engine conditions observed on the segment (internal model)","Conditions de motorisation détectées sur le segment (modèle interne)","Condiciones de motor detectadas en el segmento (modelo interno)","Erkannte Motorbedingungen auf dem Segment (internes Modell)","Condições de motor detetadas no segmento (modelo interno)"],
+        native_engine_unavailable:["Conteggio motori dal modello interno non disponibile.","Engine count from the internal model is unavailable.","Nombre de conditions moteur indisponible dans le modèle interne.","Recuento de condiciones de motor del modelo interno no disponible.","Anzahl der Motorbedingungen aus dem internen Modell nicht verfügbar.","Contagem de condições de motor do modelo interno indisponível."],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -582,12 +588,14 @@
         });
         return {timeFrames:frames,verified:false};
     }
+    function internalSegmentRestrictions(page,segmentId) {
+        return page?.W?.model?.segments?.getObjectById?.(segmentId)?.attributes?.restrictions;
+    }
     // Like v3.2, read engineType from the private model only when already present;
     // this DOES NOT infer a complete list of supported engine enum values.
     function observedMotorTypes(page,segmentId) {
         try {
-            const segment=page?.W?.model?.segments?.getObjectById?.(segmentId);
-            const restrictions=segment?.attributes?.restrictions;
+            const restrictions=internalSegmentRestrictions(page,segmentId);
             if(!Array.isArray(restrictions))return [];
             const names=new Set();
             for(const restriction of restrictions){
@@ -601,6 +609,31 @@
             }
             return [...names].sort((a,b)=>a.localeCompare(b));
         }catch(_){return [];}
+    }
+    // The stable uses these read methods for its separate native motor data.
+    // This count belongs to the segment. Pairing with SDK rows needs more evidence.
+    function countInternalEngineConditions(page,segmentId) {
+        try{
+            const restrictions=internalSegmentRestrictions(page,segmentId);
+            if(!Array.isArray(restrictions))return null;
+            let count=0;
+            for(const restriction of restrictions){
+                if(typeof restriction?.getDriveProfileList!=="function")return null;
+                const list=restriction.getDriveProfileList("BLOCKED");
+                if(list===null)continue;
+                const profiles=list?.getDriveProfiles?.();
+                if(!Array.isArray(profiles))return null;
+                for(const profile of profiles){
+                    const conditions=profile?.getEngineCapacities?.();
+                    if(!Array.isArray(conditions))return null;
+                    for(const condition of conditions){
+                        if(!condition||typeof condition!=="object"||Array.isArray(condition))return null;
+                    }
+                    count+=conditions.length;
+                }
+            }
+            return Number.isSafeInteger(count)?count:null;
+        }catch(_){return null;}
     }
     function normalizeVehicleRules(types,rules,permits) {
         const chosen=selectedVehicleTypes(types);
@@ -754,8 +787,10 @@
             hasEngine=true;
         }
         if(hasEngine)conditions.push("ENGINE");
+        // A public motorcycle rule can omit engine conditions visible in WME.
+        const engineUncertain=types.includes("MOTORCYCLE")&&!conditions.length;
         return {
-            status:invalid?"UNKNOWN":conditions.length?"CONDITIONAL":"UNCONDITIONAL",
+            status:invalid||engineUncertain?"UNKNOWN":conditions.length?"CONDITIONAL":"UNCONDITIONAL",
             types,passCount,minPassengers,occupancyFields,occupancyStatus,hasPlate,hasEngine,
             unknownFields,conditions,verified:false
         };
@@ -792,7 +827,10 @@
             const keys=Reflect.ownKeys(descriptors);
             const property=(descriptor,field)=>{
                 if(!descriptor)return reject(field,"preservation_snapshot_array");
-                if(!("value" in descriptor))return reject(field,"preservation_snapshot_accessor");
+                if(!("value" in descriptor)){
+                    const alias=/^(?:disposition|driveProfiles|timeFrames\[\d+\]\.daysOfMonth|(?:vehicleRules|driveProfiles)\.(?:BLOCKED|FREE|TOLL)\[\d+\]\.(?:numPassengers|licensePlateNumber))$/.test(field);
+                    return reject(field,alias?"preservation_snapshot_alias":"preservation_snapshot_accessor");
+                }
                 return copy(descriptor.value,depth+1,field);
             };
             const length=descriptors.length?.value;
@@ -1015,7 +1053,7 @@
     }
     // Report paths only. These checks neither construct update objects nor
     // determine whether WME preserves native rules after an update.
-    function inspectRestrictionUpdateShape(rule) {
+    function inspectRestrictionUpdateShape(rule,failedFields) {
         const issues=[];
         const flag=(field,reason="preservation_field_shape")=>issues.push({field,reason});
         const record=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
@@ -1024,6 +1062,14 @@
             for(const [field,valid] of fields){
                 if(!valid)flag(prefix+field);
             }
+        };
+        const isReadable=path=>![...failedFields].some(field=>field===path||
+            field.startsWith(path+".")||field.startsWith(path+"[")||
+            path.startsWith(field+".")||path.startsWith(field+"["));
+        const checkAlias=(value,prefix,legacy,current)=>{
+            if(!Object.hasOwn(value,legacy)||!isReadable(prefix+legacy)||!isReadable(prefix+current))return;
+            const oldValue=legacy==="licensePlateNumber"&&value[legacy]===""?null:value[legacy];
+            if(oldValue!==value[current])flag(prefix+legacy+" / "+current,"preservation_field_alias");
         };
         if(outside(rule,SDK_RESTRICTION_FIELDS))
             flag("SegmentRestriction","preservation_field_outside");
@@ -1035,11 +1081,12 @@
             ["laneScope",Object.values(LANE_SCOPE_CANDIDATES).includes(rule.laneScope)],
             ["laneType",rule.laneType===null||["BUS","EXPRESS","FAST","HOT","HOV"].includes(rule.laneType)]
         ]);
-        if(Object.hasOwn(rule,"disposition")&&rule.disposition!==rule.laneScope)
-            flag("disposition / laneScope","preservation_field_alias");
-        const legacy=compareLegacyVehicleRules(rule.vehicleRules,rule.driveProfiles);
-        if(legacy==="DIFFERENT"||legacy==="UNKNOWN")
-            flag("driveProfiles / vehicleRules","preservation_field_alias");
+        checkAlias(rule,"","disposition","laneScope");
+        if(isReadable("driveProfiles")&&isReadable("vehicleRules")){
+            const legacy=compareLegacyVehicleRules(rule.vehicleRules,rule.driveProfiles);
+            if(legacy==="DIFFERENT")flag("driveProfiles / vehicleRules","preservation_field_alias");
+            if(legacy==="UNKNOWN")flag("driveProfiles / vehicleRules","preservation_alias_unknown");
+        }
 
         if(!record(rule.vehicleRules))flag("vehicleRules");
         else{
@@ -1061,11 +1108,10 @@
                         ["vehicleTypes",Array.isArray(row.vehicleTypes)&&
                             row.vehicleTypes.every(type=>SDK_ADDABLE_VEHICLE_TYPES.includes(type))]
                     ]);
-                    if(Object.hasOwn(row,"numPassengers")&&row.numPassengers!==row.minPassengers)
-                        flag(path+".numPassengers / minPassengers","preservation_field_alias");
-                    if(Object.hasOwn(row,"licensePlateNumber")&&
-                       (row.licensePlateNumber===""?null:row.licensePlateNumber)!==row.licensePlateRule)
-                        flag(path+".licensePlateNumber / licensePlateRule","preservation_field_alias");
+                    checkAlias(row,path+".","numPassengers","minPassengers");
+                    checkAlias(row,path+".","licensePlateNumber","licensePlateRule");
+                    if(Array.isArray(row.vehicleTypes)&&row.vehicleTypes.includes("MOTORCYCLE"))
+                        flag(path,"native_engine_review");
                 }
             }
         }
@@ -1086,8 +1132,7 @@
                 ["repeatYearly",frame.repeatYearly===null||typeof frame.repeatYearly==="boolean"],
                 ["dayAlternation",[null,"EVEN_DAYS","ODD_DAYS"].includes(frame.dayAlternation)]
             ]);
-            if(Object.hasOwn(frame,"daysOfMonth")&&frame.daysOfMonth!==frame.dayAlternation)
-                flag(path+".daysOfMonth / dayAlternation","preservation_field_alias");
+            checkAlias(frame,path+".","daysOfMonth","dayAlternation");
         }
         return issues;
     }
@@ -1115,7 +1160,8 @@
                 incomplete++;continue;
             }
             const failedFields=new Set(issues.map(issue=>issue.field));
-            issues.push(...inspectRestrictionUpdateShape(r).filter(issue=>!failedFields.has(issue.field)));
+            issues.push(...inspectRestrictionUpdateShape(r,failedFields)
+                .filter(issue=>!failedFields.has(issue.field)));
             if(r.editable===false)nonEditable++;
             else if(r.editable!==true)editabilityUnknown++;
             if(!Array.isArray(r.timeFrames)||!["BLOCKED","FREE","TOLL"].includes(r.defaultType)||
@@ -1258,7 +1304,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1348,6 +1394,7 @@
             wrap.append(node("p",tr("existing_none")));
             return wrap;
         }
+        let motorCheckPlaced=false;
         for(const entry of data.entries){
             const item=node("details");
             item.open=data.entries.length===1;
@@ -1387,9 +1434,10 @@
             nativeDetails.append(nativeTitle,node("p",tr("native_conditions_intro")));
             if(diagnostics.legacyComparison==="SAME")
                 nativeDetails.append(node("p",tr("native_profiles_equal")));
-            if(diagnostics.legacyComparison==="DIFFERENT"||
-               diagnostics.legacyComparison==="UNKNOWN")
+            if(diagnostics.legacyComparison==="DIFFERENT")
                 nativeDetails.append(node("p",tr("native_profiles_differ")));
+            if(diagnostics.legacyComparison==="UNKNOWN")
+                nativeDetails.append(node("p",tr("preservation_alias_unknown")));
             for(const rule of diagnostics.rows){
                 const line=node("div");
                 line.style.cssText="margin:8px 0;padding:7px;border-left:3px solid "+
@@ -1413,12 +1461,23 @@
                 }
                 if(rule.hasPlate)addText(tr("native_plate"));
                 if(rule.hasEngine)addText(tr("native_engine"));
+                else if(rule.types.includes("MOTORCYCLE"))addText(tr("native_engine_review"));
                 if(rule.unknownFields.length)
                     addText(tr("native_other_fields")+": "+
                         rule.unknownFields.join(", "));
                 if(rule.status==="UNKNOWN"&&!rule.unknownFields.length)
                     addText(tr("native_uncertain"));
                 nativeDetails.append(line);
+            }
+            if(!motorCheckPlaced&&diagnostics.rows.some(rule=>rule.types.includes("MOTORCYCLE"))){
+                const result=node("p");
+                result.setAttribute("role","status");
+                nativeDetails.append(button(tr("native_engine_check"),()=>{
+                    const count=countInternalEngineConditions(page,segment.id);
+                    result.textContent=count===null?tr("native_engine_unavailable"):
+                        tr("native_engine_count")+": "+count;
+                }),result);
+                motorCheckPlaced=true;
             }
             item.append(nativeDetails);
             if(!entry.framesKnown)
