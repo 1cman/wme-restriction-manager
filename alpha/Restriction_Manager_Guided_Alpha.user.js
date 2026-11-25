@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.33
+// @version      4.0.0-alpha.34
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.33";
+    const VERSION = "4.0.0-alpha.34";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -28,6 +28,10 @@
         segment:"WHOLE_SEGMENT",left:"LEFT_LANE",
         center:"MIDDLE_LANE",right:"RIGHT_LANE"
     });
+    // Array indexes mirror the internal codes observed in the WME v2.382-8
+    // Standard and Beta SDK readers. Used only to compare existing rows.
+    const INTERNAL_LANE_SCOPES = Object.freeze(["NONE","WHOLE_SEGMENT","LEFT_LANE","MIDDLE_LANE","RIGHT_LANE"]);
+    const INTERNAL_LANE_TYPES = Object.freeze([null,"HOV","HOT","EXPRESS","BUS","FAST"]);
     // Editor-requested wizard shortlist (NOT the complete SDK catalogue).
     // These four categories are the ONLY selectable types in new restriction drafts.
     // This does not imply other SDK types never exist in WME or client routing.
@@ -676,14 +680,18 @@
         });
         // Missing private identity fields limit pairing to what both models
         // expose. A match must be unique in both directions.
+        const decodeLane=(value,codes)=>typeof value==="number"?codes[value]??value:value;
         const differences=(internal,visible)=>{
             if(internal.direction!==visible.direction)return ["direction"];
-            const scope=internal.laneScope??internal.disposition;
+            const disposition=decodeLane(internal.disposition,INTERNAL_LANE_SCOPES);
+            const scope=internal.laneScope??disposition;
+            const laneType=decodeLane(internal.laneType,INTERNAL_LANE_TYPES);
             const fields=[];
             if(internal.defaultType!=null&&internal.defaultType!==visible.defaultType)fields.push("defaultType");
-            if((internal.disposition!=null&&internal.disposition!==scope)||
-               (scope!=null&&scope!==(visible.laneScope??visible.disposition)))fields.push("laneScope");
-            if(internal.laneType!=null&&internal.laneType!==visible.laneType)fields.push("laneType");
+            if((disposition!=null&&disposition!==scope)||
+               (scope!=null&&(!INTERNAL_LANE_SCOPES.includes(scope)||scope!==(visible.laneScope??visible.disposition))))
+                fields.push("laneScope");
+            if(laneType!=null&&(!INTERNAL_LANE_TYPES.includes(laneType)||laneType!==visible.laneType))fields.push("laneType");
             return fields;
         };
         const stamp=data=>{

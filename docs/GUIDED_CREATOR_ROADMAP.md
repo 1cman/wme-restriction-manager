@@ -531,6 +531,16 @@ For an associated restriction, the diagnostic compares engine conditions from th
 
 **Verification.** Node tests cover an unavailable native model, different list sizes, missing or unreadable identity data, a mismatch on a whitelisted field, ambiguity, and a successful internal comparison without an SDK association. In WME Standard and Beta, on the same segment, expand **Native condition details (diagnostic)** and click **Count engine conditions in the internal model**. Confirm the segment total is still 2. If the SDK row remains unpaired, capture its reason and the result shown for **Internal model row 1**. A matching internal comparison still leaves SDK association and post-update preservation to verify.
 
+## Alpha 34 — Compare the SDK lane scope with WME's internal representation (2026-11-25)
+
+**Live evidence from Alpha 33.** The screenshot shows that the internal model row contains two engine conditions and that the direct read and internal JSON agree. The SDK association fails on `laneScope`.
+
+**Source verification.** In the WME `v2.382-8` Standard and Beta bundles, the internal restriction serializes numeric `disposition` and `laneType`. The SDK reader exposes the corresponding category names as `laneScope` and `laneType`. For example, `disposition: 1` becomes `WHOLE_SEGMENT`, and `disposition: 0` is the separate `NONE` category. Stable 3.2.0 compares internal direction during pairing and otherwise normalizes SDK lane fields on the public side. The SDK documentation lists the string categories and the narrower set of update scopes. See [Standard bundle](https://web-assets.waze.com/webapps/wme/v2.382-8-g2fdf5cd1cc-20261124131539-production/js/app-6d2afe47c955e908.js.gz), [Beta bundle](https://web-assets.waze.com/webapps/wme/v2.382-8-g2fdf5cd1cc-20261125110819-beta/js/app-aef9d2af70dd21a5.js.gz), [SDK read enum](https://web-assets.waze.com/wme_sdk_docs/production/latest/variables/index.SDK.RestrictionSegmentLaneScope.html) and [SDK update enum](https://web-assets.waze.com/wme_sdk_docs/production/latest/variables/index.SDK.UpdateableRestrictionSegmentLaneScope.html).
+
+**Read-only change.** Normalize the observed numeric internal codes for comparing paired rows. Apply the conversion only to the internal `disposition` and `laneType` values when present. Unexpected values, conflicting aliases and ambiguous rows remain unpaired. The independent internal comparison remains visible when pairing fails. This change uses internal implementation evidence from those builds and leaves post-update preservation and actual writing unverified.
+
+**Verification.** Node tests cover all observed scope and lane-type codes, distinct handling of `NONE`, disagreement between legacy and current fields, and unsupported values. In WME Standard and Beta, on the same segment, open **Native condition details (diagnostic)** and click **Count engine conditions in the internal model**. An association supported by the observed conversion should show **Restriction 1 · Engine conditions: 2 · Direct read and internal JSON match**. If the diagnostic remains unpaired, note the displayed field. Close the draft and confirm Save remains disabled if the wizard was the only action on the map.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.

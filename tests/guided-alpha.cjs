@@ -463,6 +463,33 @@ const sameEngines=nativeEngineRow(sdkEngineRow,[[fuelRule,electricRule]],
 const matched=a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),engineSegment);
 assert.deepEqual(matched,{count:2,rows:[{index:1,count:2,status:'MATCH'}],internalRows:[]});
 assert.doesNotMatch(JSON.stringify(matched),/PRIVATE_|capacityThreshold|110/);
+const compareNativeLane=(privateFields,publicFields={})=>a.inspectInternalEnginePreservation(rawSegmentWith([
+ nativeEngineRow({direction:'FWD',defaultType:'FREE',...privateFields},[[fuelRule,electricRule]],
+  [[electricRule,fuelRule]])
+]),{id:1,restrictions:[{...sdkEngineRow,...publicFields}]});
+for(const [disposition,laneScope] of ['NONE','WHOLE_SEGMENT','LEFT_LANE','MIDDLE_LANE','RIGHT_LANE'].entries()){
+ assert.deepEqual(compareNativeLane({disposition,laneType:null},{laneScope}),matched);
+}
+for(const [index,laneType] of ['HOV','HOT','EXPRESS','BUS','FAST'].entries()){
+ assert.deepEqual(compareNativeLane({disposition:2,laneType:index+1},{laneScope:'LEFT_LANE',laneType}),matched);
+}
+assert.deepEqual(compareNativeLane({laneScope:'WHOLE_SEGMENT',disposition:1}),matched,
+ 'A decoded legacy field may agree with the current field');
+for(const [privateFields,fields] of [
+ [{disposition:0},['laneScope']],
+ [{disposition:99},['laneScope']],
+ [{disposition:'1'},['laneScope']],
+ [{laneScope:'WHOLE_SEGMENT',disposition:4},['laneScope']],
+ [{disposition:1,laneType:0},['laneType']],
+ [{disposition:1,laneType:99},['laneType']]
+]){
+ const report=compareNativeLane(privateFields);
+ assert.equal(report.rows[0].status,'UNPAIRED');
+ assert.deepEqual(report.rows[0].fields,fields);
+ assert.deepEqual(report.internalRows,matched.rows);
+}
+assert.equal(compareNativeLane({disposition:1},{laneScope:1}).rows[0].status,'UNPAIRED',
+ 'The private bridge must not change the public SDK contract');
 for(const [direct,stored] of [
  [[[fuelRule,electricRule]],[[fuelRule]]],
  [[[fuelRule]],[[{...fuelRule,capacityThreshold:120}]]],
