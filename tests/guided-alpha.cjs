@@ -444,6 +444,57 @@ for(const page of [{},rawSegmentWith([{}]),rawSegmentWith([profileWith(Array(2))
  rawSegmentWith([profileWith(null)]),rawSegmentWith([{getDriveProfileList(){throw Error('Unavailable');}}])]){
  assert.equal(a.countInternalEngineConditions(page,1),null,'Unavailable data must not look like zero conditions');
 }
+const sdkEngineRow={direction:'FWD',defaultType:'FREE',laneScope:'WHOLE_SEGMENT',laneType:null};
+const fuelRule=Object.freeze({vehicleType:'MOTORCYCLE',engineType:'PRIVATE_FUEL_VALUE',
+ operator:'PRIVATE_OPERATOR',capacityThreshold:110});
+const electricRule=Object.freeze({...fuelRule,engineType:'PRIVATE_ELECTRIC_VALUE',capacityThreshold:5});
+const nativeEngineRow=(identity,direct,stored)=>({
+ getDriveProfileList:group=>{
+  assert.equal(group,'BLOCKED');
+  return {getDriveProfiles:()=>direct.map(conditions=>({
+   getEngineCapacities:()=>Object.freeze(conditions.map(attributes=>({attributes})))
+  }))};
+ },
+ toJSON:()=>({...identity,driveProfiles:{BLOCKED:stored.map(engineCapacities=>({engineCapacities}))}})
+});
+const engineSegment={id:1,restrictions:[sdkEngineRow]};
+const sameEngines=nativeEngineRow(sdkEngineRow,[[fuelRule,electricRule]],
+ [[electricRule,{...fuelRule,capacityThreshold:'110'}]]);
+const matched=a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),engineSegment);
+assert.deepEqual(matched,{count:2,rows:[{index:1,count:2,status:'MATCH'}]});
+assert.doesNotMatch(JSON.stringify(matched),/PRIVATE_|capacityThreshold|110/);
+for(const [direct,stored] of [
+ [[[fuelRule,electricRule]],[[fuelRule]]],
+ [[[fuelRule]],[[{...fuelRule,capacityThreshold:120}]]],
+ [[[fuelRule],[electricRule]],[[electricRule],[fuelRule]]],
+ [[[fuelRule],[electricRule]],[[fuelRule,electricRule]]]
+]){
+ const report=a.inspectInternalEnginePreservation(rawSegmentWith([
+  nativeEngineRow(sdkEngineRow,direct,stored)
+ ]),engineSegment);
+ assert.equal(report.rows[0].status,'DIFFERENT');
+}
+const badStored=nativeEngineRow(sdkEngineRow,[[fuelRule]],[[{...fuelRule,capacityThreshold:'UNKNOWN'}]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([badStored]),engineSegment),
+ {count:1,rows:[{index:1,count:1,status:'UNAVAILABLE'}]});
+const unknownJson={...sameEngines,toJSON(){throw Error('PRIVATE_JSON_ERROR');}};
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([unknownJson]),engineSegment),
+ {count:2,rows:[{index:1,count:null,status:'UNPAIRED'}]});
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines,sameEngines]),engineSegment),
+ {count:4,rows:[{index:1,count:null,status:'UNPAIRED'}]});
+const reverseEngineRow={...sdkEngineRow,direction:'REV'};
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),{
+ ...engineSegment,restrictions:[reverseEngineRow]
+}),{count:2,rows:[{index:1,count:null,status:'UNPAIRED'}]});
+const secondNativeEngineRow=nativeEngineRow(reverseEngineRow,[[fuelRule]],[[fuelRule]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([secondNativeEngineRow,sameEngines]),{
+ ...engineSegment,restrictions:[sdkEngineRow,reverseEngineRow]
+}),{count:3,rows:[{index:1,count:2,status:'MATCH'},{index:2,count:1,status:'MATCH'}]},
+ 'Association uses SDK-visible evidence, independent of internal list order');
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines,sameEngines]),{
+ ...engineSegment,restrictions:[sdkEngineRow,{...sdkEngineRow}]
+}),{count:4,rows:[{index:1,count:null,status:'UNPAIRED'},{index:2,count:null,status:'UNPAIRED'}]},
+ 'Equal row counts and same direction do not resolve ambiguous association');
 assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType))'),
  'Date and time screen must include red, green and blue');
 assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),

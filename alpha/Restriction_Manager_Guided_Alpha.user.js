@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.31
+// @version      4.0.0-alpha.32
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.31";
+    const VERSION = "4.0.0-alpha.32";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -187,7 +187,12 @@
         native_engine_review:["Condizioni motore da verificare nel pannello nativo WME.","Check engine conditions in the native WME panel.","Vérifier les conditions de motorisation dans le panneau WME natif.","Comprueba las condiciones de motor en el panel nativo de WME.","Motorbedingungen im WME-eigenen Dialog prüfen.","Verificar as condições de motor no painel nativo do WME."],
         native_engine_check:["Conta le condizioni motore nel modello interno","Count engine conditions in the internal model","Compter les conditions moteur dans le modèle interne","Contar las condiciones de motor en el modelo interno","Motorbedingungen im internen Modell zählen","Contar as condições de motor no modelo interno"],
         native_engine_count:["Condizioni motore rilevate sul segmento (modello interno)","Engine conditions observed on the segment (internal model)","Conditions de motorisation détectées sur le segment (modèle interne)","Condiciones de motor detectadas en el segmento (modelo interno)","Erkannte Motorbedingungen auf dem Segment (internes Modell)","Condições de motor detetadas no segmento (modelo interno)"],
+        native_engine_row_count:["Condizioni motore","Engine conditions","Conditions moteur","Condiciones de motor","Motorbedingungen","Condições de motor"],
         native_engine_unavailable:["Conteggio motori dal modello interno non disponibile.","Engine count from the internal model is unavailable.","Nombre de conditions moteur indisponible dans le modèle interne.","Recuento de condiciones de motor del modelo interno no disponible.","Anzahl der Motorbedingungen aus dem internen Modell nicht verfügbar.","Contagem de condições de motor do modelo interno indisponível."],
+        native_engine_match:["Lettura diretta e JSON interno coincidono","Direct read and internal JSON match","Lecture directe et JSON interne identiques","La lectura directa y el JSON interno coinciden","Direkt gelesene Daten und internes JSON stimmen überein","A leitura direta e o JSON interno coincidem"],
+        native_engine_difference:["Differenza tra lettura diretta e JSON interno","Direct read and internal JSON differ","Écart entre la lecture directe et le JSON interne","Diferencia entre la lectura directa y el JSON interno","Direkt gelesene Daten und internes JSON weichen ab","Diferença entre a leitura direta e o JSON interno"],
+        native_engine_unpaired:["Associazione alla restrizione SDK non verificabile","Association with the SDK restriction could not be verified","Association avec la restriction SDK non vérifiable","No se pudo comprobar la asociación con la restricción del SDK","Zuordnung zur SDK-Beschränkung nicht überprüfbar","Não foi possível verificar a associação à restrição do SDK"],
+        native_engine_uncompared:["Confronto tra lettura diretta e JSON interno non disponibile","Comparison of direct read and internal JSON unavailable","Comparaison entre la lecture directe et le JSON interne indisponible","Comparación entre lectura directa y JSON interno no disponible","Vergleich der direkt gelesenen Daten mit dem internen JSON nicht verfügbar","Comparação entre a leitura direta e o JSON interno indisponível"],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -610,30 +615,109 @@
             return [...names].sort((a,b)=>a.localeCompare(b));
         }catch(_){return [];}
     }
-    // The stable uses these read methods for its separate native motor data.
-    // This count belongs to the segment. Pairing with SDK rows needs more evidence.
-    function countInternalEngineConditions(page,segmentId) {
+    function readInternalEngineProfiles(restriction) {
+        if(typeof restriction?.getDriveProfileList!=="function")return null;
+        const list=restriction.getDriveProfileList("BLOCKED");
+        if(list===null)return [];
+        const profiles=list?.getDriveProfiles?.();
+        if(!Array.isArray(profiles))return null;
+        const items=[];
+        for(const profile of profiles){
+            const conditions=profile?.getEngineCapacities?.();
+            if(!Array.isArray(conditions))return null;
+            for(const condition of conditions){
+                if(!condition||typeof condition!=="object"||Array.isArray(condition))return null;
+            }
+            items.push(conditions);
+        }
+        return items;
+    }
+    function readInternalEngineRows(page,segmentId) {
         try{
             const restrictions=internalSegmentRestrictions(page,segmentId);
             if(!Array.isArray(restrictions))return null;
-            let count=0;
-            for(const restriction of restrictions){
-                if(typeof restriction?.getDriveProfileList!=="function")return null;
-                const list=restriction.getDriveProfileList("BLOCKED");
-                if(list===null)continue;
-                const profiles=list?.getDriveProfiles?.();
-                if(!Array.isArray(profiles))return null;
-                for(const profile of profiles){
-                    const conditions=profile?.getEngineCapacities?.();
-                    if(!Array.isArray(conditions))return null;
-                    for(const condition of conditions){
-                        if(!condition||typeof condition!=="object"||Array.isArray(condition))return null;
-                    }
-                    count+=conditions.length;
-                }
-            }
-            return Number.isSafeInteger(count)?count:null;
+            const rows=Array.from(restrictions,restriction=>{
+                try{return {restriction,profiles:readInternalEngineProfiles(restriction)};}
+                catch(_){return {restriction,profiles:null};}
+            });
+            const count=rows.every(row=>row.profiles!==null)?countEngineProfiles(rows.flatMap(row=>row.profiles)):null;
+            return {rows,count};
         }catch(_){return null;}
+    }
+    function countEngineProfiles(profiles) {
+        if(!profiles)return null;
+        const count=profiles.reduce((total,conditions)=>total+conditions.length,0);
+        return Number.isSafeInteger(count)?count:null;
+    }
+    function countInternalEngineConditions(page,segmentId) {
+        return readInternalEngineRows(page,segmentId)?.count??null;
+    }
+    // Use the stable's public/private read comparison. Only status and counts
+    // leave this function, and its findings do not change the preservation gate.
+    function inspectInternalEnginePreservation(page,segment) {
+        const read=readInternalEngineRows(page,segment?.id);
+        const native=read?.rows;
+        const sdk=segment?.restrictions;
+        const count=read?.count??null;
+        if(!Array.isArray(sdk))return {count,rows:[]};
+        const unpaired=Array.from(sdk,(_,index)=>({index:index+1,count:null,status:"UNPAIRED"}));
+        if(!native||native.length!==sdk.length)return {count,rows:unpaired};
+        const raw=native.map(row=>{
+            try{return row.restriction?.toJSON?.()??null;}catch(_){return null;}
+        });
+        // Missing private identity fields limit pairing to what both models
+        // expose. A match must be unique in both directions.
+        const matches=(internal,visible)=>{
+            const requiredDirection=visible?.direction;
+            if(!internal||!["FWD","REV","BOTH"].includes(requiredDirection)||
+               internal.direction!==requiredDirection)return false;
+            const scope=internal.laneScope??internal.disposition;
+            if(internal.disposition!=null&&internal.disposition!==scope)return false;
+            return (internal.defaultType==null||internal.defaultType===visible.defaultType)&&
+                (scope==null||scope===(visible.laneScope??visible.disposition))&&
+                (internal.laneType==null||internal.laneType===visible.laneType);
+        };
+        const stamp=data=>{
+            if(!data||typeof data!=="object"||Array.isArray(data))throw Error("Missing engine condition");
+            const {vehicleType,engineType,operator}=data;
+            if(![vehicleType,engineType,operator].every(value=>
+                (typeof value==="string"&&value.length>0)||Number.isFinite(value)))
+                throw Error("Invalid engine condition");
+            const value=data.capacityThreshold;
+            const threshold=typeof value==="string"&&value.trim()?Number(value):value;
+            if(threshold!=null&&!Number.isFinite(threshold))throw Error("Invalid engine threshold");
+            return JSON.stringify({vehicleType,engineType,operator,capacityThreshold:threshold});
+        };
+        const comparison=(profiles,record)=>{
+            if(!profiles)return "UNAVAILABLE";
+            try{
+                const rules=record.driveProfiles??record.vehicleRules;
+                if(rules!=null&&(typeof rules!=="object"||Array.isArray(rules)))return "UNAVAILABLE";
+                const blocked=rules?.BLOCKED??[];
+                if(!Array.isArray(blocked))return "UNAVAILABLE";
+                const json=Array.from(blocked,profile=>{
+                    if(!profile||typeof profile!=="object"||Array.isArray(profile))throw Error("Invalid profile");
+                    const items=profile.engineCapacities??[];
+                    if(!Array.isArray(items))throw Error("Invalid engine conditions");
+                    return Array.from(items,stamp).sort();
+                });
+                const direct=profiles.map(items=>Array.from(items,item=>stamp(item.attributes??item)).sort());
+                return JSON.stringify(direct)===JSON.stringify(json)?"MATCH":"DIFFERENT";
+            }catch(_){return "UNAVAILABLE";}
+        };
+        const rows=unpaired.map((fallback,index)=>{
+            try{
+                // An unreadable private identity could also match this SDK row.
+                if(raw.some(record=>!record||!["FWD","REV","BOTH"].includes(record.direction)))return fallback;
+                const candidates=raw.map((record,i)=>matches(record,sdk[index])?i:-1).filter(i=>i!==-1);
+                if(candidates.length!==1)return fallback;
+                const [position]=candidates;
+                if(sdk.filter(visible=>matches(raw[position],visible)).length!==1)return fallback;
+                const profiles=native[position].profiles;
+                return {index:index+1,count:countEngineProfiles(profiles),status:comparison(profiles,raw[position])};
+            }catch(_){return fallback;}
+        });
+        return {count,rows};
     }
     function normalizeVehicleRules(types,rules,permits) {
         const chosen=selectedVehicleTypes(types);
@@ -1304,7 +1388,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1470,12 +1554,18 @@
                 nativeDetails.append(line);
             }
             if(!motorCheckPlaced&&diagnostics.rows.some(rule=>rule.types.includes("MOTORCYCLE"))){
-                const result=node("p");
+                const result=node("div");
                 result.setAttribute("role","status");
                 nativeDetails.append(button(tr("native_engine_check"),()=>{
-                    const count=countInternalEngineConditions(page,segment.id);
-                    result.textContent=count===null?tr("native_engine_unavailable"):
-                        tr("native_engine_count")+": "+count;
+                    const review=inspectInternalEnginePreservation(page,segment);
+                    result.replaceChildren(node("p",review.count===null?tr("native_engine_unavailable"):
+                        tr("native_engine_count")+": "+review.count));
+                    for(const row of review.rows){
+                        const counts=row.count===null?"":tr("native_engine_row_count")+": "+row.count+" · ";
+                        const status={MATCH:"native_engine_match",DIFFERENT:"native_engine_difference",
+                            UNPAIRED:"native_engine_unpaired",UNAVAILABLE:"native_engine_uncompared"}[row.status];
+                        result.append(node("p",tr("existing_rule")+" "+row.index+" · "+counts+tr(status)));
+                    }
                 }),result);
                 motorCheckPlaced=true;
             }

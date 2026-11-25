@@ -513,6 +513,16 @@ The maintainer **confirmed the Alpha 21 four-category comparison is displayed se
 
 **Verification.** Node tests cover the observed alias paths, protection from evaluating getters during preservation review, genuine discrepancies and unknown motor effects. They also test the count on mocked models with readable, empty and unavailable conditions. In WME Standard and Beta, on the same segment, expand **Native condition details (diagnostic)** and click **Count engine conditions in the internal model**. If this is the same segment with one restriction and the internal model is available, compare the count with the two conditions visible in the native panel. In the wizard summary, the same alias paths should be reported as deprecated SDK accessors without duplicate discrepancy messages. Saving stays blocked while the association and write-side round trip remain unverified.
 
+## Alpha 32 — Pair internal engine evidence with SDK restrictions (2026-11-25)
+
+**Live evidence from Alpha 31.** The maintainer's screenshots show two engine conditions in the internal-model segment count. The preservation review shows the documented aliases as dynamic and does not claim an alias mismatch. The public motorcycle row still marks engine details for native review.
+
+**Read-only comparison.** The existing opt-in count also inspects the internal `toJSON()` view used by stable 3.2.0. It requires equal SDK and internal list lengths plus a unique association in both directions. The evidence includes direction and shared internal identity fields where present, such as default restriction type and lane scope or type. Ambiguous or unreadable identities keep the segment count and leave individual rows unpaired. Internal list order is not required to match SDK list order.
+
+For an associated restriction, the diagnostic compares engine conditions from the internal getters with the records under `engineCapacities` in the internal JSON. It compares vehicle type, engine type, operator and threshold within each `BLOCKED` profile, retaining profile order and duplicate conditions. A missing or malformed reading stays unavailable or reports a difference when both views are readable. Only row numbers, counts and outcomes are displayed. This is a comparison of existing data in memory. WME application and post-update preservation remain unverified, so saving stays blocked.
+
+**Verification.** Node tests cover a two-condition match, different thresholds or counts, conditions moved between profiles, missing JSON, incompatible shapes, reordered restriction rows and ambiguous assignments. In WME Standard and Beta, select the same motorcycle segment and expand **Native condition details (diagnostic)**. Click **Count engine conditions in the internal model**. Check that the segment total is 2 and note whether **Restriction 1** displays a matching comparison, unavailable comparison or unverified association. Close the wizard and confirm Save is still disabled when the wizard was the only action on the map.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
