@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.25
+// @version      4.0.0-alpha.26
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.25";
+    const VERSION = "4.0.0-alpha.26";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -718,31 +718,46 @@
             unknownFields,conditions,verified:false
         };
     }
-    // Only structural equality, never stringification of private data to UI.
-    function compareLegacyVehicleRules(current,legacy) {
-        if(legacy==null||typeof legacy!=="object"||
-           Array.isArray(legacy)||!Object.keys(legacy).length)return "ABSENT";
-        if(current===legacy)return "SAME";
-        const stable=value=>{
-            const seen=new WeakSet();
-            const serialize=(item,depth)=>{
-                if(depth>25)throw Error("Depth limit");
-                if(item===null||typeof item!=="object"){
-                    if(typeof item==="function"||typeof item==="symbol"||
-                       typeof item==="undefined")throw Error("Unsupported value");
-                    return item;
-                }
-                if(seen.has(item))throw Error("Cycle or shared reference");
-                seen.add(item);
-                if(Array.isArray(item))return item.map(x=>serialize(x,depth+1));
-                if(Object.getPrototypeOf(item)!==Object.prototype&&
-                   Object.getPrototypeOf(item)!==null)throw Error("Non-plain");
-                return Object.fromEntries(Object.keys(item).sort().map(key=>
-                    [key,serialize(item[key],depth+1)]));
-            };
-            return JSON.stringify(serialize(value,0));
+    // Keep the snapshot in memory for comparison only. Reject representations
+    // that JSON would coerce, omit, or evaluate through accessors or toJSON.
+    function nativeDataSnapshot(value) {
+        const ancestors=new WeakSet();
+        const serialize=(item,depth)=>{
+            if(item===null||typeof item==="string"||typeof item==="boolean"||
+               Number.isFinite(item))return item;
+            if(typeof item!=="object"||depth>25||ancestors.has(item))
+                throw Error("Unsupported native data");
+            const descriptors=Object.getOwnPropertyDescriptors(item);
+            const keys=Reflect.ownKeys(descriptors);
+            if(keys.some(key=>typeof key!=="string"||!("value" in descriptors[key])))
+                throw Error("Unsupported native properties");
+            ancestors.add(item);
+            let serialized;
+            if(Array.isArray(item)){
+                if(keys.length!==item.length+1)throw Error("Unsupported native array");
+                serialized=Array.from({length:item.length},(_,index)=>
+                    serialize(descriptors[index]?.value,depth+1));
+            }else{
+                const prototype=Object.getPrototypeOf(item);
+                if(prototype&&(Object.getPrototypeOf(prototype)!==null||
+                   Object.getOwnPropertyDescriptor(prototype,"constructor")?.value?.name!=="Object"))
+                    throw Error("Unsupported native object");
+                serialized=Object.fromEntries(keys.sort().map(key=>
+                    [key,serialize(descriptors[key].value,depth+1)]));
+            }
+            ancestors.delete(item);
+            return serialized;
         };
-        try{return stable(current)===stable(legacy)?"SAME":"DIFFERENT";}
+        return JSON.stringify(serialize(value,0));
+    }
+    function compareLegacyVehicleRules(current,legacy) {
+        if(legacy==null)return "ABSENT";
+        if(typeof legacy!=="object"||Array.isArray(legacy))return "UNKNOWN";
+        try{
+            const snapshot=nativeDataSnapshot(legacy);
+            if(snapshot==="{}")return "ABSENT";
+            return nativeDataSnapshot(current)===snapshot?"SAME":"DIFFERENT";
+        }
         catch(_){return "UNKNOWN";}
     }
     function inspectNativeVehicleRules(restriction) {
@@ -810,7 +825,8 @@
                         if(seenTypes.has(type)){
                             // Multiple rules for the same type may combine by
                             // precedence/OR/AND, which is not yet verified.
-                            native[type]="CONDITIONAL";
+                            native[type]=native[type]==="UNKNOWN"||condition.status==="UNKNOWN"?
+                                "UNKNOWN":"CONDITIONAL";
                             continue;
                         }
                         seenTypes.add(type);
@@ -857,8 +873,9 @@
         });
         return {
             status:rows.some(r=>r.relation==="DIFFERENT")?"POSSIBLE_DIFFERENCE":
+                rows.some(r=>r.relation==="UNKNOWN")?"UNKNOWN":
                 rows.some(r=>r.relation==="CONDITIONAL")?"CONDITIONAL":
-                rows.some(r=>r.relation==="UNKNOWN")?"UNKNOWN":"SAME_EFFECT",
+                "SAME_EFFECT",
             rows,unmodeledNativeTypes,verified:false,saveAllowed:false
         };
     }
@@ -888,6 +905,9 @@
             if(!left||!right)return base;
             if(!left.some(x=>right.includes(x)))
                 return {...base,status:"SEPARATE",reason:"conflict_reason_direction"};
+            const native=segment.restrictions[entry.index-1];
+            if(native.laneScope!=null&&native.disposition!=null&&
+               native.laneScope!==native.disposition)return base;
             if(!entry.laneScope||!targetScope)return base;
             const known=new Set(Object.values(LANE_SCOPE_CANDIDATES));
             if(!known.has(entry.laneScope))return base;
@@ -896,8 +916,7 @@
                 return {...base,status:"SEPARATE",reason:"conflict_reason_lane"};
             // A special lane may overlap, but cannot be declared physically
             // distinct merely because its type label differs.
-            const vehicleReview=reviewVehicleConflictEffects(
-                segment.restrictions[entry.index-1],normalized,proposal);
+            const vehicleReview=reviewVehicleConflictEffects(native,normalized,proposal);
             const withVehicles={...base,vehicleReview};
             if(!entry.framesKnown||!entry.frames.length)return withVehicles;
             let uncertain=false,hit=false;
@@ -1060,22 +1079,15 @@
             laneScopes:scopes,laneTypes:lanes,defaultTypes:defaults,timeZones,
             editable,verified:false};
     }
-    // Restriction-field fingerprint, used only to abort a read-only wizard
-    // when data changes. Unknown/complex SDK structures fail closed.
+    // Compare all SDK restriction fields, including unrecognized fields.
     function restrictionSnapshot(segment) {
         if(!segment||!Array.isArray(segment.restrictions))return null;
         try{
-            return JSON.stringify({
-                id:segment.id, isAtoB:segment.isAtoB,
-                isBtoA:segment.isBtoA,isTwoWay:segment.isTwoWay,
-                restrictions:segment.restrictions.map(r=>({
-                    direction:r.direction,defaultType:r.defaultType,
-                    laneScope:r.laneScope,disposition:r.disposition,
-                    laneType:r.laneType,description:r.description,
-                    timeFrames:r.timeFrames,vehicleRules:r.vehicleRules,
-                    driveProfiles:r.driveProfiles,editable:r.editable
-                }))
-            })??null;
+            return nativeDataSnapshot({
+                id:segment.id??null,isAtoB:segment.isAtoB??null,
+                isBtoA:segment.isBtoA??null,isTwoWay:segment.isTwoWay??null,
+                restrictions:segment.restrictions
+            });
         }catch(_){return null;}
     }
     async function readContext(sdk) {

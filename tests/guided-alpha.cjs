@@ -466,6 +466,20 @@ assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
  {...observedSegment.restrictions[0],editable:false},
  ...observedSegment.restrictions.slice(1)
 ]}),baseline,'Edit permission change must invalidate draft');
+const [firstObserved,...otherObserved]=observedSegment.restrictions;
+const snapshotWith=fields=>a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...firstObserved,...fields},...otherObserved
+]});
+assert.notEqual(snapshotWith({isExpired:true}),snapshotWith({isExpired:false}));
+assert.notEqual(snapshotWith({opaque:{category:1}}),snapshotWith({opaque:{category:2}}));
+assert.equal(snapshotWith({opaque:{a:1,b:2}}),snapshotWith({opaque:{b:2,a:1}}));
+for(const opaque of [undefined,NaN,Infinity,new Date(),Array(1),Symbol(),()=>{}]){
+ assert.equal(snapshotWith({opaque}),null,'Values JSON could discard or coerce must not become equal');
+}
+let accessorEvaluated=false;
+const opaqueAccessor={get unexpected(){accessorEvaluated=true;return 1;}};
+assert.equal(snapshotWith({opaque:opaqueAccessor}),null);
+assert.equal(accessorEvaluated,false,'Snapshot must not evaluate native accessors');
 const cyclic={id:20,isAtoB:true,restrictions:[{direction:'FWD'}]};
 cyclic.restrictions[0].timeFrames=cyclic.restrictions;
 assert.equal(a.restrictionSnapshot(cyclic),null,'Unserializable SDK state must be unknown, not guessed');
@@ -876,6 +890,8 @@ const separateLane={...existingBase,restrictions:[{...existingBase.restrictions[
  laneScope:'LEFT_LANE'}]};
 assert.equal(verify(separateLane,{...draftOverlap,scope:'right'},
  scheduleOverlap,'SEPARATE').items[0].reason,'conflict_reason_lane');
+verify({...separateLane,restrictions:[{...separateLane.restrictions[0],disposition:'RIGHT_LANE'}]},
+ {...draftOverlap,scope:'right'},scheduleOverlap,'UNKNOWN');
 const separateDates={...existingBase,restrictions:[{...existingBase.restrictions[0],
  timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
  startDate:'2026-11-01',endDate:'2026-11-30'}]}]};
@@ -1035,6 +1051,15 @@ const nativeRepeated={defaultType:'FREE',vehicleRules:{
  BLOCKED:[{vehicleTypes:['MOTORCYCLE']},
           {vehicleTypes:['MOTORCYCLE']}]}
 };
+for(const rules of [
+ [{vehicleTypes:['MOTORCYCLE'],unrecognized:true},{vehicleTypes:['MOTORCYCLE']}],
+ [{vehicleTypes:['MOTORCYCLE']},{vehicleTypes:['MOTORCYCLE'],unrecognized:true}]
+]){
+ const result=a.reviewVehicleConflictEffects({...nativeRepeated,vehicleRules:{BLOCKED:rules}},
+  draftSimple('MOTORCYCLE'));
+ assert.equal(result.rows.find(row=>row.vehicleType==='MOTORCYCLE').relation,'UNKNOWN');
+ assert.equal(result.status,'UNKNOWN');
+}
 const repeated=a.reviewVehicleConflictEffects(nativeRepeated,
  draftSimple('MOTORCYCLE'));
 assert.equal(repeated.rows.find(row=>row.vehicleType==='MOTORCYCLE').existingEffect,
@@ -1185,6 +1210,13 @@ assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,null),'ABSENT');
 assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,{}),'ABSENT');
 const legacyCycle={FREE:[]};legacyCycle.FREE.push(legacyCycle);
 assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,legacyCycle),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules(legacyCycle,legacyCycle),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,[]),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,false),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules({FREE:[{field:null}]},{FREE:[{field:NaN}]}),'UNKNOWN');
+const sharedRow={vehicleTypes:['EV']};
+assert.equal(a.compareLegacyVehicleRules({FREE:[sharedRow,sharedRow]},
+ {FREE:[{vehicleTypes:['EV']},{vehicleTypes:['EV']}]}),'SAME');
 const legacyMatchingRestriction={defaultType:'BLOCKED',
  vehicleRules:sameLegacyOriginal,driveProfiles:sameLegacyCopy};
 const legacyMatchingDraft=a.normalizeDraft({
