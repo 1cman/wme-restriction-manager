@@ -440,8 +440,11 @@ assert.equal(a.countInternalEngineConditions(rawSegmentWith([
  profileWith([{attributes:{engineType:'PRIVATE-MOTOR-VALUE'}}]),profileWith([{}])
 ]),1),2,'Only the segment-wide count is returned');
 assert.equal(a.countInternalEngineConditions(rawSegmentWith([profileWith([])]),1),0);
+assert.equal(a.countInternalEngineConditions(rawSegmentWith([profileWith(undefined)]),1),0,
+ 'The native getter returns undefined when the profile contains no engine conditions');
 for(const page of [{},rawSegmentWith([{}]),rawSegmentWith([profileWith(Array(2))]),
- rawSegmentWith([profileWith(null)]),rawSegmentWith([{getDriveProfileList(){throw Error('Unavailable');}}])]){
+ rawSegmentWith([profileWith(null)]),rawSegmentWith([{getDriveProfileList:()=>({getDriveProfiles:()=>[{}]})}]),
+ rawSegmentWith([{getDriveProfileList(){throw Error('Unavailable');}}])]){
  assert.equal(a.countInternalEngineConditions(page,1),null,'Unavailable data must not look like zero conditions');
 }
 const sdkEngineRow={direction:'FWD',defaultType:'FREE',laneScope:'WHOLE_SEGMENT',laneType:null};
@@ -463,6 +466,16 @@ const sameEngines=nativeEngineRow(sdkEngineRow,[[fuelRule,electricRule]],
 const matched=a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),engineSegment);
 assert.deepEqual(matched,{count:2,rows:[{index:1,count:2,status:'MATCH'}],internalRows:[]});
 assert.doesNotMatch(JSON.stringify(matched),/PRIVATE_|capacityThreshold|110/);
+const mixedEngineProfiles={
+ getDriveProfileList:()=>({getDriveProfiles:()=>[
+  {getEngineCapacities:()=>undefined},
+  {getEngineCapacities:()=>Object.freeze([fuelRule,electricRule])}
+ ]}),
+ toJSON:()=>({...sdkEngineRow,driveProfiles:{BLOCKED:[{},{engineCapacities:[fuelRule,electricRule]}]}})
+};
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([mixedEngineProfiles]),engineSegment),
+ matched,'A plain profile must not hide confirmed engine conditions on another profile');
+assert.deepEqual(a.findEnginePreservationGaps(matched),[{index:1,count:2}]);
 const compareNativeLane=(privateFields,publicFields={})=>a.inspectInternalEnginePreservation(rawSegmentWith([
  nativeEngineRow({direction:'FWD',defaultType:'FREE',...privateFields},[[fuelRule,electricRule]],
   [[electricRule,fuelRule]])
@@ -542,6 +555,11 @@ assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines
 }),{count:4,rows:[unpairedEngine(1,'native_engine_pair_ambiguous'),unpairedEngine(2,'native_engine_pair_ambiguous')],
  internalRows:[internalMatch,{...internalMatch,index:2}]},
  'Equal row counts and same direction do not resolve ambiguous association');
+assert.deepEqual(a.findEnginePreservationGaps({
+ count:2,rows:[unpairedEngine(1,'native_engine_pair_fields',['laneScope']),
+  {index:2,count:2,status:'DIFFERENT'},{index:3,count:null,status:'UNAVAILABLE'},
+  {index:4,count:0,status:'MATCH'}],internalRows:[internalMatch]
+}),[],'Only positive matching evidence paired to a specific SDK restriction yields a warning');
 
 const sdkCalendar=Object.freeze({startDate:'2026-11-25',endDate:'2026-12-25',
  fromTime:'22:00',toTime:'06:00',repeatYearly:false,dayAlternation:'EVEN_DAYS',
@@ -1347,7 +1365,7 @@ assert.ok(src.includes('function renderExistingRestrictionList(') &&
  'Existing restrictions must be visible immediately in the guided sidebar');
 assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,true));'),
  'Existing restrictions must be visible before filling in a new draft');
-assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false));') &&
+assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false,review=>{') &&
  src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
  'Existing restrictions remain accessible in the final review');
 assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));'),

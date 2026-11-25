@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.36
+// @version      4.0.0-alpha.37
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.36";
+    const VERSION = "4.0.0-alpha.37";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -192,6 +192,7 @@
         native_engine_check:["Conta le condizioni motore nel modello interno","Count engine conditions in the internal model","Compter les conditions moteur dans le modèle interne","Contar las condiciones de motor en el modelo interno","Motorbedingungen im internen Modell zählen","Contar as condições de motor no modelo interno"],
         native_engine_count:["Condizioni motore rilevate sul segmento (modello interno)","Engine conditions observed on the segment (internal model)","Conditions de motorisation détectées sur le segment (modèle interne)","Condiciones de motor detectadas en el segmento (modelo interno)","Erkannte Motorbedingungen auf dem Segment (internes Modell)","Condições de motor detetadas no segmento (modelo interno)"],
         native_engine_row_count:["Condizioni motore","Engine conditions","Conditions moteur","Condiciones de motor","Motorbedingungen","Condições de motor"],
+        native_engine_sdk_gap:["Il formato di scrittura dello SDK non include queste condizioni motore.","The SDK write format does not include these engine conditions.","Le format d’écriture du SDK ne prend pas en charge ces conditions de motorisation.","El formato de escritura del SDK no incluye estas condiciones de motor.","Das SDK-Schreibformat enthält diese Motorbedingungen nicht.","O formato de escrita do SDK não inclui estas condições de motor."],
         native_engine_unavailable:["Conteggio motori dal modello interno non disponibile.","Engine count from the internal model is unavailable.","Nombre de conditions moteur indisponible dans le modèle interne.","Recuento de condiciones de motor del modelo interno no disponible.","Anzahl der Motorbedingungen aus dem internen Modell nicht verfügbar.","Contagem de condições de motor do modelo interno indisponível."],
         native_engine_match:["Lettura diretta e JSON interno coincidono","Direct read and internal JSON match","Lecture directe et JSON interne identiques","La lectura directa y el JSON interno coinciden","Direkt gelesene Daten und internes JSON stimmen überein","A leitura direta e o JSON interno coincidem"],
         native_engine_difference:["Differenza tra lettura diretta e JSON interno","Direct read and internal JSON differ","Écart entre la lecture directe et le JSON interne","Diferencia entre la lectura directa y el JSON interno","Direkt gelesene Daten und internes JSON weichen ab","Diferença entre a leitura direta e o JSON interno"],
@@ -659,7 +660,10 @@
         if(!Array.isArray(profiles))return null;
         const items=[];
         for(const profile of profiles){
-            const conditions=profile?.getEngineCapacities?.();
+            if(typeof profile?.getEngineCapacities!=="function")return null;
+            // The native getter returns undefined for a profile without engines.
+            const conditions=profile.getEngineCapacities();
+            if(conditions===undefined){items.push([]);continue;}
             if(!Array.isArray(conditions))return null;
             for(const condition of conditions){
                 if(!condition||typeof condition!=="object"||Array.isArray(condition))return null;
@@ -787,6 +791,12 @@
             return {...internal[position],index};
         });
         return {count,rows,internalRows:internal.filter((_,position)=>!paired.has(position))};
+    }
+    function findEnginePreservationGaps(review) {
+        // A segment-wide count or a disputed read cannot establish which SDK
+        // restriction has engine conditions outside the SDK write contract.
+        return review.rows.filter(row=>row.status==="MATCH"&&row.count>0)
+            .map(({index,count})=>({index,count}));
     }
     function isRecordedTimeZone(value) {
         if(typeof value!=="string"||!/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(value))
@@ -1528,7 +1538,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1600,7 +1610,7 @@
         if(dialog?.open)dialog.close();
         anchor.click();
     }
-    function renderExistingRestrictionList(segment,expanded=false){
+    function renderExistingRestrictionList(segment,expanded=false,onEngineReview){
         const data=listExistingRestrictions(segment);
         const wrap=node("details");
         wrap.open=expanded;
@@ -1710,6 +1720,7 @@
                             result.append(node("p",tr(label)+" "+row.index+" · "+counts+tr(status)+reason+fields));
                         }
                     }
+                    onEngineReview?.(review);
                 }),result);
                 motorCheckPlaced=true;
             }
@@ -1956,8 +1967,16 @@
             const heading=node("summary",tr("before_after_title"));
             heading.style.cssText="font-weight:600;cursor:pointer;";
             details.append(heading,node("h4",tr("before_after_before")));
+            const engineGaps=node("div");
+            engineGaps.setAttribute("role","status");
+            engineGaps.style.cssText="color:#92400e;font-weight:600;";
             if(preview.before===null)details.append(node("p",tr("existing_unknown")));
-            else details.append(renderExistingRestrictionList(current.segment,false));
+            else details.append(renderExistingRestrictionList(current.segment,false,review=>{
+                const warnings=findEnginePreservationGaps(review).map(({index,count})=>
+                    node("p",tr("existing_rule")+" "+index+" · "+
+                        tr("native_engine_row_count")+": "+count+" · "+tr("native_engine_sdk_gap")));
+                engineGaps.replaceChildren(...warnings);
+            }));
             if(preview.before?.length){
                 const result=node("div");
                 result.setAttribute("role","status");
@@ -1985,7 +2004,8 @@
             else{
                 const names=retained.map(index=>tr("existing_rule")+" "+index);
                 details.append(node("p",tr("before_after_retained")+" · "+names.join(", ")),
-                    node("p",tr(conversion.preservation.status==="UNKNOWN"?"preservation_unknown":"preservation_roundtrip")));
+                    node("p",tr(conversion.preservation.status==="UNKNOWN"?"preservation_unknown":"preservation_roundtrip")),
+                    engineGaps);
             }
             const additions=node("ol");
             const design=[conversion.restrictionIntent,conversion.directionDesign,
