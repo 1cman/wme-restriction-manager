@@ -543,14 +543,32 @@ for(const unknown of [
  a.estimateSafe12Budget(null,proposedFrames),
  a.estimateSafe12Budget([{description:'no-frames'}],proposedFrames),
  a.estimateSafe12Budget([null],proposedFrames),
+ a.estimateSafe12Budget(Array(1),proposedFrames),
+ a.estimateSafe12Budget([{timeFrames:Array(1)}],proposedFrames),
  a.estimateSafe12Budget([],[]),
  a.estimateSafe12Budget([],null),
+ a.estimateSafe12Budget([],Array(1)),
  a.estimateSafe12Budget([],['invalid'])
 ]){
  assert.equal(unknown.status,'UNKNOWN','Incomplete SDK data cannot be guessed');
  assert.equal(unknown.projectedFrames,null);
  assert.equal(unknown.verified,false);
 }
+const allDayRule={timeFrames:[{}]};
+assert.deepEqual(a.countSafe12Operation([[allDayRule],[]]),{
+ restrictions:1,timeFrames:1,overLimit:false
+});
+assert.deepEqual(a.countSafe12Operation([
+ Array(7).fill(allDayRule),Array(5).fill(allDayRule)
+]),{restrictions:12,timeFrames:12,overLimit:false});
+assert.deepEqual(a.countSafe12Operation([
+ Array(7).fill({timeFrames:[]}),Array(6).fill(allDayRule)
+]),{restrictions:13,timeFrames:6,overLimit:true},'Restriction cap applies across all segments');
+assert.deepEqual(a.countSafe12Operation([
+ [{timeFrames:Array(7).fill({})}],[{timeFrames:Array(6).fill({})}]
+]),{restrictions:2,timeFrames:13,overLimit:true},'Frame cap applies across all segments');
+assert.equal(a.countSafe12Operation([Array(13).fill(allDayRule),[{timeFrames:[null]}]]),null,
+ 'A malformed segment cannot produce an authoritative aggregate even when another exceeds the cap');
 assert.ok(src.includes('estimateSafe12Budget(') &&
  src.includes('const estimate=estimateSafe12Budget(') &&
  src.includes('tr("budget_assumption")'),

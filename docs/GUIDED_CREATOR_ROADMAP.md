@@ -467,6 +467,14 @@ The maintainer **confirmed the Alpha 21 four-category comparison is displayed se
 
 **Toll gate.** The public `Segment` model does not expose `hasToll` as a raw property. `Segments.isTollSegment` returns a derived answer that can also be true because of a toll-free restriction. The answer cannot recover the prior raw flag for rollback. Keep the blue proposal read-only while verifying an official way to distinguish those cases and the behavior of a coordinated flag-plus-restrictions update. See [Segment Standard](https://web-assets.waze.com/wme_sdk_docs/production/latest/interfaces/index.SDK.Segment.html), [Segment Beta](https://web-assets.waze.com/wme_sdk_docs/beta/latest/interfaces/index.SDK.Segment.html) and [Segments.isTollSegment](https://web-assets.waze.com/wme_sdk_docs/production/latest/classes/index.SDK.Segments.html#isTollSegment).
 
+## Alpha 27 — SAFE12 operation counting (2026-11-25)
+
+**Implemented and tested in isolation.** The same two limits as stable 3.2.0 apply to the provided lists for the entire operation, including all retained restrictions and materialized frames for all segments. The count returns an unavailable result for incomplete structures, including sparse lists and missing frames. Tests cover the exact boundary (`12` / `12`), separate overflows of each count across two segments, both limits in the single-segment estimate, and invalid input. No changes were made to stable's existing checks.
+
+**Wizard status.** The single-segment summary uses this count with the existing one-restriction-per-draft-frame estimate. Final SAFE12 validation still depends on the full, verified list of preserved and generated restrictions after advanced calendar expansion. In WME Standard and Beta select a segment with known existing restrictions, create a read-only draft with two separate time slots, and verify the projected counts in the summary equal the existing counts plus two. On an available segment with enough existing restrictions or frames, choose a number of draft slots that moves one count over 12 and check the warning. This screens the estimate only. Close the wizard and confirm pending edits are unchanged.
+
+**Before/After preview prerequisite.** The future preview needs a complete and fresh SDK snapshot, a verified preservation comparison for every native entry, fully expanded generated rules, a batch-wide SAFE12 result, and separate display of the segment toll flag and direction-specific exemptions. Before a write can be considered, matching against the read model must account for noneditable entries and data outside the public update model. A successful numeric count provides no evidence about preservation, permissions, time-zone semantics, toll rollback, or routing precedence.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.

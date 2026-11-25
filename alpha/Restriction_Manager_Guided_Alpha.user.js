@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.26
+// @version      4.0.0-alpha.27
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.26";
+    const VERSION = "4.0.0-alpha.27";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -438,8 +438,27 @@
         return {segmentIds:[...segmentIds],hasToll:true,directions:"BOTH",
             required:true,applied:false,verified:false};
     }
-    // Read-only budget estimate. The stable v3.2 final SAFE12 validator must
-    // still inspect ALL updates, advanced calendar expansions, and every item.
+    // Count the complete list of retained and generated restrictions for each
+    // segment, following the stable SAFE12 limits for the whole operation.
+    function countSafe12Operation(restrictionsBySegment) {
+        if(!Array.isArray(restrictionsBySegment)||!restrictionsBySegment.length)return null;
+        let restrictions=0,timeFrames=0;
+        for(const segmentRestrictions of restrictionsBySegment){
+            if(!Array.isArray(segmentRestrictions))return null;
+            for(const restriction of segmentRestrictions){
+                if(!Array.isArray(restriction?.timeFrames))return null;
+                for(const frame of restriction.timeFrames){
+                    if(!frame||typeof frame!=="object"||Array.isArray(frame))return null;
+                    timeFrames++;
+                }
+                restrictions++;
+            }
+        }
+        if(!Number.isSafeInteger(restrictions)||!Number.isSafeInteger(timeFrames))return null;
+        return {restrictions,timeFrames,overLimit:restrictions>MAX_DRAFT_TIME_FRAMES||
+            timeFrames>MAX_DRAFT_TIME_FRAMES};
+    }
+    // The single-segment draft assumes one new restriction per time frame.
     function estimateSafe12Budget(existingRestrictions, proposedTimeFrames) {
         const unknown={
             status:"UNKNOWN",existingRestrictions:null,existingFrames:null,
@@ -447,22 +466,18 @@
             projectedRestrictions:null,projectedFrames:null,
             limit:MAX_DRAFT_TIME_FRAMES,verified:false
         };
-        if(!Array.isArray(existingRestrictions)||!Array.isArray(proposedTimeFrames)||
-           !proposedTimeFrames.length||proposedTimeFrames.some(frame=>!frame||typeof frame!=="object")||
-           existingRestrictions.some(item=>!item||!Array.isArray(item.timeFrames)))
-            return unknown;
-        const oldFrames=existingRestrictions.reduce((sum,item)=>sum+item.timeFrames.length,0);
-        const newFrames=proposedTimeFrames.length;
-        const projectedRestrictions=existingRestrictions.length+newFrames;
-        const projectedFrames=oldFrames+newFrames;
-        if(!Number.isSafeInteger(oldFrames)||!Number.isSafeInteger(projectedRestrictions)||
-           !Number.isSafeInteger(projectedFrames))return unknown;
+        if(!Array.isArray(proposedTimeFrames)||!proposedTimeFrames.length)return unknown;
+        const existing=countSafe12Operation([existingRestrictions]);
+        if(!existing)return unknown;
+        const proposed=Array.from(proposedTimeFrames,frame=>({timeFrames:[frame]}));
+        const projected=countSafe12Operation([[...existingRestrictions,...proposed]]);
+        if(!projected)return unknown;
         return {
-            status:projectedRestrictions>MAX_DRAFT_TIME_FRAMES||
-                projectedFrames>MAX_DRAFT_TIME_FRAMES?"OVER":"WITHIN_ESTIMATE",
-            existingRestrictions:existingRestrictions.length,
-            existingFrames:oldFrames,proposedRestrictions:newFrames,proposedFrames:newFrames,
-            projectedRestrictions,projectedFrames,limit:MAX_DRAFT_TIME_FRAMES,
+            status:projected.overLimit?"OVER":"WITHIN_ESTIMATE",
+            existingRestrictions:existing.restrictions,existingFrames:existing.timeFrames,
+            proposedRestrictions:proposed.length,proposedFrames:proposedTimeFrames.length,
+            projectedRestrictions:projected.restrictions,projectedFrames:projected.timeFrames,
+            limit:MAX_DRAFT_TIME_FRAMES,
             verified:false
         };
     }
@@ -1102,7 +1117,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
