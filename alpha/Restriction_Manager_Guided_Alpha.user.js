@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.38
+// @version      4.0.0-alpha.39
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.38";
+    const VERSION = "4.0.0-alpha.39";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -58,7 +58,7 @@
     const SDK_VEHICLE_RULE_FIELDS = ["licensePlateRule","licensePlateNumber","minPassengers",
         "numPassengers","subscriptions","vehicleTypes"];
     const PRESERVATION_PATH_FIELDS = new Set([...SDK_RESTRICTION_FIELDS,...SDK_VEHICLE_RULE_FIELDS,
-        ...SDK_TIME_FRAME_FIELDS,"daysOfMonth","FREE","BLOCKED","TOLL"]);
+        ...SDK_TIME_FRAME_FIELDS,"restrictions","daysOfMonth","FREE","BLOCKED","TOLL"]);
     const OVERRIDE_TYPES = Object.freeze({BLOCKED:"FREE",ALLOWED:"FREE",TOLL:"FREE"});
     // Visual cues inspired by WME restriction categories (not exact sampled native colors).
     // Only the restriction-kind step uses these colors; selection semantics stay unchanged.
@@ -85,6 +85,7 @@
         inspection_warn:["Questi valori provengono solo da restrizioni già presenti sul segmento. NON certificano le opzioni disponibili per crearne una nuova, né verificano le API interne, la lingua o il fuso orario del segmento.","These values come only from existing segment restrictions. They do NOT certify support for new rules or verify private APIs, UI locale or segment time zone.","Valeurs des restrictions existantes uniquement ; aucune garantie de prise en charge de nouvelles règles.","Solo valores de restricciones existentes; no garantizan compatibilidad para nuevas reglas.","Nur Werte vorhandener Beschränkungen; keine Garantie für neue Regeln.","Apenas valores de restrições existentes; não garantem suporte para regras novas."],
         inspection_snapshot:["Controllo variazioni delle restrizioni SDK","SDK restriction change check","Contrôle des modifications SDK","Comprobación de cambios SDK","SDK-Beschränkungsänderungen prüfen","Verificação de alterações SDK"],
         inspection_changed:["Le restrizioni SDK del segmento sono cambiate durante la procedura. Ricomincia per aggiornare la bozza.","Segment SDK restrictions changed during the wizard. Restart to refresh the draft.","Les restrictions SDK ont changé ; recommencez.","Las restricciones SDK cambiaron; reinicia.","SDK-Beschränkungen geändert; bitte neu starten.","Restrições SDK alteradas; reinicie."],
+        inspection_uncomparable:["I dati SDK del segmento non sono più confrontabili con la bozza. Chiudi e riapri la procedura.","The segment’s SDK data can no longer be compared with the draft. Close and reopen the wizard.","Les données SDK du segment ne peuvent plus être comparées au brouillon. Fermez et rouvrez l’assistant.","Los datos SDK del segmento ya no se pueden comparar con el borrador. Cierra y vuelve a abrir el asistente.","Die SDK-Daten des Segments sind nicht mehr mit dem Entwurf vergleichbar. Assistent schließen und erneut öffnen.","Os dados SDK do segmento já não podem ser comparados com o rascunho. Feche e volte a abrir o assistente."],
         conversion_title:["Verifica di conversione SDK (anteprima)","SDK conversion review (preview)","Contrôle de conversion SDK (aperçu)","Revisión de conversión SDK (vista previa)","SDK-Konvertierungsprüfung (Vorschau)","Revisão de conversão SDK (prévia)"],
         conversion_default:["Regola generale prevista","Planned default rule","Règle générale prévue","Regla general prevista","Vorgesehene Grundregel","Regra geral prevista"],
         conversion_overrides:["Regole per i veicoli previste","Planned vehicle rules","Règles de véhicules prévues","Reglas de vehículos previstas","Vorgesehene Fahrzeugregeln","Regras de veículos previstas"],
@@ -523,24 +524,36 @@
         return {restrictions,timeFrames,overLimit:restrictions>MAX_DRAFT_TIME_FRAMES||
             timeFrames>MAX_DRAFT_TIME_FRAMES};
     }
-    // The single-segment draft assumes one new restriction per time frame.
     function estimateSafe12Budget(existingRestrictions, proposedTimeFrames) {
+        return estimateGuidedOperationBudget([{existingRestrictions,proposedTimeFrames}]);
+    }
+    // Count the same projection used by the preview: retain every existing
+    // restriction and plan one additional restriction per draft time frame.
+    function estimateGuidedOperationBudget(segments) {
         const unknown={
             status:"UNKNOWN",existingRestrictions:null,existingFrames:null,
             proposedRestrictions:null,proposedFrames:null,
             projectedRestrictions:null,projectedFrames:null,
             limit:MAX_DRAFT_TIME_FRAMES,verified:false
         };
-        if(!Array.isArray(proposedTimeFrames)||!proposedTimeFrames.length)return unknown;
-        const existing=countSafe12Operation([existingRestrictions]);
+        if(!Array.isArray(segments)||!segments.length)return unknown;
+        const existingBySegment=[],proposedBySegment=[];
+        for(const entry of segments){
+            const {existingRestrictions,proposedTimeFrames}=entry??{};
+            if(!Array.isArray(existingRestrictions)||!Array.isArray(proposedTimeFrames)||
+               !proposedTimeFrames.length)return unknown;
+            existingBySegment.push(existingRestrictions);
+            proposedBySegment.push(Array.from(proposedTimeFrames,frame=>({timeFrames:[frame]})));
+        }
+        const existing=countSafe12Operation(existingBySegment);
         if(!existing)return unknown;
-        const proposed=Array.from(proposedTimeFrames,frame=>({timeFrames:[frame]}));
-        const projected=countSafe12Operation([[...existingRestrictions,...proposed]]);
+        const projected=countSafe12Operation([...existingBySegment,...proposedBySegment]);
         if(!projected)return unknown;
         return {
             status:projected.overLimit?"OVER":"WITHIN_ESTIMATE",
             existingRestrictions:existing.restrictions,existingFrames:existing.timeFrames,
-            proposedRestrictions:proposed.length,proposedFrames:proposedTimeFrames.length,
+            proposedRestrictions:projected.restrictions-existing.restrictions,
+            proposedFrames:projected.timeFrames-existing.timeFrames,
             projectedRestrictions:projected.restrictions,projectedFrames:projected.timeFrames,
             limit:MAX_DRAFT_TIME_FRAMES,
             verified:false
@@ -1057,9 +1070,17 @@
             unknownFields,conditions,verified:false
         };
     }
+    function sdkAliasTarget(field) {
+        if(field==="disposition")return "laneScope";
+        if(field==="driveProfiles")return "vehicleRules";
+        if(/^timeFrames\[\d+\]\.daysOfMonth$/.test(field))return "dayAlternation";
+        const ruleAlias=/^(?:vehicleRules|driveProfiles)\.(?:BLOCKED|FREE|TOLL)\[\d+\]\.(numPassengers|licensePlateNumber)$/.exec(field);
+        if(ruleAlias)return ruleAlias[1]==="numPassengers"?"minPassengers":"licensePlateRule";
+        return null;
+    }
     // Exact snapshots reject opaque data. A diagnostic caller can inspect
     // the readable own data and receives only redacted paths and reason keys.
-    function copyNativeData(value,report) {
+    function copyNativeData(value,report,forFreshness=false) {
         const ancestors=new WeakSet();
         const reject=(path,reason="preservation_snapshot_unsupported")=>{
             if(!report)throw Error("Unsupported native data");
@@ -1090,8 +1111,7 @@
             const property=(descriptor,field)=>{
                 if(!descriptor)return reject(field,"preservation_snapshot_array");
                 if(!("value" in descriptor)){
-                    const alias=/^(?:disposition|driveProfiles|timeFrames\[\d+\]\.daysOfMonth|(?:vehicleRules|driveProfiles)\.(?:BLOCKED|FREE|TOLL)\[\d+\]\.(?:numPassengers|licensePlateNumber))$/.test(field);
-                    return reject(field,alias?"preservation_snapshot_alias":"preservation_snapshot_accessor");
+                    return reject(field,sdkAliasTarget(field)?"preservation_snapshot_alias":"preservation_snapshot_accessor");
                 }
                 return copy(descriptor.value,depth+1,field);
             };
@@ -1103,10 +1123,21 @@
                 result=Array.from({length},(_,index)=>property(descriptors[index],path+"["+index+"]"));
             }else{
                 if(keys.some(key=>typeof key==="symbol"))reject(path);
-                result=Object.fromEntries(keys.filter(key=>typeof key==="string").sort().map(key=>{
+                const entries=[];
+                for(const key of keys.filter(key=>typeof key==="string").sort()){
                     const token=PRESERVATION_PATH_FIELDS.has(key)?key:"[…]";
-                    return [key,property(descriptors[key],path?path+"."+token:token)];
-                }));
+                    const field=path?path+"."+token:token;
+                    const descriptor=descriptors[key];
+                    const sdkPath=forFreshness&&/^restrictions\[\d+\]\.(.+)$/.exec(field);
+                    const alias=sdkPath&&sdkAliasTarget(sdkPath[1]);
+                    // For freshness only, skip the known deprecated getter
+                    // when its current field is an own data property.
+                    const current=alias&&descriptors[alias];
+                    if(current&&"value" in current&&typeof descriptor.get==="function"&&!descriptor.set)
+                        continue;
+                    entries.push([key,property(descriptor,field)]);
+                }
+                result=Object.fromEntries(entries);
             }
             ancestors.delete(item);
             return result;
@@ -1505,7 +1536,7 @@
             plannedHasToll:normalized.restrictionIntent==="TOLL"?true:null,
             existingRestrictionCount:Array.isArray(segment?.restrictions)?
                 segment.restrictions.length:null,
-            budgetStatus:budget.status,preservation,blockers:[...new Set(blockers)]
+            budgetStatus:budget.status,budget,preservation,blockers:[...new Set(blockers)]
         };
     }
     async function readPermits(sdk,country) {
@@ -1544,14 +1575,14 @@
             editable,verified:false};
     }
     // Compare all SDK restriction fields, including unrecognized fields.
-    function restrictionSnapshot(segment) {
+    function restrictionSnapshot(segment,forFreshness=false) {
         if(!segment||!Array.isArray(segment.restrictions))return null;
         try{
-            return nativeDataSnapshot({
+            return JSON.stringify(copyNativeData({
                 id:segment.id??null,isAtoB:segment.isAtoB??null,
                 isBtoA:segment.isBtoA??null,isTwoWay:segment.isTwoWay??null,
                 restrictions:segment.restrictions
-            });
+            },undefined,forFreshness));
         }catch(_){return null;}
     }
     async function readContext(sdk) {
@@ -1566,7 +1597,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1638,7 +1669,7 @@
         if(dialog?.open)dialog.close();
         anchor.click();
     }
-    function renderExistingRestrictionList(segment,expanded=false,onEngineReview){
+    function renderExistingRestrictionList(segment,expanded=false,{onEngineReview,beforeRead}={}){
         const data=listExistingRestrictions(segment);
         const wrap=node("details");
         wrap.open=expanded;
@@ -1736,7 +1767,8 @@
                 result.setAttribute("role","status");
                 const read=onEngineReview?trackInternalEnginePreservation(page,segment):
                     ()=>inspectInternalEnginePreservation(page,segment);
-                nativeDetails.append(button(tr("native_engine_check"),()=>{
+                nativeDetails.append(button(tr("native_engine_check"),async()=>{
+                    if(beforeRead&&!(await beforeRead()))return;
                     const review=read();
                     result.replaceChildren(node("p",review.count===null?tr("native_engine_unavailable"):
                         tr("native_engine_count")+": "+review.count));
@@ -1911,7 +1943,7 @@
             context=await readContext(sdk);
             const injected=placeNative();
             const key=JSON.stringify([lang,context?.segment.id,context?.country,
-                availableDirections(context?.segment),restrictionSnapshot(context?.segment),injected]);
+                availableDirections(context?.segment),restrictionSnapshot(context?.segment,true),injected]);
             if (key!==lastKey) { lastKey=key; renderPanel(); }
         } catch (_) { context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();} }
         finally { refreshing=false; }
@@ -1926,7 +1958,7 @@
         dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
         document.body.append(dialog);
         let step=0;
-        const baselineSnapshot=restrictionSnapshot(current.segment);
+        const baselineSnapshot=restrictionSnapshot(current.segment,true);
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
         const advanced={minPassengers:null,permitIds:[]};
         const vehicleRules=Object.create(null);
@@ -2000,24 +2032,35 @@
             const engineGaps=node("div");
             engineGaps.setAttribute("role","status");
             engineGaps.style.cssText="color:#92400e;font-weight:600;";
+            const activeDialog=dialog;
+            const beforeRead=async()=>{
+                const check=await checkDraftContext();
+                if(activeDialog!==dialog||!activeDialog.open||!details.isConnected)return false;
+                if(check.reason){showDraftContextProblem(check.reason);return false;}
+                return true;
+            };
             if(preview.before===null)details.append(node("p",tr("existing_unknown")));
-            else details.append(renderExistingRestrictionList(current.segment,false,review=>{
-                const warnings=findEnginePreservationGaps(review).map(({index,count})=>
-                    node("p",tr("existing_rule")+" "+index+" · "+
-                        tr("native_engine_row_count")+": "+count+" · "+tr("native_engine_sdk_gap")));
-                const changes=review.changes.map(({index,status})=>{
-                    const key={SAME:"native_engine_since_first_same",CHANGED:"native_engine_since_first_changed",
-                        UNKNOWN:"native_engine_since_first_unknown"}[status];
-                    const line=node("p",tr("existing_rule")+" "+index+" · "+tr(key));
-                    if(status==="SAME")line.style.cssText="color:#475569;font-weight:400;";
-                    return line;
-                });
-                engineGaps.replaceChildren(...changes,...warnings);
-            }));
+            else{
+                const onEngineReview=review=>{
+                    const warnings=findEnginePreservationGaps(review).map(({index,count})=>
+                        node("p",tr("existing_rule")+" "+index+" · "+
+                            tr("native_engine_row_count")+": "+count+" · "+tr("native_engine_sdk_gap")));
+                    const changes=review.changes.map(({index,status})=>{
+                        const key={SAME:"native_engine_since_first_same",CHANGED:"native_engine_since_first_changed",
+                            UNKNOWN:"native_engine_since_first_unknown"}[status];
+                        const line=node("p",tr("existing_rule")+" "+index+" · "+tr(key));
+                        if(status==="SAME")line.style.cssText="color:#475569;font-weight:400;";
+                        return line;
+                    });
+                    engineGaps.replaceChildren(...changes,...warnings);
+                };
+                details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));
+            }
             if(preview.before?.length){
                 const result=node("div");
                 result.setAttribute("role","status");
-                details.append(button(tr("calendar_read_check"),()=>{
+                details.append(button(tr("calendar_read_check"),async()=>{
+                    if(!(await beforeRead()))return;
                     const rows=inspectInternalCalendarPreservation(page,current.segment);
                     result.replaceChildren();
                     for(const row of rows){
@@ -2170,6 +2213,28 @@
             wrapper.append(missing);
             return wrapper;
         }
+        async function checkDraftContext(){
+            let fresh;
+            try {fresh=await readContext(sdk);} catch (_) {}
+            if (!fresh || fresh.segment.id!==current.segment.id ||
+                JSON.stringify(fresh.country)!==JSON.stringify(current.country) ||
+                JSON.stringify(fresh.permits)!==JSON.stringify(current.permits) ||
+                !availableDirections(fresh.segment).includes(draft.direction))
+                return {reason:"changed"};
+            // A comparable SDK projection can detect changes even when
+            // deprecated SDK aliases prevent an exact preservation snapshot.
+            const latestSnapshot=restrictionSnapshot(fresh.segment,true);
+            if(baselineSnapshot!==latestSnapshot){
+                const comparable=baselineSnapshot!==null&&latestSnapshot!==null;
+                return {reason:comparable?"inspection_changed":"inspection_uncomparable"};
+            }
+            return {fresh};
+        }
+        function showDraftContextProblem(reason){
+            // Keep the dialog open and replace the stale preview with the reason.
+            // There was no map action to undo.
+            dialog.replaceChildren(node("p",tr(reason)),button(tr("close"),()=>dialog.close()));
+        }
         async function advance() {
             // Guard progress here as well as in the button state: no implicit scope.
             if (step === 1 && !SCOPES.includes(draft.scope)) return;
@@ -2190,23 +2255,10 @@
             if(step===7){
                 try{normalizeRedSchedule(redSchedule);}catch(_){return;}
             }
-            let fresh;
-            try {fresh=await readContext(sdk);} catch (_) {}
-            if (!fresh || fresh.segment.id!==current.segment.id ||
-                 JSON.stringify(fresh.country)!==JSON.stringify(current.country) ||
-                 JSON.stringify(fresh.permits)!==JSON.stringify(current.permits) ||
-                 !availableDirections(fresh.segment).includes(draft.direction)) {
-                dialog.replaceChildren(node("p",tr("changed")),button(tr("close"),()=>dialog.close()));return;
-            }
-            // Never keep reviewing a stale draft after another edit changed
-            // the selected segment's restrictions or one of its directions.
-            const latestSnapshot=restrictionSnapshot(fresh.segment);
-            if(baselineSnapshot!==latestSnapshot){
-                dialog.replaceChildren(
-                    node("p",tr("inspection_changed")),
-                    button(tr("close"),()=>dialog.close()));
-                return;
-            }
+            const activeDialog=dialog,activeStep=step,activeControl=dialog.querySelector('[data-guided-next="true"]');
+            const {fresh,reason}=await checkDraftContext();
+            if(activeDialog!==dialog||!activeDialog.open||step!==activeStep||!activeControl?.isConnected)return;
+            if(reason){showDraftContextProblem(reason);return;}
             const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);
             if(destination===null)return;
             if(destination===6)current=fresh;
@@ -2776,9 +2828,7 @@
                 dialog.append(renderBeforeAfterPreview(schedule,conversion));
                 // Conservative budget only: not an SDK write plan and NOT
                 // a pass from the stable v3.2 SAFE12 full-operation validator.
-                const estimate=estimateSafe12Budget(
-                    current.segment.restrictions,schedule.timeFrames
-                );
+                const estimate=conversion.budget;
                 const budgetBox=node("section");
                 budgetBox.style.cssText="padding:10px;margin-top:14px;border:1px solid #cbd5e1;"+
                     "border-radius:8px;background:#f8fafc;";

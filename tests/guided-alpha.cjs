@@ -728,11 +728,12 @@ assert.equal(accessorEvaluated,false,'Snapshot must not evaluate native accessor
 const cyclic={id:20,isAtoB:true,restrictions:[{direction:'FWD'}]};
 cyclic.restrictions[0].timeFrames=cyclic.restrictions;
 assert.equal(a.restrictionSnapshot(cyclic),null,'Unserializable SDK state must be unknown, not guessed');
-assert.ok(src.includes('const baselineSnapshot=restrictionSnapshot(current.segment);'),
+assert.ok(src.includes('const baselineSnapshot=restrictionSnapshot(current.segment,true);'),
  'The wizard must capture initial SDK restrictions');
 assert.ok(src.includes('if(baselineSnapshot!==latestSnapshot)'),
  'Next must abort if observed SDK restrictions or direction changed');
-assert.ok(src.includes('node("p",tr("inspection_changed"))'),
+assert.ok(src.includes('showDraftContextProblem(check.reason)') &&
+ src.includes('showDraftContextProblem(reason)') && src.includes('node("p",tr(reason))'),
  'Stale drafts must show a clear message');
 assert.ok(src.includes('const inspection=inspectRestrictionCapabilities(context.segment);'),
  'SDK observation belongs in the sidebar, not a write path');
@@ -818,8 +819,29 @@ assert.deepEqual(a.countSafe12Operation([
 ]),{restrictions:2,timeFrames:13,overLimit:true},'Frame cap applies across all segments');
 assert.equal(a.countSafe12Operation([Array(13).fill(allDayRule),[{timeFrames:[null]}]]),null,
  'A malformed segment cannot produce an authoritative aggregate even when another exceeds the cap');
+const oneNewFrame=[proposedFrames[0]];
+const budgetForCounts=(left,right)=>a.estimateGuidedOperationBudget([
+ {existingRestrictions:left,proposedTimeFrames:oneNewFrame},
+ {existingRestrictions:right,proposedTimeFrames:oneNewFrame}
+]);
+const operationWithin=budgetForCounts(Array(5).fill(allDayRule),Array(5).fill(allDayRule));
+assert.deepEqual(operationWithin,{
+ status:'WITHIN_ESTIMATE',existingRestrictions:10,existingFrames:10,
+ proposedRestrictions:2,proposedFrames:2,projectedRestrictions:12,projectedFrames:12,
+ limit:12,verified:false
+});
+const operationOverRules=budgetForCounts(Array(5).fill({timeFrames:[]}),Array(6).fill({timeFrames:[]}));
+assert.equal(operationOverRules.status,'OVER');
+assert.equal(operationOverRules.projectedRestrictions,13);
+assert.equal(operationOverRules.projectedFrames,2);
+const operationOverFrames=budgetForCounts([{timeFrames:Array(5).fill({})}],[{timeFrames:Array(6).fill({})}]);
+assert.equal(operationOverFrames.status,'OVER');
+assert.equal(operationOverFrames.projectedRestrictions,4);
+assert.equal(operationOverFrames.projectedFrames,13);
+assert.equal(budgetForCounts(Array(12).fill(allDayRule),[{}]).status,'UNKNOWN');
+assert.equal(a.estimateGuidedOperationBudget(Array(1)).status,'UNKNOWN');
 assert.ok(src.includes('estimateSafe12Budget(') &&
- src.includes('const estimate=estimateSafe12Budget(') &&
+ src.includes('const estimate=conversion.budget;') &&
  src.includes('tr("budget_assumption")'),
  'Read-only summary must show conservative SAFE12 estimate and assumptions');
 assert.ok(src.includes('tr("budget_unknown")') &&
@@ -1029,11 +1051,13 @@ const unknownExisting=a.reviewSdkConversion({...baseConversion,
  conversionSchedule,{},[],noMotor,localeCountry);
 assert.ok(unknownExisting.blockers.includes('conversion_unknown'));
 assert.equal(unknownExisting.budgetStatus,'UNKNOWN');
+assert.equal(unknownExisting.budget.status,'UNKNOWN');
 const overConversion=a.reviewSdkConversion({...baseConversion,
  restrictionType:'TOLL',vehicleTypes:['TAXI']},
  {...conversionSegment,restrictions:Array.from({length:12},()=>({timeFrames:[]}))},
  conversionSchedule,{},[],noMotor,localeCountry);
 assert.equal(overConversion.budgetStatus,'OVER');
+assert.equal(overConversion.budget.projectedRestrictions,12+overConversion.proposedFrameCount);
 assert.ok(overConversion.blockers.includes('conversion_overbudget'));
 assert.equal(overConversion.saveAllowed,false);
 assert.throws(()=>a.reviewSdkConversion({...baseConversion,
@@ -1170,6 +1194,37 @@ const dynamicAliases=withSdkAliases({
 },['disposition']);
 const aliasAudit=a.auditRestrictionPreservation({restrictions:[dynamicAliases]});
 assert.equal(a.restrictionSnapshot({restrictions:[dynamicAliases]}),null);
+const freshnessSnapshot=rule=>a.restrictionSnapshot({id:1,restrictions:[rule]},true);
+const wrappedAliases=withSdkAliases({
+ ...publicRestriction,vehicleRules:{BLOCKED:[nativeAliasRule()]},
+ timeFrames:[withSdkAliases({...publicFrame},['daysOfMonth'])]
+},['disposition','driveProfiles']);
+const initialFreshness=freshnessSnapshot(wrappedAliases);
+assert.equal(typeof initialFreshness,'string');
+const canonicalOnly={
+ ...publicRestriction,vehicleRules:{BLOCKED:[{...publicSoleRule,vehicleTypes:['MOTORCYCLE']}]},
+ timeFrames:[{...publicFrame}]
+};
+delete canonicalOnly.disposition;
+delete canonicalOnly.driveProfiles;
+delete canonicalOnly.timeFrames[0].daysOfMonth;
+assert.equal(freshnessSnapshot(canonicalOnly),initialFreshness,
+ 'Observed derived getters do not affect the SDK freshness projection');
+assert.notEqual(freshnessSnapshot({...canonicalOnly,disposition:'WHOLE_SEGMENT'}),initialFreshness,
+ 'An explicit legacy data property remains part of the comparison');
+assert.notEqual(freshnessSnapshot(withSdkAliases({
+ ...publicRestriction,vehicleRules:{BLOCKED:[withSdkAliases({
+  ...publicSoleRule,vehicleTypes:['MOTORCYCLE'],minPassengers:3
+ },['numPassengers','licensePlateNumber'])]},
+ timeFrames:[withSdkAliases({...publicFrame},['daysOfMonth'])]
+},['disposition','driveProfiles'])),initialFreshness,'A canonical condition change remains visible');
+assert.equal(freshnessSnapshot(withSdkAliases({direction:'FWD'},['disposition'])),null,
+ 'A deprecated getter cannot stand in for a missing canonical field');
+assert.equal(freshnessSnapshot(withSdkAliases({...publicRestriction,opaque:{}},['opaqueAlias'])),null,
+ 'Unrecognized getters remain opaque');
+assert.equal(freshnessSnapshot(Object.defineProperty({...publicRestriction},'disposition',{
+ get:()=>publicRestriction.laneScope,set(){throw Error('Do not call SDK accessors');}
+})),null,'Accessor with a setter is not the observed deprecated SDK getter');
 assert.equal(preservationGetterCalls,0,'Deprecation recognition must not evaluate native getters');
 assert.equal(aliasAudit.status,'UNKNOWN');
 assert.equal(aliasAudit.writeReady,false);
@@ -1404,7 +1459,7 @@ assert.ok(src.includes('function renderExistingRestrictionList(') &&
  'Existing restrictions must be visible immediately in the guided sidebar');
 assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,true));'),
  'Existing restrictions must be visible before filling in a new draft');
-assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false,review=>{') &&
+assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));') &&
  src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
  'Existing restrictions remain accessible in the final review');
 assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));'),
@@ -1413,7 +1468,7 @@ assert.ok(src.includes('nativeRestrictionAction(') &&
  src.includes('anchor.click();') &&
  src.includes('if(dialog?.open)dialog.close();'),
  'Existing restrictions must be edited only in the native WME panel after a user click');
-assert.ok(src.includes('restrictionSnapshot(context?.segment)'),
+assert.ok(src.includes('restrictionSnapshot(context?.segment,true)'),
  'Sidebar must refresh after a restriction change even if count stays unchanged');
 assert.ok(src.includes('conflict_uncertain'),
  'Collision analysis must warn about unknown SDK rules and recurring calendars');

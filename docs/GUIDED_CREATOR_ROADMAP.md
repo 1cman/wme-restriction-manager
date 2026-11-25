@@ -579,6 +579,18 @@ For an associated restriction, the diagnostic compares engine conditions from th
 
 **Verification.** Isolated tests cover unchanged readings, reordered conditions, a changed threshold with the same count, removal and addition, contested reads, ambiguous associations and independent summaries. In WME Standard and Beta, open the existing motorcycle segment and advance to **Before/After**. Within **Before**, click **Count engine conditions in the internal model** twice. **Proposed after** should show the SDK write-format warning after the first verified click. After the second, it should also report that the conditions are unchanged since the first verified reading. Reopen the wizard and check that the first click establishes a new comparison. No real restriction change is needed for the live check. The changed and inconclusive cases are exercised with fixtures.
 
+## Alpha 39 — Revalidate the draft and share the SAFE12 estimate (2026-11-25)
+
+**Live evidence from Alpha 38.** The maintainer's screenshot confirms that a second read reports the engine conditions unchanged for **Restriction 1**. The case with a genuine change remains covered by simulation.
+
+**SDK source evidence and draft freshness.** The Standard and Beta bundles linked under Alpha 34 expose `disposition`, `driveProfiles`, `daysOfMonth`, `numPassengers` and `licensePlateNumber` as read-only getters for the corresponding current fields. The draft freshness check can now compare these SDK objects by using the own data property for the current field and skipping just the documented deprecated getter. The check does not call that getter. Legacy values present as data, unknown accessors and incompatible object shapes retain their strict handling. The exact preservation audit still marks these getter-based snapshots incomplete.
+
+**Read-only revalidation.** The wizard re-reads the selected segment, country and available permits while advancing and before the private motor and calendar checks in Before/After. A change in comparable SDK restriction data replaces the stale review with a message to reopen the wizard. A transition to or from an uncomparable SDK snapshot gets a separate message. If both snapshots lack a comparable representation, the read-only diagnostics remain available and the preservation gate stays blocked. Private data is still read only on request.
+
+**SAFE12 estimate.** Conversion review and the summary now show the same calculated estimate. The estimator adds one proposed restriction per draft time frame and counts all retained restrictions and their time frames across the supplied segment groups. Tests exercise totals of 12 and 13 independently for the two limits and incomplete data within a batch. The current wizard still selects one segment and counts a projected operation. Expanded calendars, a final serialized plan and actual multi-segment application remain separate gates.
+
+**Verification.** Isolated tests cover the observed alias shapes, canonical and explicit legacy changes, unsupported getters and SAFE12 boundaries. An offline comparison against the actual stable validator agreed on all 3,136 two-segment combinations exercised. Chromium with a simulated SDK passed all three flows in six languages, along with draft invalidation, on-demand private reads and disabled saving. A later Standard and Beta smoke check can use the previously verified segment. Open **Before/After** and run the engine and calendar checks. The retained rule and projected SAFE12 totals should remain visible for unchanged SDK data. No WME modification is needed for this check.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
