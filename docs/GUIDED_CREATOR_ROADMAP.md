@@ -495,6 +495,14 @@ The maintainer **confirmed the Alpha 21 four-category comparison is displayed se
 
 **Automated and live checks.** The isolated tests cover documented and unsupported native categories, noneditable and opaque rows, mismatched aliases for lanes, vehicles, occupancy, plates and calendars, and redaction. In WME Standard and Beta, select the previously tested motorcycle segment, reach the wizard summary, and open **SDK conversion review (preview) → Existing restrictions preservation audit → Restriction 1**. Check that findings correspond to the existing entry. If WME returns different legacy and current rule groups again, the entry should identify `driveProfiles / vehicleRules`. If a regular rule has no findings, check that the row says round-trip verification is required. With a segment containing more than one restriction, verify that numbering matches the existing restriction list. Close the wizard and confirm that native restrictions and pending edits are unchanged.
 
+## Alpha 30 — Explain incomplete preservation checks (2026-11-25)
+
+**Live evidence from Alpha 29.** On an unrestricted segment, the maintainer saw zero existing restrictions and WME Save stayed disabled after closing the wizard. On a segment with an existing restriction, the expanded audit row reported `SegmentRestriction` and a generic message about incomplete or non-serializable data. This established that the restriction was present and the exact snapshot check failed. The screenshot does not identify the specific field or representation that failed.
+
+**Read-only diagnostic.** When exact comparison cannot be established, the audit reports the known SDK path and the reason, such as an undefined value, a dynamic property, a circular reference, an unsupported object prototype or a malformed array. It continues the shape checks on ordinary data properties it can inspect. It does not invoke property getters. Paths use public field names and array indexes, with unrecognized keys shown as `[…]`. The report does not expose field values or raw errors. The precise comparison and no-write gates remain in force. Partial data is used only for this diagnostic.
+
+**Automated and live checks.** Regression fixtures exercise nested undefined values, a getter, a circular reference, a custom prototype and a sparse list, and check that other readable fields still appear in the findings. On the same WME segment in Standard and Beta, open the wizard summary, expand **SDK conversion review (preview)**, and open **Restriction 1 · Data to verify**. Capture the path and reason shown by the new check. Save must remain disabled when the wizard is the only action on the map.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.

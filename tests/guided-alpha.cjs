@@ -854,9 +854,11 @@ circularSegment.restrictions[0].vehicleRules.SELF=circularSegment.restrictions;
 const circularAudit=a.auditRestrictionPreservation(circularSegment);
 assert.equal(circularAudit.status,'UNKNOWN',
  'Circular or unserializable native data must fail closed');
-assert.deepEqual(circularAudit.entries,[{index:1,issues:[{
- field:'SegmentRestriction',reason:'preservation_unknown'
-}]}]);
+assert.deepEqual(circularAudit.entries[0].issues[0],{
+ field:'vehicleRules.[…][0]',reason:'preservation_snapshot_cycle'
+});
+assert.ok(circularAudit.entries[0].issues.some(issue=>issue.field==='direction'),
+ 'An opaque field must not stop inspection of other readable fields in the same row');
 
 const publicSoleRule={vehicleTypes:['PUBLIC_TRANSPORTATION'],minPassengers:0,
  licensePlateRule:'ENDS_WITH_7',subscriptions:['PRIVATE-SUBSCRIPTION-ID']};
@@ -873,6 +875,51 @@ assert.deepEqual(preservedShape.entries,[{index:1,issues:[]}],
 assert.ok(!a.VEHICLE_TYPES.includes('PUBLIC_TRANSPORTATION'));
 assert.equal(preservedShape.status,'REQUIRES_ROUNDTRIP');
 assert.equal(preservedShape.writeReady,false);
+const sdkReadback={
+ ...publicRestriction,description:undefined,
+ timeFrames:[{...publicFrame,toTime:undefined}],
+ vehicleRules:{BLOCKED:[{...publicSoleRule,minPassengers:undefined}]},
+ driveProfiles:{BLOCKED:[{...publicSoleRule}]}
+};
+const privateField='PRIVATE-ARBITRARY-KEY';
+sdkReadback[privateField]={privateValue:undefined};
+let preservationGetterCalls=0;
+Object.defineProperty(sdkReadback,'laneScope',{
+ get(){preservationGetterCalls++;throw new Error('PRIVATE-GETTER-ERROR');}
+});
+const partialSegment={restrictions:[sdkReadback,publicRestriction]};
+assert.equal(a.restrictionSnapshot(partialSegment),null,
+ 'Partial diagnostics must not make an opaque snapshot comparable');
+const partialAudit=a.auditRestrictionPreservation(partialSegment);
+assert.equal(partialAudit.status,'UNKNOWN');
+assert.equal(partialAudit.writeReady,false);
+assert.equal(partialAudit.verified,false);
+assert.equal(preservationGetterCalls,0);
+assert.deepEqual(partialAudit.entries[0].issues.slice(0,5),[
+ {field:'[…].[…]',reason:'preservation_snapshot_undefined'},
+ {field:'description',reason:'preservation_snapshot_undefined'},
+ {field:'laneScope',reason:'preservation_snapshot_accessor'},
+ {field:'timeFrames[0].toTime',reason:'preservation_snapshot_undefined'},
+ {field:'vehicleRules.BLOCKED[0].minPassengers',reason:'preservation_snapshot_undefined'}
+]);
+assert.ok(partialAudit.entries[0].issues.some(issue=>issue.field==='driveProfiles / vehicleRules'));
+assert.deepEqual(partialAudit.entries[1],{index:2,issues:[]});
+assert.doesNotMatch(JSON.stringify(partialAudit),/PRIVATE-|ENDS_WITH_7/);
+
+class NativeRule {
+ constructor(fields){Object.assign(this,fields);}
+}
+const nativeWithPrototype={restrictions:[new NativeRule({...publicRestriction,editable:false})]};
+assert.equal(a.restrictionSnapshot(nativeWithPrototype),null);
+assert.deepEqual(a.auditRestrictionPreservation(nativeWithPrototype).entries[0].issues,[
+ {field:'SegmentRestriction',reason:'preservation_snapshot_object'},
+ {field:'editable',reason:'preservation_field_permission'}
+]);
+const sparseFrames={restrictions:[{...publicRestriction,timeFrames:Array(2)}]};
+assert.equal(a.restrictionSnapshot(sparseFrames),null);
+assert.deepEqual(a.auditRestrictionPreservation(sparseFrames).entries[0].issues,[
+ {field:'timeFrames',reason:'preservation_snapshot_array'}
+]);
 const opaqueRestriction={...publicRestriction,editable:false,disposition:'RIGHT_LANE',
  'PRIVATE-KEY-PAYLOAD':true,timeFrames:[{...publicFrame,weekdays:127,daysOfMonth:'EVEN_DAYS'}],
  vehicleRules:{BLOCKED:[{...publicSoleRule,minPassengers:1,numPassengers:2,

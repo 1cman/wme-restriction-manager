@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.29
+// @version      4.0.0-alpha.30
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.29";
+    const VERSION = "4.0.0-alpha.30";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -49,6 +49,12 @@
     const SDK_MIN_PASSENGERS = [0,2,3,4];
     const SDK_TIME_FRAME_FIELDS = ["startDate","endDate","fromTime","toTime","weekdays","timeZone",
         "repeatYearly","dayAlternation"];
+    const SDK_RESTRICTION_FIELDS = ["defaultType","description","direction","laneScope","laneType",
+        "timeFrames","vehicleRules","disposition","driveProfiles","editable","isExpired"];
+    const SDK_VEHICLE_RULE_FIELDS = ["licensePlateRule","licensePlateNumber","minPassengers",
+        "numPassengers","subscriptions","vehicleTypes"];
+    const PRESERVATION_PATH_FIELDS = new Set([...SDK_RESTRICTION_FIELDS,...SDK_VEHICLE_RULE_FIELDS,
+        ...SDK_TIME_FRAME_FIELDS,"daysOfMonth","FREE","BLOCKED","TOLL"]);
     const OVERRIDE_TYPES = Object.freeze({BLOCKED:"FREE",ALLOWED:"FREE",TOLL:"FREE"});
     // Visual cues inspired by WME restriction categories (not exact sampled native colors).
     // Only the restriction-kind step uses these colors; selection semantics stay unchanged.
@@ -92,7 +98,7 @@
         conversion_conditions:["Combinazione e precedenza delle condizioni pass/occupanti da verificare.","Permit/occupancy condition combination and precedence unverified.","Conditions permis/occupants à vérifier.","Combinación permiso/ocupantes sin verificar.","Kombination von Berechtigungen/Insassen ungeprüft.","Combinação de autorizações/ocupantes por verificar."],
         conversion_engine:["Codici SDK dei motori e condizioni sperimentali non verificati.","Experimental engine rules and SDK codes unverified.","Codes moteur expérimentaux non vérifiés.","Códigos de motor experimentales sin verificar.","Experimentelle Motorcodes ungeprüft.","Códigos experimentais de motor por verificar."],
         conversion_toll_atomic:["Impostazione pedaggio per entrambi i sensi ed esenzione da applicare con controllo unitario.","Both-direction toll flag and exemption need coordinated verification.","Péage bidirectionnel et exemption à vérifier ensemble.","Peaje bidireccional y exención necesitan revisión conjunta.","Maut in beiden Richtungen und Befreiung gemeinsam prüfen.","Portagem nos dois sentidos e isenção exigem verificação conjunta."],
-        conversion_unknown:["Dati SDK esistenti mancanti: impossibile validare la conservazione.","Existing SDK data missing; preservation cannot be validated.","Données SDK existantes manquantes.","Faltan datos SDK existentes.","Bestehende SDK-Daten fehlen.","Dados SDK existentes em falta."],
+        conversion_unknown:["Verifica dei dati SDK esistenti incompleta.","Existing SDK data review is incomplete.","Vérification des données SDK existantes incomplète.","Revisión de los datos SDK existentes incompleta.","Prüfung vorhandener SDK-Daten unvollständig.","Verificação dos dados SDK existentes incompleta."],
         conversion_overbudget:["Stima SAFE12 oltre il limite: rivedere il calendario.","SAFE12 estimate exceeds the limit; revise the schedule.","Estimation SAFE12 au-dessus de la limite.","Estimación SAFE12 sobre el límite.","SAFE12-Schätzung überschreitet das Limit.","Estimativa SAFE12 acima do limite."],
         conversion_country:["Disponibilità e permessi locali del Paese/segmento da verificare.","Country/segment rule eligibility and permissions unverified.","Éligibilité du pays/segment à vérifier.","Elegibilidad del país/segmento sin verificar.","Zulässigkeit für Land/Segment ungeprüft.","Elegibilidade do país/segmento por verificar."],
         preservation_title:["Controllo conservazione restrizioni esistenti","Existing restrictions preservation audit","Audit de conservation des restrictions existantes","Auditoría de conservación de restricciones existentes","Prüfung der Erhaltung vorhandener Beschränkungen","Auditoria de preservação das restrições existentes"],
@@ -113,6 +119,12 @@
         preservation_field_shape:["Struttura da verificare","Shape to verify","Structure à vérifier","Estructura por verificar","Struktur prüfen","Estrutura a verificar"],
         preservation_field_alias:["Dato precedente assente dal campo attuale o discordante","Legacy data missing from or different in the current field","Donnée héritée absente du champ actuel ou différente","Dato anterior ausente o distinto en el campo actual","Altdaten fehlen im aktuellen Feld oder weichen ab","Dado antigo ausente ou diferente no campo atual"],
         preservation_field_permission:["Modificabilità da verificare","Editability to verify","Modifiabilité à vérifier","Editabilidad por verificar","Bearbeitbarkeit prüfen","Editabilidade a verificar"],
+        preservation_snapshot_undefined:["Valore non definito nello SDK","Undefined SDK value","Valeur SDK indéfinie","Valor SDK indefinido","Nicht definierter SDK-Wert","Valor SDK indefinido"],
+        preservation_snapshot_accessor:["Proprietà con accesso dinamico","Accessor property","Propriété avec accesseur","Propiedad con un método de acceso","Zugriffseigenschaft","Propriedade com método de acesso"],
+        preservation_snapshot_cycle:["Riferimento circolare","Circular reference","Référence circulaire","Referencia circular","Zirkulärer Verweis","Referência circular"],
+        preservation_snapshot_object:["Oggetto con prototipo non confrontabile","Object with an unsupported prototype","Objet avec un prototype non pris en charge","Objeto con prototipo no compatible","Objekt mit nicht unterstütztem Prototyp","Objeto com protótipo incompatível"],
+        preservation_snapshot_array:["Elenco non confrontabile per elementi mancanti o proprietà aggiuntive","Array with missing items or additional properties","Liste avec éléments manquants ou propriétés supplémentaires","Lista con elementos ausentes o propiedades adicionales","Liste mit fehlenden Elementen oder zusätzlichen Eigenschaften","Lista com elementos em falta ou propriedades adicionais"],
+        preservation_snapshot_unsupported:["Struttura non confrontabile","Unsupported data structure","Structure de données non comparable","Estructura de datos no comparable","Nicht vergleichbare Datenstruktur","Estrutura de dados não comparável"],
         conversion_preservation_gate:["Verifica di conservazione delle restrizioni esistenti non superata.","Existing restriction preservation has not passed verification.","Vérification de conservation non réussie.","Validación de conservación pendiente.","Erhaltung bestehender Beschränkungen ungeprüft.","Verificação de preservação ainda não concluída."],
         existing_list:["Restrizioni già presenti sul segmento","Existing segment restrictions","Restrictions déjà présentes sur le segment","Restricciones existentes en el segmento","Vorhandene Segmentbeschränkungen","Restrições já presentes no segmento"],
         existing_none:["Nessuna restrizione presente","No existing restrictions","Aucune restriction présente","No hay restricciones","Keine bestehenden Beschränkungen","Nenhuma restrição existente"],
@@ -748,37 +760,61 @@
             unknownFields,conditions,verified:false
         };
     }
-    // Keep the snapshot in memory for comparison only. Reject representations
-    // that JSON would coerce, omit, or evaluate through accessors or toJSON.
-    function nativeDataSnapshot(value) {
+    // Exact snapshots reject opaque data. A diagnostic caller can inspect
+    // the readable own data and receives only redacted paths and reason keys.
+    function copyNativeData(value,report) {
         const ancestors=new WeakSet();
-        const serialize=(item,depth)=>{
+        const reject=(path,reason="preservation_snapshot_unsupported")=>{
+            if(!report)throw Error("Unsupported native data");
+            report({field:path||"SegmentRestriction",reason});
+            return undefined;
+        };
+        const copy=(item,depth,path)=>{
             if(item===null||typeof item==="string"||typeof item==="boolean"||
                Number.isFinite(item))return item;
-            if(typeof item!=="object"||depth>25||ancestors.has(item))
-                throw Error("Unsupported native data");
-            const descriptors=Object.getOwnPropertyDescriptors(item);
+            if(item===undefined)return reject(path,"preservation_snapshot_undefined");
+            if(typeof item!=="object"||depth>25)return reject(path);
+            if(ancestors.has(item))return reject(path,"preservation_snapshot_cycle");
+            let descriptors,isArray,plain=true;
+            try{
+                descriptors=Object.getOwnPropertyDescriptors(item);
+                isArray=Array.isArray(item);
+                if(!isArray){
+                    const prototype=Object.getPrototypeOf(item);
+                    if(prototype){
+                        const ctor=Object.getOwnPropertyDescriptor(prototype,"constructor")?.value;
+                        plain=Object.getPrototypeOf(prototype)===null&&typeof ctor==="function"&&
+                            Object.getOwnPropertyDescriptor(ctor,"name")?.value==="Object";
+                    }
+                }
+            }catch(_){return reject(path);}
+            if(!plain)reject(path,"preservation_snapshot_object");
             const keys=Reflect.ownKeys(descriptors);
-            if(keys.some(key=>typeof key!=="string"||!("value" in descriptors[key])))
-                throw Error("Unsupported native properties");
+            const property=(descriptor,field)=>{
+                if(!descriptor)return reject(field,"preservation_snapshot_array");
+                if(!("value" in descriptor))return reject(field,"preservation_snapshot_accessor");
+                return copy(descriptor.value,depth+1,field);
+            };
+            const length=descriptors.length?.value;
+            if(isArray&&keys.length!==length+1)return reject(path,"preservation_snapshot_array");
             ancestors.add(item);
-            let serialized;
-            if(Array.isArray(item)){
-                if(keys.length!==item.length+1)throw Error("Unsupported native array");
-                serialized=Array.from({length:item.length},(_,index)=>
-                    serialize(descriptors[index]?.value,depth+1));
+            let result;
+            if(isArray){
+                result=Array.from({length},(_,index)=>property(descriptors[index],path+"["+index+"]"));
             }else{
-                const prototype=Object.getPrototypeOf(item);
-                if(prototype&&(Object.getPrototypeOf(prototype)!==null||
-                   Object.getOwnPropertyDescriptor(prototype,"constructor")?.value?.name!=="Object"))
-                    throw Error("Unsupported native object");
-                serialized=Object.fromEntries(keys.sort().map(key=>
-                    [key,serialize(descriptors[key].value,depth+1)]));
+                if(keys.some(key=>typeof key==="symbol"))reject(path);
+                result=Object.fromEntries(keys.filter(key=>typeof key==="string").sort().map(key=>{
+                    const token=PRESERVATION_PATH_FIELDS.has(key)?key:"[…]";
+                    return [key,property(descriptors[key],path?path+"."+token:token)];
+                }));
             }
             ancestors.delete(item);
-            return serialized;
+            return result;
         };
-        return JSON.stringify(serialize(value,0));
+        return copy(value,0,"");
+    }
+    function nativeDataSnapshot(value) {
+        return JSON.stringify(copyNativeData(value));
     }
     function compareLegacyVehicleRules(current,legacy) {
         if(legacy==null)return "ABSENT";
@@ -989,8 +1025,7 @@
                 if(!valid)flag(prefix+field);
             }
         };
-        if(outside(rule,["defaultType","description","direction","laneScope","laneType","timeFrames",
-            "vehicleRules","disposition","driveProfiles","editable","isExpired"]))
+        if(outside(rule,SDK_RESTRICTION_FIELDS))
             flag("SegmentRestriction","preservation_field_outside");
         if(rule.editable!==true)flag("editable","preservation_field_permission");
         check("",[
@@ -1018,8 +1053,7 @@
                 for(const [index,row] of group.entries()){
                     const path="vehicleRules."+expected+"["+index+"]";
                     if(!record(row)){flag(path);continue;}
-                    if(outside(row,["licensePlateRule","licensePlateNumber","minPassengers","numPassengers",
-                        "subscriptions","vehicleTypes"]))flag(path,"preservation_field_outside");
+                    if(outside(row,SDK_VEHICLE_RULE_FIELDS))flag(path,"preservation_field_outside");
                     check(path+".",[
                         ["minPassengers",SDK_MIN_PASSENGERS.includes(row.minPassengers)],
                         ["licensePlateRule",row.licensePlateRule===null||isSdkPlateRule(row.licensePlateRule)],
@@ -1070,17 +1104,18 @@
         let frameCount=0,nonEditable=0,editabilityUnknown=0,
             opaqueVehicleRules=0,legacyFields=0,incomplete=0;
         for(let index=0;index<rows.length;index++){
-            const r=Object.getOwnPropertyDescriptor(rows,index)?.value;
-            const unavailable={index:index+1,issues:[{
-                field:"SegmentRestriction",reason:"preservation_unknown"
-            }]};
-            if(!snapshotAvailable){
-                try{nativeDataSnapshot(r);}catch(_){entries.push(unavailable);continue;}
-            }
+            const native=Object.getOwnPropertyDescriptor(rows,index)?.value;
+            const issues=[];
+            const r=snapshotAvailable?native:copyNativeData(native,issue=>{
+                if(!issues.some(other=>other.field===issue.field&&other.reason===issue.reason))issues.push(issue);
+            });
+            entries.push({index:index+1,issues});
             if(!r||typeof r!=="object"||Array.isArray(r)){
-                incomplete++;entries.push(unavailable);continue;
+                if(!issues.length)issues.push({field:"SegmentRestriction",reason:"preservation_unknown"});
+                incomplete++;continue;
             }
-            entries.push({index:index+1,issues:inspectRestrictionUpdateShape(r)});
+            const failedFields=new Set(issues.map(issue=>issue.field));
+            issues.push(...inspectRestrictionUpdateShape(r).filter(issue=>!failedFields.has(issue.field)));
             if(r.editable===false)nonEditable++;
             else if(r.editable!==true)editabilityUnknown++;
             if(!Array.isArray(r.timeFrames)||!["BLOCKED","FREE","TOLL"].includes(r.defaultType)||
