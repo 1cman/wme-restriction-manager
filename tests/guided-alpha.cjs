@@ -542,6 +542,58 @@ assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines
 }),{count:4,rows:[unpairedEngine(1,'native_engine_pair_ambiguous'),unpairedEngine(2,'native_engine_pair_ambiguous')],
  internalRows:[internalMatch,{...internalMatch,index:2}]},
  'Equal row counts and same direction do not resolve ambiguous association');
+
+const sdkCalendar=Object.freeze({startDate:'2026-11-25',endDate:'2026-12-25',
+ fromTime:'22:00',toTime:'06:00',repeatYearly:false,dayAlternation:'EVEN_DAYS',
+ weekdays:Object.freeze(['SUNDAY','MONDAY']),timeZone:'Europe/Rome'});
+const nativeCalendar=Object.freeze({startDate:sdkCalendar.startDate,endDate:sdkCalendar.endDate,
+ fromTime:sdkCalendar.fromTime,toTime:sdkCalendar.toTime,repeatYearly:false,
+ daysOfMonth:715827882,weekdays:65,timeZone:sdkCalendar.timeZone});
+const nativeCalendarRow=timeFrames=>({toJSON:()=>({direction:'FWD',defaultType:'FREE',
+ disposition:1,timeFrames})});
+const compareCalendar=(sdkFrames,internalFrames)=>a.inspectInternalCalendarPreservation(
+ rawSegmentWith([nativeCalendarRow(internalFrames)]),
+ {id:1,restrictions:[{...sdkEngineRow,timeFrames:sdkFrames}]})[0];
+const calendarMatch={index:1,status:'MATCH',frameCount:1,fields:[],timeZones:['Europe/Rome']};
+assert.deepEqual(compareCalendar([sdkCalendar],[nativeCalendar]),calendarMatch,
+ 'Native weekday bits start with Monday, regardless of SDK array order');
+assert.deepEqual(compareCalendar([{...sdkCalendar,timeZone:null,dayAlternation:'ODD_DAYS',
+ weekdays:a.WEEKDAYS}], [{...nativeCalendar,timeZone:null,daysOfMonth:1431655765,weekdays:null}]),
+ {...calendarMatch,timeZones:[null]},'Native null weekdays mean all days, and a null zone is left unset');
+assert.deepEqual(compareCalendar([{...sdkCalendar,weekdays:[]}],[{...nativeCalendar,weekdays:0}]),
+ calendarMatch,'Zero weekday bits mean an empty SDK list');
+assert.deepEqual(compareCalendar([{...sdkCalendar,weekdays:[]}],[{...nativeCalendar,weekdays:127}]),
+ {...calendarMatch,status:'DIFFERENT',fields:['timeFrames[0].weekdays']});
+assert.deepEqual(compareCalendar([sdkCalendar],[{...nativeCalendar,weekdays:128,daysOfMonth:1}]),
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].weekdays','timeFrames[0].dayAlternation']});
+assert.deepEqual(compareCalendar([{...sdkCalendar,weekdays:['MONDAY','MONDAY']}],[nativeCalendar]),
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].weekdays']});
+assert.deepEqual(compareCalendar([sdkCalendar],[{...nativeCalendar,timeZone:'America/Los_Angeles'}]),
+ {...calendarMatch,status:'DIFFERENT',fields:['timeFrames[0].timeZone'],timeZones:[]});
+assert.deepEqual(compareCalendar([sdkCalendar],
+ [{...nativeCalendar,startDate:'2026-11-24',toTime:'05:00',repeatYearly:true}]),
+ {...calendarMatch,status:'DIFFERENT',fields:['timeFrames[0].startDate','timeFrames[0].toTime',
+  'timeFrames[0].repeatYearly']});
+assert.deepEqual(compareCalendar([sdkCalendar],
+ [{...nativeCalendar,endDate:'2026-11-31',weekdays:undefined}]),
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].endDate','timeFrames[0].weekdays']});
+const opaqueZone='PRIVATE-UNVERIFIED-ZONE';
+const redactedCalendar=compareCalendar([{...sdkCalendar,timeZone:opaqueZone}],
+ [{...nativeCalendar,timeZone:opaqueZone}]);
+assert.deepEqual(redactedCalendar,
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].timeZone'],timeZones:[]});
+assert.doesNotMatch(JSON.stringify(redactedCalendar),/PRIVATE/);
+assert.deepEqual(compareCalendar([sdkCalendar],null),
+ {...calendarMatch,status:'UNKNOWN',frameCount:null,fields:['timeFrames'],timeZones:[]});
+assert.deepEqual(compareCalendar([sdkCalendar],[]),
+ {...calendarMatch,status:'DIFFERENT',frameCount:null,fields:['timeFrames'],timeZones:[]});
+assert.deepEqual(compareCalendar([],[]),{...calendarMatch,frameCount:0,timeZones:[]});
+const noCalendarPair=a.inspectInternalCalendarPreservation(
+ rawSegmentWith([nativeCalendarRow([nativeCalendar]),nativeCalendarRow([nativeCalendar])]),
+ {id:1,restrictions:Array.from({length:2},()=>({...sdkEngineRow,timeFrames:[sdkCalendar]}))});
+assert.deepEqual(noCalendarPair.map(({status,reason,timeZones})=>({status,reason,timeZones})),
+ Array.from({length:2},()=>({status:'UNPAIRED',reason:'native_engine_pair_ambiguous',timeZones:[]})));
+
 assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType))'),
  'Date and time screen must include red, green and blue');
 assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),

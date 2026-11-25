@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.35
+// @version      4.0.0-alpha.36
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.35";
+    const VERSION = "4.0.0-alpha.36";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -266,6 +266,13 @@
         before_after_retained:["Restrizioni da conservare nella bozza","Restrictions to retain in the draft","Restrictions à conserver dans le brouillon","Restricciones que se conservarían en el borrador","Im Entwurf zu erhaltende Beschränkungen","Restrições a conservar no rascunho"],
         before_after_unknown:["Elenco delle restrizioni da conservare non disponibile.","List of restrictions to retain unavailable.","Liste des restrictions à conserver indisponible.","Lista de restricciones que se conservarían no disponible.","Liste der zu erhaltenden Beschränkungen nicht verfügbar.","Lista de restrições a conservar indisponível."],
         before_after_addition:["Aggiunta prevista","Proposed addition","Ajout prévu","Adición prevista","Geplanter Zusatz","Adição prevista"],
+        calendar_read_check:["Confronta calendario SDK e modello interno","Compare SDK and internal calendars","Comparer les calendriers SDK et interne","Comparar los calendarios del SDK y del modelo interno","SDK-Kalender mit internem Modell vergleichen","Comparar os calendários do SDK e do modelo interno"],
+        calendar_read_match:["I campi del calendario coincidono","Calendar fields match","Les champs du calendrier concordent","Los campos del calendario coinciden","Kalenderfelder stimmen überein","Os campos do calendário coincidem"],
+        calendar_read_different:["Differenze nei campi del calendario","Calendar fields differ","Les champs du calendrier diffèrent","Los campos del calendario difieren","Kalenderfelder unterscheiden sich","Os campos do calendário diferem"],
+        calendar_read_unknown:["Confronto del calendario incompleto","Calendar comparison incomplete","Comparaison du calendrier incomplète","Comparación del calendario incompleta","Kalendervergleich unvollständig","Comparação do calendário incompleta"],
+        calendar_recorded_zone:["Fuso orario registrato nelle fasce esistenti","Time zone recorded in existing periods","Fuseau horaire enregistré dans les plages existantes","Zona horaria registrada en los intervalos existentes","Gespeicherte Zeitzone der vorhandenen Zeitfenster","Fuso horário registado nos períodos existentes"],
+        calendar_draft_zone:["Fuso orario della bozza","Draft time zone","Fuseau horaire du brouillon","Zona horaria del borrador","Zeitzone des Entwurfs","Fuso horário do rascunho"],
+        calendar_zone_unset:["Non impostato","Unset","Non défini","Sin definir","Nicht eingestellt","Por definir"],
         budget_existing:["Restrizioni già presenti","Existing restrictions","Restrictions existantes","Restricciones existentes","Bestehende Beschränkungen","Restrições existentes"],
         budget_existing_frames:["Definizioni temporali già presenti","Existing time-frame definitions","Définitions horaires existantes","Definiciones temporales existentes","Bestehende Zeitdefinitionen","Definições temporais existentes"],
         budget_new:["Restrizioni proposte","Proposed restrictions","Restrictions proposées","Restricciones propuestas","Vorgeschlagene Beschränkungen","Restrições propostas"],
@@ -681,19 +688,17 @@
     function countInternalEngineConditions(page,segmentId) {
         return readInternalEngineRows(page,segmentId)?.count??null;
     }
-    // Use the stable's public/private read comparison. Only status and counts
-    // leave this function, and its findings do not change the preservation gate.
-    function inspectInternalEnginePreservation(page,segment) {
-        const read=readInternalEngineRows(page,segment?.id);
-        const native=read?.rows;
-        const sdk=segment?.restrictions;
-        const count=read?.count??null;
-        const raw=(native??[]).map(row=>{
+    function readInternalRestrictionJson(restrictions) {
+        if(!Array.isArray(restrictions))return null;
+        return Array.from(restrictions,restriction=>{
             try{
-                const record=row.restriction?.toJSON?.();
+                const record=restriction?.toJSON?.();
                 return record&&typeof record==="object"&&!Array.isArray(record)?record:null;
             }catch(_){return null;}
         });
+    }
+    function pairInternalRestrictionRows(sdk,raw) {
+        if(!Array.isArray(sdk))return [];
         // Missing private identity fields limit pairing to what both models
         // expose. A match must be unique in both directions.
         const decodeLane=(value,codes)=>typeof value==="number"?codes[value]??value:value;
@@ -710,6 +715,41 @@
             if(laneType!=null&&(!INTERNAL_LANE_TYPES.includes(laneType)||laneType!==visible.laneType))fields.push("laneType");
             return fields;
         };
+        const directions=["FWD","REV","BOTH"];
+        return Array.from(sdk,(visible,index)=>{
+            const fallback=(reason,fields=[])=>({index:index+1,reason,fields});
+            try{
+                if(!raw)return fallback("native_engine_pair_model");
+                if(raw.length!==sdk.length)return fallback("native_engine_pair_count");
+                // An unreadable private identity could also match this SDK row.
+                if(raw.some(record=>!record))return fallback("native_engine_pair_json");
+                if(visible?.direction==null||raw.some(record=>record.direction==null))
+                    return fallback("native_engine_pair_direction_missing");
+                if(!directions.includes(visible?.direction)||raw.some(record=>!directions.includes(record.direction)))
+                    return fallback("native_engine_pair_direction");
+                const checks=raw.map((record,position)=>({position,fields:differences(record,visible)}));
+                const candidates=checks.filter(check=>!check.fields.length).map(check=>check.position);
+                if(!candidates.length){
+                    const sameDirection=checks.filter(check=>!check.fields.includes("direction"));
+                    const fields=sameDirection.length?[...new Set(sameDirection.flatMap(check=>check.fields))]:["direction"];
+                    return fallback("native_engine_pair_fields",fields);
+                }
+                if(candidates.length>1)return fallback("native_engine_pair_ambiguous");
+                const [position]=candidates;
+                if(sdk.filter(entry=>entry&&!differences(raw[position],entry).length).length!==1)
+                    return fallback("native_engine_pair_ambiguous");
+                return {index:index+1,position};
+            }catch(_){return fallback("native_engine_pair_unreadable");}
+        });
+    }
+    // Use the stable's public/private read comparison. Only status and counts
+    // leave this function, and its findings do not change the preservation gate.
+    function inspectInternalEnginePreservation(page,segment) {
+        const read=readInternalEngineRows(page,segment?.id);
+        const native=read?.rows;
+        const sdk=segment?.restrictions;
+        const count=read?.count??null;
+        const raw=readInternalRestrictionJson(native?.map(row=>row.restriction));
         const stamp=data=>{
             if(!data||typeof data!=="object"||Array.isArray(data))throw Error("Missing engine condition");
             const {vehicleType,engineType,operator}=data;
@@ -740,36 +780,84 @@
         };
         const internal=(native??[]).map((row,index)=>({index:index+1,count:countEngineProfiles(row.profiles),
             status:comparison(row.profiles,raw[index])}));
-        if(!Array.isArray(sdk))return {count,rows:[],internalRows:internal};
         const paired=new Set();
-        const directions=["FWD","REV","BOTH"];
-        const rows=Array.from(sdk,(visible,index)=>{
-            const fallback=(reason,fields=[])=>({index:index+1,count:null,status:"UNPAIRED",reason,fields});
-            try{
-                if(!native)return fallback("native_engine_pair_model");
-                if(native.length!==sdk.length)return fallback("native_engine_pair_count");
-                // An unreadable private identity could also match this SDK row.
-                if(raw.some(record=>!record))return fallback("native_engine_pair_json");
-                if(visible?.direction==null||raw.some(record=>record.direction==null))
-                    return fallback("native_engine_pair_direction_missing");
-                if(!directions.includes(visible?.direction)||raw.some(record=>!directions.includes(record.direction)))
-                    return fallback("native_engine_pair_direction");
-                const checks=raw.map((record,position)=>({position,fields:differences(record,visible)}));
-                const candidates=checks.filter(check=>!check.fields.length).map(check=>check.position);
-                if(!candidates.length){
-                    const sameDirection=checks.filter(check=>!check.fields.includes("direction"));
-                    const fields=sameDirection.length?[...new Set(sameDirection.flatMap(check=>check.fields))]:["direction"];
-                    return fallback("native_engine_pair_fields",fields);
-                }
-                if(candidates.length>1)return fallback("native_engine_pair_ambiguous");
-                const [position]=candidates;
-                if(sdk.filter(entry=>entry&&!differences(raw[position],entry).length).length!==1)
-                    return fallback("native_engine_pair_ambiguous");
-                paired.add(position);
-                return {...internal[position],index:index+1};
-            }catch(_){return fallback("native_engine_pair_unreadable");}
+        const rows=pairInternalRestrictionRows(sdk,raw).map(({index,position,reason,fields})=>{
+            if(reason)return {index,count:null,status:"UNPAIRED",reason,fields};
+            paired.add(position);
+            return {...internal[position],index};
         });
         return {count,rows,internalRows:internal.filter((_,position)=>!paired.has(position))};
+    }
+    function isRecordedTimeZone(value) {
+        if(typeof value!=="string"||!/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(value))
+            return false;
+        try{Intl.DateTimeFormat("en",{timeZone:value});return true;}catch(_){return false;}
+    }
+    function compareInternalCalendarFrames(visible,record) {
+        const result={status:"UNKNOWN",frameCount:null,fields:[],timeZones:[]};
+        try{
+            const sdk=visible.timeFrames,raw=record.timeFrames;
+            if(!Array.isArray(sdk)||!Array.isArray(raw))
+                return {...result,fields:["timeFrames"]};
+            if(sdk.length!==raw.length)
+                return {...result,status:"DIFFERENT",fields:["timeFrames"]};
+            result.frameCount=sdk.length;
+            const zones=new Set();
+            let unreadable=false;
+            for(let i=0;i<sdk.length;i++){
+                const frame=sdk[i],stored=raw[i];
+                const path="timeFrames["+i+"]";
+                if(!frame||typeof frame!=="object"||Array.isArray(frame)||
+                   !stored||typeof stored!=="object"||Array.isArray(stored)){
+                    unreadable=true;
+                    result.fields.push(path);
+                    continue;
+                }
+                const check=(field,actual,expected,valid)=>{
+                    if(!valid)unreadable=true;
+                    if(!valid||actual!==expected)result.fields.push(path+"."+field);
+                    return valid&&actual===expected;
+                };
+                for(const [field,validate] of [
+                    ["startDate",isScheduleDate],["endDate",isScheduleDate],
+                    ["fromTime",isScheduleTime],["toTime",isScheduleTime],
+                    ["repeatYearly",value=>typeof value==="boolean"],["timeZone",isRecordedTimeZone]
+                ]){
+                    const actual=frame[field],expected=stored[field]??null;
+                    const valid=(actual===null||validate(actual))&&(expected===null||validate(expected));
+                    if(check(field,actual,expected,valid)&&field==="timeZone")zones.add(actual);
+                }
+                // Observed in the Standard and Beta bundles: Monday is bit 0,
+                // Sunday is bit 6, and null is read as the full week.
+                const days=Array.isArray(frame.weekdays)?Array.from(frame.weekdays):null;
+                const sdkMask=days&&days.every(day=>WEEKDAYS.includes(day))&&new Set(days).size===days.length?
+                    days.reduce((mask,day)=>mask|(1<<WEEKDAYS.indexOf(day)),0):null;
+                const rawMask=stored.weekdays===null?127:stored.weekdays;
+                check("weekdays",sdkMask,rawMask,sdkMask!==null&&Number.isInteger(rawMask)&&
+                    rawMask>=0&&rawMask<=127);
+                // The public dayAlternation field is the current SDK name.
+                // Unknown private masks must not be mistaken for its null value.
+                const alternation=stored.daysOfMonth??null;
+                const expected=alternation===715827882?"EVEN_DAYS":
+                    alternation===1431655765?"ODD_DAYS":null;
+                check("dayAlternation",frame.dayAlternation,expected,
+                    [null,"EVEN_DAYS","ODD_DAYS"].includes(frame.dayAlternation)&&
+                    (alternation===null||expected!==null));
+            }
+            return {...result,status:unreadable?"UNKNOWN":result.fields.length?"DIFFERENT":"MATCH",
+                timeZones:[...zones]};
+        }catch(_){return {...result,fields:["timeFrames"]};}
+    }
+    // Opt-in read comparison. The SDK remains the input to the wizard;
+    // the private JSON never supplies a proposed zone or a write payload.
+    function inspectInternalCalendarPreservation(page,segment) {
+        let raw=null;
+        try{raw=readInternalRestrictionJson(internalSegmentRestrictions(page,segment?.id));}catch(_){}
+        const sdk=segment?.restrictions;
+        return pairInternalRestrictionRows(sdk,raw).map(({index,position,reason,fields})=>{
+            if(reason)return {index,status:"UNPAIRED",reason,fields,frameCount:null,timeZones:[]};
+            return {index,...compareInternalCalendarFrames(sdk[index-1],raw[position])};
+        });
     }
     function normalizeVehicleRules(types,rules,permits) {
         const chosen=selectedVehicleTypes(types);
@@ -1440,7 +1528,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1870,6 +1958,26 @@
             details.append(heading,node("h4",tr("before_after_before")));
             if(preview.before===null)details.append(node("p",tr("existing_unknown")));
             else details.append(renderExistingRestrictionList(current.segment,false));
+            if(preview.before?.length){
+                const result=node("div");
+                result.setAttribute("role","status");
+                details.append(button(tr("calendar_read_check"),()=>{
+                    const rows=inspectInternalCalendarPreservation(page,current.segment);
+                    result.replaceChildren();
+                    for(const row of rows){
+                        const status={MATCH:"calendar_read_match",DIFFERENT:"calendar_read_different",
+                            UNKNOWN:"calendar_read_unknown",UNPAIRED:"native_engine_unpaired"}[row.status];
+                        const count=row.frameCount===null?"":" · "+tr("existing_times")+": "+row.frameCount;
+                        const reason=row.reason?" · "+tr(row.reason):"";
+                        const fields=row.fields.length?" ("+row.fields.join(", ")+")":"";
+                        result.append(node("p",tr("existing_rule")+" "+row.index+" · "+tr(status)+count+reason+fields));
+                        if(row.timeZones.length){
+                            const zones=row.timeZones.map(zone=>zone??tr("calendar_zone_unset"));
+                            result.append(node("p",tr("calendar_recorded_zone")+" · "+zones.join(", ")));
+                        }
+                    }
+                }),result);
+            }
             details.append(node("h4",tr("before_after_after")));
             const retained=preview.after.retained;
             if(retained===null)details.append(node("p",tr("before_after_unknown")));
@@ -1889,7 +1997,7 @@
                 details.append(node("p",tr("conversion_overrides")+" · "+conversion.overrideType+" · "+types.join(", ")));
             }
             for(const frame of preview.after.additions)additions.append(node("li",formatScheduleFrame(frame)));
-            details.append(additions);
+            details.append(additions,node("p",tr("calendar_draft_zone")+" · "+tr("calendar_zone_unset")));
             if(conversion.plannedHasToll===true)details.append(node("p",tr("toll_both_directions")));
             return details;
         }
