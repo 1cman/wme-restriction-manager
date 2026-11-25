@@ -842,7 +842,7 @@ assert.deepEqual(listed.entries[0],{
  laneType:null,editable:true,expired:false,description:'Evening rule',
  frames:[{startDate:'2026-12-01',endDate:'2026-12-31',
   fromTime:'08:00',toTime:'11:00',weekdays:['MONDAY','FRIDAY'],
-  timeZone:'Europe/Rome'}],framesKnown:true,
+  timeZone:'Europe/Rome',repeatYearly:null,dayAlternation:null,reviewRequired:false}],framesKnown:true,
  ruleGroups:['BLOCKED'],verified:false
 });
 assert.equal(JSON.stringify(existingBase),beforeExisting,
@@ -898,6 +898,36 @@ const overnightTime={...existingBase,restrictions:[{...existingBase.restrictions
  timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
  fromTime:'22:00',toTime:'06:00'}]}]};
 verify(overnightTime,draftOverlap,scheduleOverlap,'UNKNOWN');
+const reviewFrame=(fields,schedule=scheduleOverlap,status='UNKNOWN')=>{
+ const native={...existingBase.restrictions[0].timeFrames[0],...fields};
+ const segment={...existingBase,restrictions:[{...existingBase.restrictions[0],timeFrames:[native]}]};
+ verify(segment,draftOverlap,schedule,status);
+ return a.listExistingRestrictions(segment).entries[0].frames[0];
+};
+const recurring=reviewFrame({startDate:'2024-12-01',endDate:'2024-12-31',repeatYearly:true});
+assert.equal(recurring.repeatYearly,true);
+assert.equal(recurring.reviewRequired,true,'Annual recurrence cannot be excluded by comparing absolute dates');
+for(const fields of [
+ {dayAlternation:'EVEN_DAYS'}, {daysOfMonth:'EVEN_DAYS'},
+ {dayAlternation:'EVEN_DAYS',daysOfMonth:'EVEN_DAYS'}
+]){
+ const alternation=reviewFrame(fields);
+ assert.equal(alternation.dayAlternation,'EVEN_DAYS');
+ assert.equal(alternation.reviewRequired,true);
+}
+assert.equal(reviewFrame({dayAlternation:'ODD_DAYS',daysOfMonth:'EVEN_DAYS'}).dayAlternation,null);
+assert.equal(reviewFrame({dayAlternation:null,daysOfMonth:'EVEN_DAYS'}).dayAlternation,null);
+assert.equal(reviewFrame({weekdays:127}).weekdays,'127');
+assert.equal(reviewFrame({weekdays:null}).reviewRequired,true);
+assert.equal(reviewFrame({fromTime:{hour:8},toTime:null}).reviewRequired,true);
+assert.equal(reviewFrame({someNewCalendarAttribute:true}).reviewRequired,true);
+assert.equal(reviewFrame({weekdays:['MONDAY'],fromTime:'22:00',toTime:'06:00'},
+ {...scheduleOverlap,weekdays:['TUESDAY'],slots:[{fromTime:'01:00',toTime:'02:00'}]}).reviewRequired,true,
+ 'A next-day portion of an overnight frame cannot be excluded by comparing weekday labels');
+assert.equal(reviewFrame({fromTime:'10:00',toTime:'13:00'}).reviewRequired,false,
+ 'Touching time boundaries remain uncertain even when both windows have a supported shape');
+assert.equal(reviewFrame({repeatYearly:false,dayAlternation:null,daysOfMonth:null},
+ scheduleOverlap,'POTENTIAL_CONFLICT').reviewRequired,false);
 verify({...existingBase,restrictions:[]},draftOverlap,scheduleOverlap,'NONE');
 verify({id:77,isAtoB:true,restrictions:null},draftOverlap,scheduleOverlap,'UNKNOWN');
 const mixedExisting={...existingBase,restrictions:[

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.24
+// @version      4.0.0-alpha.25
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.24";
+    const VERSION = "4.0.0-alpha.25";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -114,6 +114,9 @@
         existing_lane:["Tipo di corsia","Lane type","Type de voie","Tipo de carril","Fahrstreifentyp","Tipo de via"],
         existing_times:["Validità temporale","Time validity","Validité temporelle","Validez temporal","Zeitliche Gültigkeit","Validade temporal"],
         existing_weekdays:["Giorni SDK","SDK weekdays","Jours SDK","Días SDK","SDK-Wochentage","Dias SDK"],
+        existing_repeat_yearly:["Ripetizione annuale","Repeats yearly","Répétition annuelle","Repetición anual","Jährliche Wiederholung","Repetição anual"],
+        existing_day_alternation:["Alternanza dei giorni","Day alternation","Alternance des jours","Alternancia de días","Wechsel der Tage","Alternância de dias"],
+        existing_calendar_review:["Validità da verificare nel pannello WME","Check time validity in the WME panel","Vérifier la validité dans le panneau WME","Comprueba la validez en el panel de WME","Gültigkeit im WME-Panel prüfen","Verificar a validade no painel do WME"],
         existing_rules:["Tipi di regole veicolo (non convertite)","Vehicle rule groups (unconverted)","Groupes de règles véhicule (non converties)","Grupos de reglas de vehículo (sin convertir)","Fahrzeugregelgruppen (nicht konvertiert)","Grupos de regras de veículo (não convertidos)"],
         existing_editability:["Modificabilità","Editability","Modifiabilité","Modificabilidad","Bearbeitbarkeit","Editabilidade"],
         existing_expired:["Scaduta","Expired","Expirée","Caducada","Abgelaufen","Expirada"],
@@ -585,6 +588,38 @@
     // SegmentRestriction object as an addable SegmentRestrictionData object.
     // Read only. Data exposed here is taken from the selected SDK Segment.
     // No implicit conversion of vehicle rules or native calendars is attempted.
+    function inspectNativeTimeFrame(frame) {
+        const validObject=frame&&typeof frame==="object"&&!Array.isArray(frame);
+        const data=validObject?frame:{};
+        const fields=["startDate","endDate","fromTime","toTime","weekdays","timeZone",
+            "repeatYearly","dayAlternation","daysOfMonth"];
+        const isIso=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
+            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+        const isTime=value=>typeof value==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+        const asString=value=>typeof value==="string"?value:null;
+        const {startDate,endDate,fromTime,toTime,weekdays,timeZone,repeatYearly}=data;
+        const alternation=data.dayAlternation??data.daysOfMonth??null;
+        const reviewRequired=!validObject||Object.keys(data).some(key=>!fields.includes(key))||
+            (repeatYearly!=null&&repeatYearly!==false)||alternation!==null||
+            [startDate,endDate].some(value=>value!=null&&!isIso(value))||
+            (startDate!=null&&endDate!=null&&startDate>endDate)||
+            !Array.isArray(weekdays)||!weekdays.length||
+            Array.from(weekdays).some(day=>!WEEKDAYS.includes(day))||
+            ((fromTime!=null||toTime!=null)&&(!isTime(fromTime)||!isTime(toTime)||fromTime>=toTime))||
+            (timeZone!=null&&(typeof timeZone!=="string"||!timeZone));
+        const alternationAgrees=!Object.hasOwn(data,"dayAlternation")||
+            !Object.hasOwn(data,"daysOfMonth")||data.dayAlternation===data.daysOfMonth;
+        return {
+            startDate:asString(startDate),endDate:asString(endDate),
+            fromTime:asString(fromTime),toTime:asString(toTime),
+            weekdays:Array.isArray(weekdays)?Array.from(weekdays,asString):
+                typeof weekdays==="number"?String(weekdays):asString(weekdays),
+            timeZone:asString(timeZone),repeatYearly:typeof repeatYearly==="boolean"?repeatYearly:null,
+            dayAlternation:alternationAgrees&&["EVEN_DAYS","ODD_DAYS"].includes(alternation)?
+                alternation:null,
+            reviewRequired
+        };
+    }
     function listExistingRestrictions(segment) {
         if(!Array.isArray(segment?.restrictions))
             return {available:false,entries:[],verified:false};
@@ -593,13 +628,7 @@
         return {available:true,verified:false,
             entries:segment.restrictions.map((r,index)=>{
                 const frames=Array.isArray(r?.timeFrames)?
-                    r.timeFrames.map(frame=>({
-                        startDate:primitive(frame?.startDate),endDate:primitive(frame?.endDate),
-                        fromTime:primitive(frame?.fromTime),toTime:primitive(frame?.toTime),
-                        weekdays:Array.isArray(frame?.weekdays)?
-                            frame.weekdays.map(primitive):primitive(frame?.weekdays),
-                        timeZone:primitive(frame?.timeZone)
-                    })):[];
+                    Array.from(r.timeFrames,inspectNativeTimeFrame):[];
                 const groups=r?.vehicleRules&&typeof r.vehicleRules==="object"&&
                     !Array.isArray(r.vehicleRules)?Object.keys(r.vehicleRules).sort():[];
                 return {
@@ -841,30 +870,16 @@
         const targetScope=LANE_SCOPE_CANDIDATES[normalized.scope];
         const directionSet=value=>value==="BOTH"?["FWD","REV"]:
             value==="FWD"||value==="REV"?[value]:null;
-        const isIso=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
-            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
         const windowOverlap=(existing,planned)=>{
-            // Returns false only when a reliable separation is proven.
-            if(!existing||typeof existing!=="object")return null;
-            const dates=[existing.startDate,existing.endDate];
-            if(dates.some(x=>x!==null&&x!==undefined&&!isIso(x)))return null;
-            const begin=existing.startDate??null,finish=existing.endDate??null;
-            if(begin&&finish&&begin>finish)return null;
-            if((finish&&planned.startDate&&finish<planned.startDate)||
-               (planned.endDate&&begin&&planned.endDate<begin))return false;
-            const wk=existing.weekdays;
-            if(Array.isArray(wk)){
-                if(!wk.length||wk.some(x=>!WEEKDAYS.includes(x)))return null;
-                if(!wk.some(x=>planned.weekdays.includes(x)))return false;
-            }else if(wk!==null&&wk!==undefined)return null;
-            else return null; // SDK weekday bitmasks and null meaning unverified.
-            const re=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
-            const eFrom=existing.fromTime??null,eTo=existing.toTime??null;
-            if((eFrom===null)!==(eTo===null))return null;
-            if(eFrom!==null&&(!re.test(eFrom)||!re.test(eTo)||eFrom>=eTo))
-                return null;
-            if(planned.fromTime===null||eFrom===null)return true;
-            return eFrom<planned.toTime&&planned.fromTime<eTo;
+            // Compare simple civil-time windows on this segment only. The
+            // draft time zone and endpoint inclusivity still require WME review.
+            if(existing.reviewRequired)return null;
+            if((existing.endDate&&planned.startDate&&existing.endDate<planned.startDate)||
+               (planned.endDate&&existing.startDate&&planned.endDate<existing.startDate))return false;
+            if(!existing.weekdays.some(day=>planned.weekdays.includes(day)))return false;
+            if(planned.fromTime===null||existing.fromTime===null)return true;
+            if(existing.fromTime===planned.toTime||planned.fromTime===existing.toTime)return null;
+            return existing.fromTime<planned.toTime&&planned.fromTime<existing.toTime;
         };
         const items=listed.entries.map(entry=>{
             const base={index:entry.index,status:"UNKNOWN",reason:"conflict_reason_unknown",
@@ -1253,7 +1268,10 @@
                         frame.weekdays.join(", "):frame.weekdays;
                     const p=node("p",(i+1)+". "+dates+" · "+times+
                         " · "+tr("existing_weekdays")+": "+(weekdays||tr("unknown"))+
-                        " · "+(frame.timeZone||tr("unknown")));
+                        " · "+(frame.timeZone||tr("unknown"))+
+                        (frame.repeatYearly?" · "+tr("existing_repeat_yearly"):"")+
+                        (frame.dayAlternation?" · "+tr("existing_day_alternation")+": "+frame.dayAlternation:"")+
+                        (frame.reviewRequired?" · "+tr("existing_calendar_review"):""));
                     p.style.cssText="margin:4px 0 4px 10px;overflow-wrap:anywhere;font-size:12px;";
                     item.append(p);
                 }
