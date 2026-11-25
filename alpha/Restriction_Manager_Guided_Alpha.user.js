@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.22
+// @version      4.0.0-alpha.23
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.22";
+    const VERSION = "4.0.0-alpha.23";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -150,6 +150,7 @@
         native_types:["Categorie rilevate","Observed vehicle categories","Catégories observées","Categorías observadas","Beobachtete Fahrzeugarten","Categorias observadas"],
         native_passes:["Numero di pass rilevati","Observed permit count","Nombre de permis observés","Número de permisos detectados","Anzahl erkannter Berechtigungen","Quantidade de autorizações detetadas"],
         native_occupants:["Occupanti minimi riportati","Reported minimum occupants","Occupants minimaux déclarés","Ocupantes mínimos indicados","Gemeldete Mindestinsassen","Ocupantes mínimos indicados"],
+        native_occupants_uncertain:["Minimo occupanti da verificare","Minimum occupancy needs review","Minimum d’occupants à vérifier","Mínimo de ocupantes por verificar","Mindestinsassenzahl prüfen","Mínimo de ocupantes a verificar"],
         native_plate:["Condizione targa presente (valore nascosto)","License-plate condition present (value hidden)","Condition plaque présente (valeur masquée)","Condición matrícula presente (valor oculto)","Kennzeichenbedingung vorhanden (Wert verborgen)","Condição de matrícula presente (valor ocultado)"],
         native_engine:["Condizione motore presente (non interpretata)","Engine condition present (not interpreted)","Condition moteur présente (non interprétée)","Condición de motor presente (sin interpretar)","Motorbedingung vorhanden (nicht interpretiert)","Condição de motor presente (não interpretada)"],
         native_other_fields:["Campi non riconosciuti (solo nomi)","Unrecognized fields (names only)","Champs inconnus (noms uniquement)","Campos desconocidos (solo nombres)","Unbekannte Felder (nur Namen)","Campos desconhecidos (apenas nomes)"],
@@ -616,18 +617,19 @@
             })
         };
     }
-    // Conservative physical/temporal overlap check: an UNKNOWN result must
-    // never be promoted to a guarantee that a new restriction is safe.
-    // SDK DriveProfile documentation describes vehicleTypes, subscriptions,
-    // numPassengers and licensePlateNumber. This is a read-only diagnostic, NOT
-    // a claim about the routing engine's boolean condition/precedence semantics.
+    // SDK VehicleRule documents minPassengers and its deprecated alias.
+    // AddableVehicleRule lists 0, 2, 3 and 4. Keep zero uncertain until its
+    // meaning in existing native rules is checked in WME.
     function inspectNativeVehicleCondition(rule) {
         const unknown={status:"UNKNOWN",types:[],passCount:null,
-            minPassengers:null,hasPlate:false,hasEngine:false,
+            minPassengers:null,occupancyFields:[],occupancyStatus:"NOT_REPORTED",
+            hasPlate:false,hasEngine:false,
             unknownFields:[],conditions:[],verified:false};
         if(!rule||typeof rule!=="object"||Array.isArray(rule))return unknown;
+        const passengerKeys=["minPassengers","numPassengers"];
+        const occupancyFields=passengerKeys.filter(key=>Object.hasOwn(rule,key));
         const keys=new Set([
-            "vehicleTypes","subscriptions","numPassengers",
+            "vehicleTypes","subscriptions",...passengerKeys,
             "licensePlateNumber","licensePlateRule","engineType",
             "capacityThreshold","operator","engineCapacities"
         ]);
@@ -638,6 +640,7 @@
         let invalid=!types.length||unknownFields.length>0;
         const conditions=[];
         let passCount=null,minPassengers=null,hasPlate=false,hasEngine=false;
+        let occupancyStatus="NOT_REPORTED";
         if(Object.prototype.hasOwnProperty.call(rule,"subscriptions")&&
            rule.subscriptions!=null){
             if(!Array.isArray(rule.subscriptions)||rule.subscriptions.some(x=>
@@ -647,12 +650,18 @@
                 if(passCount)conditions.push("PASS");
             }
         }
-        if(Object.prototype.hasOwnProperty.call(rule,"numPassengers")&&
-           rule.numPassengers!=null){
-            if(!Number.isSafeInteger(rule.numPassengers)||rule.numPassengers<2)
-                invalid=true; // SDK does not establish 0/1 as unrestricted.
-            else{
-                minPassengers=rule.numPassengers;
+        if(occupancyFields.length){
+            const value=rule[occupancyFields[0]];
+            if(![0,2,3,4].includes(value)||
+               occupancyFields.some(key=>rule[key]!==value)){
+                occupancyStatus="UNKNOWN";
+                invalid=true;
+            }else if(value===0){
+                occupancyStatus="ZERO";
+                invalid=true;
+            }else{
+                occupancyStatus="MINIMUM";
+                minPassengers=value;
                 conditions.push("OCCUPANCY");
             }
         }
@@ -675,7 +684,7 @@
         if(hasEngine)conditions.push("ENGINE");
         return {
             status:invalid?"UNKNOWN":conditions.length?"CONDITIONAL":"UNCONDITIONAL",
-            types,passCount,minPassengers,hasPlate,hasEngine,
+            types,passCount,minPassengers,occupancyFields,occupancyStatus,hasPlate,hasEngine,
             unknownFields,conditions,verified:false
         };
     }
@@ -1209,8 +1218,15 @@
                     (rule.types.join(", ")||tr("unknown")));
                 if(rule.passCount!==null)
                     addText(tr("native_passes")+": "+rule.passCount);
-                if(rule.minPassengers!==null)
-                    addText(tr("native_occupants")+": "+rule.minPassengers);
+                if(rule.occupancyFields.length){
+                    const fields=" ("+rule.occupancyFields.join(" / ")+")";
+                    if(rule.occupancyStatus==="MINIMUM")
+                        addText(tr("native_occupants")+": "+rule.minPassengers+fields);
+                    else if(rule.occupancyStatus==="ZERO")
+                        addText(tr("native_occupants_uncertain")+": 0"+fields);
+                    else
+                        addText(tr("native_occupants_uncertain")+fields);
+                }
                 if(rule.hasPlate)addText(tr("native_plate"));
                 if(rule.hasEngine)addText(tr("native_engine"));
                 if(rule.unknownFields.length)

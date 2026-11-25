@@ -1062,7 +1062,8 @@ const nativeSimple={vehicleTypes:['MOTORCYCLE'],subscriptions:[],
  licensePlateNumber:'',engineCapacities:[]};
 assert.deepEqual(a.inspectNativeVehicleCondition(nativeSimple),{
  status:'UNCONDITIONAL',types:['MOTORCYCLE'],passCount:0,
- minPassengers:null,hasPlate:false,hasEngine:false,
+ minPassengers:null,occupancyFields:[],occupancyStatus:'NOT_REPORTED',
+ hasPlate:false,hasEngine:false,
  unknownFields:[],conditions:[],verified:false
 });
 const nativeResident={vehicleTypes:['PRIVATE'],subscriptions:['SECRET-PASS-ID'],
@@ -1071,6 +1072,8 @@ const residentInspection=a.inspectNativeVehicleCondition(nativeResident);
 assert.equal(residentInspection.status,'CONDITIONAL');
 assert.equal(residentInspection.passCount,1);
 assert.equal(residentInspection.minPassengers,3);
+assert.deepEqual(residentInspection.occupancyFields,['numPassengers']);
+assert.equal(residentInspection.occupancyStatus,'MINIMUM');
 assert.equal(residentInspection.hasPlate,true);
 assert.deepEqual(residentInspection.conditions,['PASS','OCCUPANCY','PLATE']);
 assert.ok(!JSON.stringify(residentInspection).includes('SECRET-PASS-ID'));
@@ -1091,10 +1094,50 @@ const opaqueCondition=a.inspectNativeVehicleCondition({
 });
 assert.equal(opaqueCondition.status,'UNKNOWN');
 assert.deepEqual(opaqueCondition.unknownFields,['mysteryFlag']);
-assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],numPassengers:0}).status,
- 'UNKNOWN','Do not assume zero occupants is an SDK neutral default');
-assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],numPassengers:1}).status,
- 'UNKNOWN','Do not assume one occupant is an SDK neutral default');
+for(const field of ['minPassengers','numPassengers']){
+ const zero=a.inspectNativeVehicleCondition({...nativeSimple,[field]:0});
+ assert.equal(zero.status,'UNKNOWN');
+ assert.equal(zero.occupancyStatus,'ZERO');
+ assert.equal(zero.minPassengers,null);
+ assert.deepEqual(zero.occupancyFields,[field]);
+ assert.deepEqual(zero.unknownFields,[]);
+ assert.deepEqual(zero.conditions,[],'Zero is reported without asserting an occupancy requirement');
+ for(const value of [2,3,4]){
+  const native=a.inspectNativeVehicleCondition({...nativeSimple,[field]:value});
+  assert.equal(native.status,'CONDITIONAL');
+  assert.equal(native.occupancyStatus,'MINIMUM');
+  assert.equal(native.minPassengers,value);
+  assert.deepEqual(native.occupancyFields,[field]);
+  assert.deepEqual(native.unknownFields,[]);
+  assert.deepEqual(native.conditions,['OCCUPANCY']);
+ }
+ for(const value of [1,5,-1,2.5,NaN,Infinity,null,undefined,'2','PRIVATE-VALUE']){
+  const invalid=a.inspectNativeVehicleCondition({...nativeSimple,[field]:value});
+  assert.equal(invalid.status,'UNKNOWN');
+  assert.equal(invalid.occupancyStatus,'UNKNOWN');
+  assert.equal(invalid.minPassengers,null);
+  assert.deepEqual(invalid.unknownFields,[]);
+  assert.deepEqual(invalid.conditions,[]);
+  assert.ok(!JSON.stringify(invalid).includes('PRIVATE-VALUE'));
+ }
+}
+const bothPassengerFields=['minPassengers','numPassengers'];
+for(const value of [0,3]){
+ const matching=a.inspectNativeVehicleCondition({...nativeSimple,numPassengers:value,minPassengers:value});
+ assert.deepEqual(matching.occupancyFields,bothPassengerFields);
+ assert.equal(matching.occupancyStatus,value===0?'ZERO':'MINIMUM');
+ assert.deepEqual(matching.conditions,value===0?[]:['OCCUPANCY']);
+}
+for(const [current,legacy] of [[3,4],[0,2],[2,0],[null,3],[3,undefined]]){
+ const disagreement=a.inspectNativeVehicleCondition({
+  ...nativeSimple,minPassengers:current,numPassengers:legacy
+ });
+ assert.equal(disagreement.status,'UNKNOWN');
+ assert.equal(disagreement.occupancyStatus,'UNKNOWN');
+ assert.equal(disagreement.minPassengers,null);
+ assert.deepEqual(disagreement.occupancyFields,bothPassengerFields);
+ assert.deepEqual(disagreement.conditions,[]);
+}
 assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],subscriptions:[42]}).status,
  'UNKNOWN','Invalid native subscription representation must stay unknown');
 assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:[1024]}).status,'UNKNOWN',
@@ -1127,9 +1170,32 @@ assert.equal(matchingReview.status,'SAME_EFFECT');
 assert.deepEqual(a.inspectNativeVehicleRules(legacyMatchingRestriction),{
  available:true,legacyComparison:'SAME',
  rows:[{group:'FREE',index:1,status:'UNCONDITIONAL',types:['EV'],
-  passCount:0,minPassengers:null,hasPlate:false,hasEngine:false,
+  passCount:0,minPassengers:null,occupancyFields:[],occupancyStatus:'NOT_REPORTED',
+  hasPlate:false,hasEngine:false,
   unknownFields:[],conditions:[],verified:false}],verified:false
 });
+const nativeMotorcycleRule=Object.freeze({
+ vehicleTypes:Object.freeze(['MOTORCYCLE']),subscriptions:Object.freeze([]),minPassengers:0
+});
+const motorcycleGroups=Object.freeze({BLOCKED:Object.freeze([nativeMotorcycleRule])});
+const existingMotorcycleRestriction=Object.freeze({defaultType:'FREE',
+ vehicleRules:motorcycleGroups,driveProfiles:{BLOCKED:[{...nativeMotorcycleRule}]}});
+const motorcycleBefore=JSON.stringify(existingMotorcycleRestriction);
+const motorcycleInspection=a.inspectNativeVehicleRules(existingMotorcycleRestriction);
+assert.equal(motorcycleInspection.legacyComparison,'SAME');
+assert.equal(motorcycleInspection.rows[0].status,'UNKNOWN');
+assert.equal(motorcycleInspection.rows[0].occupancyStatus,'ZERO');
+assert.deepEqual(motorcycleInspection.rows[0].unknownFields,[]);
+const motorcycleReview=a.reviewVehicleConflictEffects(existingMotorcycleRestriction,{
+ defaultType:'FREE',restrictionIntent:'BLOCKED',vehicleTypes:['MOTORCYCLE']
+});
+assert.equal(motorcycleReview.rows.find(row=>row.vehicleType==='MOTORCYCLE').existingEffect,'UNKNOWN');
+assert.equal(motorcycleReview.status,'UNKNOWN');
+assert.equal(motorcycleReview.saveAllowed,false);
+assert.equal(JSON.stringify(existingMotorcycleRestriction),motorcycleBefore);
+assert.equal(a.compareLegacyVehicleRules(motorcycleGroups,{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE'],subscriptions:[],numPassengers:0}]
+}),'DIFFERENT','Structural comparison preserves differences between legacy and current SDK objects');
 assert.equal(a.inspectNativeVehicleRules({vehicleRules:null}).available,false);
 const diagnosticRules={defaultType:'BLOCKED',vehicleRules:{
  FREE:[{vehicleTypes:['EV'],subscriptions:[]},
