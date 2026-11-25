@@ -995,7 +995,7 @@ assert.equal(a.reviewVehicleConflictEffects(existingWithEV,greenDesign).rows
  .find(x=>x.vehicleType==='PRIVATE').relation,'UNKNOWN',
  'Missing green vehicle-specific state must not become a direct authorization');
 const nativeWithConditions={defaultType:'FREE',vehicleRules:{
- BLOCKED:[{vehicleTypes:['MOTORCYCLE'],licensePlateNumber:'0'}]
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE'],licensePlateNumber:'ENDS_WITH_0'}]
 }};
 assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
  draftSimple('MOTORCYCLE')).rows[2].existingEffect,'CONDITIONAL');
@@ -1067,7 +1067,7 @@ assert.deepEqual(a.inspectNativeVehicleCondition(nativeSimple),{
  unknownFields:[],conditions:[],verified:false
 });
 const nativeResident={vehicleTypes:['PRIVATE'],subscriptions:['SECRET-PASS-ID'],
- numPassengers:3,licensePlateNumber:'7'};
+ numPassengers:3,licensePlateNumber:'ENDS_WITH_7'};
 const residentInspection=a.inspectNativeVehicleCondition(nativeResident);
 assert.equal(residentInspection.status,'CONDITIONAL');
 assert.equal(residentInspection.passCount,1);
@@ -1077,7 +1077,7 @@ assert.equal(residentInspection.occupancyStatus,'MINIMUM');
 assert.equal(residentInspection.hasPlate,true);
 assert.deepEqual(residentInspection.conditions,['PASS','OCCUPANCY','PLATE']);
 assert.ok(!JSON.stringify(residentInspection).includes('SECRET-PASS-ID'));
-assert.ok(!JSON.stringify(residentInspection).includes('"7"'));
+assert.ok(!JSON.stringify(residentInspection).includes('ENDS_WITH_7'));
 assert.equal(JSON.stringify(nativeResident).includes('SECRET-PASS-ID'),true,
  'The inspection must not modify the source data');
 const nativeEngine=a.inspectNativeVehicleCondition({
@@ -1199,14 +1199,40 @@ assert.equal(a.compareLegacyVehicleRules(motorcycleGroups,{
 assert.equal(a.inspectNativeVehicleRules({vehicleRules:null}).available,false);
 const diagnosticRules={defaultType:'BLOCKED',vehicleRules:{
  FREE:[{vehicleTypes:['EV'],subscriptions:[]},
-       {vehicleTypes:['PRIVATE'],licensePlateRule:{type:'SUFFIX',value:'9'}}]
+       {vehicleTypes:['PRIVATE'],licensePlateRule:'ENDS_WITH_9'}]
 }};
 const conditionDetails=a.inspectNativeVehicleRules(diagnosticRules);
 assert.equal(conditionDetails.rows.length,2);
 assert.equal(conditionDetails.rows[1].hasPlate,true);
 assert.equal(conditionDetails.rows[1].status,'CONDITIONAL');
-assert.ok(!JSON.stringify(conditionDetails).includes('"9"'),
+assert.ok(!JSON.stringify(conditionDetails).includes('ENDS_WITH_9'),
  'Plate suffix must not appear in a diagnostic JSON object');
+for(const fields of [
+ {licensePlateRule:'ENDS_WITH_0'},
+ {licensePlateNumber:'ENDS_WITH_EVEN'},
+ {licensePlateRule:'ENDS_WITH_ODD',licensePlateNumber:'ENDS_WITH_ODD'}
+]){
+ const plate=a.inspectNativeVehicleCondition({vehicleTypes:['PRIVATE'],...fields});
+ assert.equal(plate.status,'CONDITIONAL');
+ assert.deepEqual(plate.conditions,['PLATE']);
+ assert.equal(plate.hasPlate,true);
+ assert.ok(!JSON.stringify(plate).includes('ENDS_WITH_'));
+}
+for(const fields of [
+ {licensePlateRule:{type:'SUFFIX',value:'PRIVATE-SUFFIX'}},
+ {licensePlateNumber:'7'},
+ {licensePlateRule:'ENDS_WITH_10'},
+ {licensePlateRule:'ENDS_WITH_ODD',licensePlateNumber:'ENDS_WITH_EVEN'},
+ {licensePlateRule:null,licensePlateNumber:'ENDS_WITH_0'}
+]){
+ const plate=a.inspectNativeVehicleCondition({vehicleTypes:['PRIVATE'],...fields});
+ assert.equal(plate.status,'UNKNOWN');
+ assert.equal(plate.hasPlate,true);
+ assert.ok(!JSON.stringify(plate).includes('PRIVATE-SUFFIX'));
+ assert.ok(!JSON.stringify(plate).includes('ENDS_WITH_'));
+}
+assert.equal(a.inspectNativeVehicleCondition({...nativeSimple,licensePlateRule:null}).status,
+ 'UNCONDITIONAL','The documented null and legacy empty value indicate no observed plate condition');
 const diagExisting=a.reviewVehicleConflictEffects(
  diagnosticRules,legacyMatchingDraft,
  {vehicleRules:{EV:{requiresPass:false,requiresOccupancy:false,

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.23
+// @version      4.0.0-alpha.24
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.23";
+    const VERSION = "4.0.0-alpha.24";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -639,7 +639,7 @@
                 typeof x==="string"&&x.trim())?[...new Set(rule.vehicleTypes)]:[];
         let invalid=!types.length||unknownFields.length>0;
         const conditions=[];
-        let passCount=null,minPassengers=null,hasPlate=false,hasEngine=false;
+        let passCount=null,minPassengers=null,hasEngine=false;
         let occupancyStatus="NOT_REPORTED";
         if(Object.prototype.hasOwnProperty.call(rule,"subscriptions")&&
            rule.subscriptions!=null){
@@ -665,15 +665,16 @@
                 conditions.push("OCCUPANCY");
             }
         }
-        const lp=rule.licensePlateNumber;
-        if(lp!=null){
-            if(typeof lp!=="string")invalid=true;
-            else if(lp.length){hasPlate=true;conditions.push("PLATE");}
-        }
-        if(rule.licensePlateRule!=null){
-            hasPlate=true;
-            if(!conditions.includes("PLATE"))conditions.push("PLATE");
-        }
+        // An empty legacy licensePlateNumber was documented in DriveProfileAttributes.
+        const currentPlate=rule.licensePlateRule??null;
+        const legacyPlate=rule.licensePlateNumber===""?null:rule.licensePlateNumber??null;
+        const plates=[currentPlate,legacyPlate];
+        const hasPlate=plates.some(value=>value!==null&&value!=="");
+        if(hasPlate)conditions.push("PLATE");
+        if(plates.some(value=>value!==null&&
+            (typeof value!=="string"||!/^ENDS_WITH_(?:[0-9]|EVEN|ODD)$/.test(value)))||
+           (Object.hasOwn(rule,"licensePlateRule")&&Object.hasOwn(rule,"licensePlateNumber")&&
+            currentPlate!==legacyPlate))invalid=true;
         for(const field of ["engineType","capacityThreshold","operator","engineCapacities"]){
             const value=rule[field];
             if(value==null)continue;
