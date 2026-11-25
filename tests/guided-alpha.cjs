@@ -348,12 +348,34 @@ assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
 assert.throws(()=>a.normalizeRedSchedule({...redSchedule,weekdays:[]}),/Invalid weekdays/);
 assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
  weekdays:['MONDAY','MONDAY']}),/Invalid weekdays/);
-assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
- slots:[{fromTime:'22:00',toTime:'06:00'}]}),/Invalid time range/);
+const overnightDraft={
+ startDate:'2026-12-06',endDate:'2026-12-06',weekdays:['SUNDAY'],allDay:false,
+ slots:[{fromTime:'22:00',toTime:'06:00'}]
+};
+const overnightFrames=a.normalizeRedSchedule(overnightDraft).timeFrames;
+assert.deepEqual(overnightFrames,[{
+ startDate:'2026-12-06',endDate:'2026-12-06',weekdays:['SUNDAY'],
+ fromTime:'22:00',toTime:'06:00',timeZone:null,verified:false
+}],'A night range keeps its start weekday and date in one read-only frame');
+assert.equal(a.normalizeRedSchedule({...overnightDraft,slots:[{fromTime:'22:00',toTime:'00:00'}]})
+ .timeFrames[0].toTime,'00:00');
+assert.equal(a.normalizeRedSchedule({...overnightDraft,slots:[
+ ...overnightDraft.slots,{fromTime:'08:00',toTime:'09:00'}
+]}).timeFrames.length,2);
+const nightBudget=a.estimateSafe12Budget([],overnightFrames);
+assert.equal(nightBudget.projectedRestrictions,1);
+assert.equal(nightBudget.projectedFrames,1);
+assert.equal(a.normalizeRedSchedule({...overnightDraft,slots:Array(12).fill(overnightDraft.slots[0])})
+ .timeFrames.length,12);
+for(const slot of [null,{}, {fromTime:'24:00',toTime:'06:00'},
+ {fromTime:'22:00',toTime:'06:60'}, {fromTime:'22:00',toTime:['06:00']}]){
+ assert.throws(()=>a.normalizeRedSchedule({...overnightDraft,slots:[slot]}),/Invalid time range/);
+}
+assert.throws(()=>a.normalizeRedSchedule({...overnightDraft,slots:Array(1)}),/Invalid time range/);
 assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
  slots:[{fromTime:'09:00',toTime:'09:00'}]}),/Invalid time range/);
 assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
- slots:Array(13).fill({fromTime:'09:00',toTime:'10:00'})}),/SAFE12/);
+ slots:Array(13).fill(overnightDraft.slots[0])}),/SAFE12/);
 assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
  allDay:false,slots:[]}),/SAFE12/);
 assert.deepEqual(a.normalizeMotorDraft({enabled:false,conditions:[]},true),
@@ -500,8 +522,12 @@ assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(intent))return 6
  'Every restriction type must go from calendar to summary');
 assert.ok(src.includes('if(step===7&&intent==="ALLOWED")return 5;'),
  'Back from green schedule must return to per-vehicle rules');
-assert.ok(src.includes('node("p",tr("green_schedule_intro"))'),
- 'Green summary must display the chosen calendar and its meaning');
+for(const intent of ['red','green','toll']){
+ assert.ok(src.includes(`renderScheduleSummary(schedule,"${intent}_schedule_intro");`),
+  'All summaries must display the same overnight semantics');
+}
+assert.ok(src.includes('tr("schedule_overnight")')&&src.includes('tr("schedule_next_day")'),
+ 'The calendar editor and summary must identify the next-day ending');
 const proposedFrames=[
  {weekdays:['MONDAY'],fromTime:'08:00',toTime:'11:00'},
  {weekdays:['MONDAY'],fromTime:'16:00',toTime:'19:00'}
@@ -958,6 +984,16 @@ assert.equal(reviewFrame({someNewCalendarAttribute:true}).reviewRequired,true);
 assert.equal(reviewFrame({weekdays:['MONDAY'],fromTime:'22:00',toTime:'06:00'},
  {...scheduleOverlap,weekdays:['TUESDAY'],slots:[{fromTime:'01:00',toTime:'02:00'}]}).reviewRequired,true,
  'A next-day portion of an overnight frame cannot be excluded by comparing weekday labels');
+assert.equal(reviewFrame({startDate:'2026-12-07',endDate:'2026-12-07',weekdays:['MONDAY'],
+ fromTime:'05:00',toTime:'07:00'},overnightDraft).reviewRequired,false,
+ 'A Sunday draft can overlap an existing Monday frame after the final start date');
+verify(reverseOnly,draftOverlap,overnightDraft,'SEPARATE');
+const nightConversion=a.reviewSdkConversion(draftOverlap,existingBase,overnightDraft,
+ {},[],{enabled:false,conditions:[]},{id:1,name:'Italy'});
+assert.equal(nightConversion.proposedFrameCount,1);
+assert.equal(nightConversion.status,'BLOCKED');
+assert.equal(nightConversion.saveAllowed,false);
+assert.equal(nightConversion.sdkWritePayload,null);
 assert.equal(reviewFrame({fromTime:'10:00',toTime:'13:00'}).reviewRequired,false,
  'Touching time boundaries remain uncertain even when both windows have a supported shape');
 assert.equal(reviewFrame({repeatYearly:false,dayAlternation:null,daysOfMonth:null},

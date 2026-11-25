@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.27
+// @version      4.0.0-alpha.28
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.27";
+    const VERSION = "4.0.0-alpha.28";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -287,6 +287,8 @@
         schedule_remove_slot:["Rimuovi fascia","Remove time range","Supprimer la plage","Eliminar horario","Zeitfenster entfernen","Remover horário"],
         schedule_from:["Dalle","From","De","Desde","Von","Das"],
         schedule_to:["Alle","To","À","Hasta","Bis","Até"],
+        schedule_overnight:["La fascia inizia nei giorni selezionati e termina il giorno successivo.","The range starts on the selected days and ends the following day.","La plage commence les jours sélectionnés et se termine le lendemain.","La franja empieza los días seleccionados y termina al día siguiente.","Das Zeitfenster beginnt an den ausgewählten Tagen und endet am Folgetag.","O intervalo começa nos dias selecionados e termina no dia seguinte."],
+        schedule_next_day:["giorno successivo","next day","lendemain","día siguiente","Folgetag","dia seguinte"],
         schedule_invalid:["Controlla le date, i giorni e gli orari: serve una fascia valida e non si può superare il limite di 12 fasce.","Check dates, days and time ranges; valid times and at most 12 ranges are required.","Vérifiez dates, jours et horaires ; maximum 12 plages.","Comprueba fechas, días y horarios; máximo 12 rangos.","Daten, Wochentage und Zeiten prüfen; höchstens 12 Zeitfenster.","Verifique datas, dias e horários; máximo 12 intervalos."],
         schedule_summary:["Calendario proposto (sola lettura)","Proposed schedule (read-only)","Calendrier proposé (lecture seule)","Calendario propuesto (solo lectura)","Vorgeschlagener Zeitplan (nur lesbar)","Calendário proposto (só de leitura)"],
         MONDAY:["Lun","Mon","Lun","Lun","Mo","Seg"],
@@ -521,6 +523,12 @@
         });
         return {mode:"MATCHING_ENGINES",conditions,verified:false};
     }
+    function isScheduleTime(value) {
+        return typeof value==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+    }
+    function crossesMidnight(frame) {
+        return Boolean(frame.fromTime&&frame.toTime&&frame.fromTime>frame.toTime);
+    }
     // Pure draft matching the stable v3.2 calendar's day/date/time vocabulary.
     // No native WME SDK serialization occurs in this prototype.
     function normalizeRedSchedule(schedule) {
@@ -538,12 +546,9 @@
         if(!Array.isArray(schedule.slots))throw Error("Invalid time slots");
         const raw=schedule.allDay?[{fromTime:null,toTime:null}]:schedule.slots;
         if(!raw.length||raw.length>MAX_DRAFT_TIME_FRAMES)throw Error("SAFE12 draft limit");
-        const frames=raw.map(slot=>{
-            if(!schedule.allDay){
-                const re=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
-                if(!re.test(slot?.fromTime)||!re.test(slot?.toTime)||
-                   slot.fromTime>=slot.toTime)throw Error("Invalid time range");
-            }
+        const frames=Array.from(raw,slot=>{
+            if(!schedule.allDay&&(!isScheduleTime(slot?.fromTime)||!isScheduleTime(slot?.toTime)||
+               slot.fromTime===slot.toTime))throw Error("Invalid time range");
             return {startDate:start,endDate:end,weekdays:[...days],
                 fromTime:slot.fromTime,toTime:slot.toTime,
                 timeZone:null,verified:false};
@@ -610,7 +615,6 @@
             "repeatYearly","dayAlternation","daysOfMonth"];
         const isIso=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
             !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
-        const isTime=value=>typeof value==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
         const asString=value=>typeof value==="string"?value:null;
         const {startDate,endDate,fromTime,toTime,weekdays,timeZone,repeatYearly}=data;
         const alternation=data.dayAlternation??data.daysOfMonth??null;
@@ -620,7 +624,7 @@
             (startDate!=null&&endDate!=null&&startDate>endDate)||
             !Array.isArray(weekdays)||!weekdays.length||
             Array.from(weekdays).some(day=>!WEEKDAYS.includes(day))||
-            ((fromTime!=null||toTime!=null)&&(!isTime(fromTime)||!isTime(toTime)||fromTime>=toTime))||
+            ((fromTime!=null||toTime!=null)&&(!isScheduleTime(fromTime)||!isScheduleTime(toTime)||fromTime>=toTime))||
             (timeZone!=null&&(typeof timeZone!=="string"||!timeZone));
         const alternationAgrees=!Object.hasOwn(data,"dayAlternation")||
             !Object.hasOwn(data,"daysOfMonth")||data.dayAlternation===data.daysOfMonth;
@@ -905,7 +909,8 @@
         const windowOverlap=(existing,planned)=>{
             // Compare simple civil-time windows on this segment only. The
             // draft time zone and endpoint inclusivity still require WME review.
-            if(existing.reviewRequired)return null;
+            // The morning portion can overlap even on another weekday/date.
+            if(existing.reviewRequired||crossesMidnight(planned))return null;
             if((existing.endDate&&planned.startDate&&existing.endDate<planned.startDate)||
                (planned.endDate&&existing.startDate&&planned.endDate<existing.startDate))return false;
             if(!existing.weekdays.some(day=>planned.weekdays.includes(day)))return false;
@@ -1499,6 +1504,19 @@
         }
         function isScheduleValid(){
             try {normalizeRedSchedule(redSchedule);return true;}catch(_){return false;}
+        }
+        function renderScheduleSummary(schedule,intro){
+            dialog.append(node("h4",tr("schedule_summary")));
+            for(const frame of schedule.timeFrames){
+                const dates=(frame.startDate||tr("no_condition"))+" → "+
+                    (frame.endDate||tr("no_condition"));
+                const days=frame.weekdays.map(day=>tr(day)).join(", ");
+                const hours=frame.fromTime===null?tr("schedule_all_day"):
+                    frame.fromTime+"–"+frame.toTime+
+                    (crossesMidnight(frame)?" ("+tr("schedule_next_day")+")":"");
+                dialog.append(node("p",dates+" · "+days+" · "+hours));
+            }
+            dialog.append(node("p",tr(intro)));
         }
         function refreshNext(){
             const next=dialog.querySelector('[data-guided-next="true"]');
@@ -2103,6 +2121,8 @@
                     });
                     add.disabled=redSchedule.slots.length>=MAX_DRAFT_TIME_FRAMES;
                     dialog.append(add);
+                    if(redSchedule.slots.some(crossesMidnight))
+                        dialog.append(node("p",tr("schedule_overnight")));
                 }
                 if(isScheduleValid()){
                     dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
@@ -2115,6 +2135,7 @@
                 }
             }
             if(step===6) {
+                const schedule=normalizeRedSchedule(redSchedule);
                 if(draft.restrictionType==="ALLOWED"){
                     const checked=normalizeDraft(draft,current.segment);
                     const conditions=normalizeVehicleRules(
@@ -2149,20 +2170,9 @@
                         node("p",tr("criteria_unverified")),
                         node("p",tr("plate_note")),
                         node("p",tr("vehicles_unknown")));
-                    const schedule=normalizeRedSchedule(redSchedule);
-                    dialog.append(node("h4",tr("schedule_summary")));
-                    for(const frame of schedule.timeFrames){
-                        const dates=(frame.startDate||tr("no_condition"))+" → "+
-                            (frame.endDate||tr("no_condition"));
-                        const days=frame.weekdays.map(day=>tr(day)).join(", ");
-                        const hours=frame.fromTime===null?tr("schedule_all_day"):
-                            frame.fromTime+"–"+frame.toTime;
-                        dialog.append(node("p",dates+" · "+days+" · "+hours));
-                    }
-                    dialog.append(node("p",tr("green_schedule_intro")));
+                    renderScheduleSummary(schedule,"green_schedule_intro");
                 }else if(draft.restrictionType==="BLOCKED"){
                     const checked=normalizeDraft(draft,current.segment);
-                    const schedule=normalizeRedSchedule(redSchedule);
                     const motor=normalizeMotorDraft(motorDraft,
                         checked.vehicleTypes.includes("MOTORCYCLE"));
                     dialog.append(node("h3",tr("summary")),
@@ -2195,19 +2205,9 @@
                             dialog.append(node("p",tr("motor_experimental_note")));
                         }
                     }
-                    dialog.append(node("h4",tr("schedule_summary")));
-                    for(const frame of schedule.timeFrames){
-                        const dates=(frame.startDate||tr("no_condition"))+" → "+
-                            (frame.endDate||tr("no_condition"));
-                        const days=frame.weekdays.map(day=>tr(day)).join(", ");
-                        const hours=frame.fromTime===null?tr("schedule_all_day"):
-                            frame.fromTime+"–"+frame.toTime;
-                        dialog.append(node("p",dates+" · "+days+" · "+hours));
-                    }
-                    dialog.append(node("p",tr("red_schedule_intro")));
+                    renderScheduleSummary(schedule,"red_schedule_intro");
                 }else if(draft.restrictionType==="TOLL"){
                     const checked=normalizeDraft(draft,current.segment);
-                    const schedule=normalizeRedSchedule(redSchedule);
                     const flag=normalizeTollActivationDraft(checked,[current.segment.id]);
                     dialog.append(
                         node("h3",tr("summary")),
@@ -2224,23 +2224,13 @@
                         node("p","hasToll: "+String(flag.hasToll)+
                             " · "+tr("toll_activation_pending"))
                     );
-                    dialog.append(node("h4",tr("schedule_summary")));
-                    for(const frame of schedule.timeFrames){
-                        const dates=(frame.startDate||tr("no_condition"))+" → "+
-                            (frame.endDate||tr("no_condition"));
-                        const days=frame.weekdays.map(day=>tr(day)).join(", ");
-                        const hours=frame.fromTime===null?tr("schedule_all_day"):
-                            frame.fromTime+"–"+frame.toTime;
-                        dialog.append(node("p",dates+" · "+days+" · "+hours));
-                    }
-                    dialog.append(node("p",tr("toll_schedule_intro")),
-                        node("p",tr("vehicles_unknown")));
+                    renderScheduleSummary(schedule,"toll_schedule_intro");
+                    dialog.append(node("p",tr("vehicles_unknown")));
                 }
                 // Conservative budget only: not an SDK write plan and NOT
                 // a pass from the stable v3.2 SAFE12 full-operation validator.
                 const estimate=estimateSafe12Budget(
-                    current.segment.restrictions,
-                    normalizeRedSchedule(redSchedule).timeFrames
+                    current.segment.restrictions,schedule.timeFrames
                 );
                 const budgetBox=node("section");
                 budgetBox.style.cssText="padding:10px;margin-top:14px;border:1px solid #cbd5e1;"+
