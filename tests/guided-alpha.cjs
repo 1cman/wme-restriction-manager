@@ -809,7 +809,7 @@ assert.ok(!/\.updateSegment\s*\(/.test(src),
 const noRestrictionAudit=a.auditRestrictionPreservation({id:10,isAtoB:true,restrictions:[]});
 assert.deepEqual(noRestrictionAudit,{
  status:'NO_EXISTING',count:0,frameCount:0,nonEditable:0,editabilityUnknown:0,
- opaqueVehicleRules:0,legacyFields:0,incomplete:0,writeReady:false,verified:false
+ opaqueVehicleRules:0,legacyFields:0,incomplete:0,entries:[],writeReady:false,verified:false
 });
 const untouchedNative={id:20,isAtoB:true,restrictions:[
  {defaultType:'BLOCKED',editable:false,timeFrames:[{fromTime:'08:00',toTime:'10:00'}],
@@ -820,11 +820,16 @@ const untouchedNative={id:20,isAtoB:true,restrictions:[
 ]};
 const beforeNative=JSON.stringify(untouchedNative);
 const audited=a.auditRestrictionPreservation(untouchedNative);
-assert.deepEqual(audited,{
+const {entries:auditedEntries,...auditedTotals}=audited;
+assert.deepEqual(auditedTotals,{
  status:'REQUIRES_ROUNDTRIP',count:3,frameCount:3,nonEditable:1,
  editabilityUnknown:1,opaqueVehicleRules:2,legacyFields:2,
  incomplete:0,writeReady:false,verified:false
 });
+assert.deepEqual(auditedEntries.map(entry=>entry.index),[1,2,3]);
+assert.ok(auditedEntries[0].issues.some(issue=>issue.field==='editable'));
+assert.ok(auditedEntries[1].issues.some(issue=>issue.field==='driveProfiles / vehicleRules'));
+assert.ok(auditedEntries[2].issues.some(issue=>issue.field==='vehicleRules.FREE'));
 assert.equal(JSON.stringify(untouchedNative),beforeNative,
  'The preservation audit must never alter any native restrictions');
 const incompleteNative={id:22,isBtoA:true,restrictions:[
@@ -840,14 +845,58 @@ assert.equal(missing.writeReady,false);
 assert.deepEqual(a.auditRestrictionPreservation({id:23,restrictions:null}),{
  status:'UNKNOWN',count:null,frameCount:null,nonEditable:null,
  editabilityUnknown:null,opaqueVehicleRules:null,legacyFields:null,
- incomplete:null,writeReady:false,verified:false
+ incomplete:null,entries:[],writeReady:false,verified:false
 });
 const circularSegment={id:24,restrictions:[{
  defaultType:'FREE',editable:true,timeFrames:[],vehicleRules:{BLOCKED:[]}
 }]};
 circularSegment.restrictions[0].vehicleRules.SELF=circularSegment.restrictions;
-assert.equal(a.auditRestrictionPreservation(circularSegment).status,'UNKNOWN',
+const circularAudit=a.auditRestrictionPreservation(circularSegment);
+assert.equal(circularAudit.status,'UNKNOWN',
  'Circular or unserializable native data must fail closed');
+assert.deepEqual(circularAudit.entries,[{index:1,issues:[{
+ field:'SegmentRestriction',reason:'preservation_unknown'
+}]}]);
+
+const publicSoleRule={vehicleTypes:['PUBLIC_TRANSPORTATION'],minPassengers:0,
+ licensePlateRule:'ENDS_WITH_7',subscriptions:['PRIVATE-SUBSCRIPTION-ID']};
+const publicFrame={startDate:'2026-12-06',endDate:'2026-12-06',
+ fromTime:'22:00',toTime:'06:00',weekdays:['SUNDAY'],timeZone:'Europe/Rome',
+ repeatYearly:false,dayAlternation:null,daysOfMonth:null};
+const publicRestriction={defaultType:'FREE',description:'PRIVATE-DESCRIPTION',direction:'FWD',
+ laneScope:'LEFT_LANE',disposition:'LEFT_LANE',laneType:'BUS',timeFrames:[publicFrame],
+ vehicleRules:{BLOCKED:[publicSoleRule]},driveProfiles:{BLOCKED:[{...publicSoleRule}]},
+ editable:true,isExpired:false};
+const preservedShape=a.auditRestrictionPreservation({restrictions:[publicRestriction]});
+assert.deepEqual(preservedShape.entries,[{index:1,issues:[]}],
+ 'A documented SDK vehicle category can match the SDK shape outside the wizard shortlist');
+assert.ok(!a.VEHICLE_TYPES.includes('PUBLIC_TRANSPORTATION'));
+assert.equal(preservedShape.status,'REQUIRES_ROUNDTRIP');
+assert.equal(preservedShape.writeReady,false);
+const opaqueRestriction={...publicRestriction,editable:false,disposition:'RIGHT_LANE',
+ 'PRIVATE-KEY-PAYLOAD':true,timeFrames:[{...publicFrame,weekdays:127,daysOfMonth:'EVEN_DAYS'}],
+ vehicleRules:{BLOCKED:[{...publicSoleRule,minPassengers:1,numPassengers:2,
+  licensePlateNumber:'ENDS_WITH_0',vehicleTypes:['HAZARDOUS_MATERIALS'],
+  engineType:'PRIVATE-ENGINE-TYPE'}]}};
+const opaqueBefore=JSON.stringify(opaqueRestriction);
+const opaqueAudit=a.auditRestrictionPreservation({restrictions:[publicRestriction,opaqueRestriction]});
+assert.deepEqual(opaqueAudit.entries[1].issues.map(issue=>issue.field),[
+ 'SegmentRestriction','editable','disposition / laneScope','driveProfiles / vehicleRules',
+ 'vehicleRules.BLOCKED[0]','vehicleRules.BLOCKED[0].minPassengers',
+ 'vehicleRules.BLOCKED[0].vehicleTypes','vehicleRules.BLOCKED[0].numPassengers / minPassengers',
+ 'vehicleRules.BLOCKED[0].licensePlateNumber / licensePlateRule',
+ 'timeFrames[0].weekdays','timeFrames[0].daysOfMonth / dayAlternation'
+]);
+assert.equal(JSON.stringify(opaqueRestriction),opaqueBefore);
+for(const secret of ['PRIVATE-KEY-PAYLOAD','PRIVATE-DESCRIPTION','PRIVATE-ENGINE-TYPE',
+ 'PRIVATE-SUBSCRIPTION-ID','ENDS_WITH_7','ENDS_WITH_0']){
+ assert.ok(!JSON.stringify(opaqueAudit).includes(secret),'Audit results should contain field paths only');
+}
+const mixedAudit=a.auditRestrictionPreservation({restrictions:[
+ circularSegment.restrictions[0],publicRestriction
+]});
+assert.equal(mixedAudit.status,'UNKNOWN');
+assert.deepEqual(mixedAudit.entries,[...circularAudit.entries,{index:2,issues:[]}]);
 const sampleReviewSchedule={startDate:'',endDate:'',weekdays:['MONDAY'],
  allDay:true,slots:[]};
 const liveReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
@@ -876,6 +925,8 @@ assert.ok(unknownNativeReview.blockers.includes('conversion_unknown'));
 assert.ok(unknownNativeReview.blockers.includes('conversion_preservation_gate'));
 assert.ok(src.includes('const audit=conversion.preservation;'),
  'Read-only summary must show the preservation audit');
+assert.ok(src.includes('for(const entry of audit.entries)')&&src.includes('tr(issue.reason)'),
+ 'The summary must show per-restriction findings');
 assert.ok(src.includes('node("h4",tr("preservation_title"))') &&
  src.includes('node("p",tr("preservation_status")'),
  'Audit heading and status must be localized');

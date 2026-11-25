@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.28
+// @version      4.0.0-alpha.29
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,13 +18,12 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.28";
+    const VERSION = "4.0.0-alpha.29";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
     const LANES = ["lane_none", "express", "fast", "hov", "public_transport", "carpool_toll_free"];
-    // Candidate update-model names seen in community SDK examples.
-    // Unverified against the active native WME editor; NEVER a write payload.
+    // Published SDK scope names. The wizard mapping is still a design proposal.
     const LANE_SCOPE_CANDIDATES = Object.freeze({
         segment:"WHOLE_SEGMENT",left:"LEFT_LANE",
         center:"MIDDLE_LANE",right:"RIGHT_LANE"
@@ -45,6 +44,11 @@
     // changes to FREE, with explicit BLOCKED rules for the targeted types.
     const DEFAULT_TYPES = Object.freeze({BLOCKED:"BLOCKED",ALLOWED:"BLOCKED",TOLL:"TOLL"});
     const VEHICLE_TYPES = Object.freeze(["PRIVATE", "EV", "MOTORCYCLE", "TAXI"]);
+    // The published write contract includes types beyond the wizard shortlist.
+    const SDK_ADDABLE_VEHICLE_TYPES = ["PRIVATE","EV","MOTORCYCLE","TAXI","PUBLIC_TRANSPORTATION"];
+    const SDK_MIN_PASSENGERS = [0,2,3,4];
+    const SDK_TIME_FRAME_FIELDS = ["startDate","endDate","fromTime","toTime","weekdays","timeZone",
+        "repeatYearly","dayAlternation"];
     const OVERRIDE_TYPES = Object.freeze({BLOCKED:"FREE",ALLOWED:"FREE",TOLL:"FREE"});
     // Visual cues inspired by WME restriction categories (not exact sampled native colors).
     // Only the restriction-kind step uses these colors; selection semantics stay unchanged.
@@ -102,7 +106,13 @@
         preservation_legacy:["Restrizioni con campi precedenti/deprecati","Restrictions with legacy/deprecated fields","Restrictions avec champs dépréciés","Restricciones con campos obsoletos","Beschränkungen mit veralteten Feldern","Restrições com campos legados"],
         preservation_incomplete:["Restrizioni con struttura insufficiente","Restrictions with incomplete structure","Restrictions avec structure incomplète","Restricciones con estructura incompleta","Beschränkungen mit unvollständiger Struktur","Restrições com estrutura incompleta"],
         preservation_frames:["Definizioni temporali già presenti","Existing time-frame definitions","Définitions temporelles existantes","Definiciones temporales existentes","Bestehende Zeitdefinitionen","Definições de tempo existentes"],
-        preservation_warning:["Il controllo legge e conta soltanto: non converte le restrizioni esistenti in oggetti scrivibili. Non autorizza il salvataggio.","Read/count only: does not turn existing restrictions into writable objects. Saving stays blocked.","Lecture et comptage uniquement ; aucune conversion écrivable ni sauvegarde.","Solo lectura/conteo; sin conversión editable ni guardado.","Nur Lesen/Zählen; keine schreibbaren Objekte und kein Speichern.","Apenas leitura/contagem; sem objetos graváveis nem salvamento."],
+        preservation_warning:["Controllo in sola lettura. La conservazione richiede una verifica di andata e ritorno.","Read-only check. Preservation requires round-trip verification.","Contrôle en lecture seule. La conservation exige une vérification aller-retour.","Comprobación de solo lectura. La conservación requiere verificar la ida y vuelta.","Prüfung im Lesemodus. Der Erhalt erfordert eine Hin- und Rückprüfung.","Verificação só de leitura. A conservação exige uma verificação de ida e volta."],
+        preservation_row_review:["Dati da verificare","Data to verify","Données à vérifier","Datos por verificar","Daten prüfen","Dados a verificar"],
+        preservation_row_roundtrip:["Verifica di andata e ritorno richiesta","Round-trip verification required","Vérification aller-retour requise","Se requiere verificar la ida y vuelta","Hin- und Rückprüfung erforderlich","Verificação de ida e volta necessária"],
+        preservation_field_outside:["Campi fuori dal modello pubblico","Fields outside the public model","Champs hors du modèle public","Campos fuera del modelo público","Felder außerhalb des öffentlichen Modells","Campos fora do modelo público"],
+        preservation_field_shape:["Struttura da verificare","Shape to verify","Structure à vérifier","Estructura por verificar","Struktur prüfen","Estrutura a verificar"],
+        preservation_field_alias:["Dato precedente assente dal campo attuale o discordante","Legacy data missing from or different in the current field","Donnée héritée absente du champ actuel ou différente","Dato anterior ausente o distinto en el campo actual","Altdaten fehlen im aktuellen Feld oder weichen ab","Dado antigo ausente ou diferente no campo atual"],
+        preservation_field_permission:["Modificabilità da verificare","Editability to verify","Modifiabilité à vérifier","Editabilidad por verificar","Bearbeitbarkeit prüfen","Editabilidade a verificar"],
         conversion_preservation_gate:["Verifica di conservazione delle restrizioni esistenti non superata.","Existing restriction preservation has not passed verification.","Vérification de conservation non réussie.","Validación de conservación pendiente.","Erhaltung bestehender Beschränkungen ungeprüft.","Verificação de preservação ainda não concluída."],
         existing_list:["Restrizioni già presenti sul segmento","Existing segment restrictions","Restrictions déjà présentes sur le segment","Restricciones existentes en el segmento","Vorhandene Segmentbeschränkungen","Restrições já presentes no segmento"],
         existing_none:["Nessuna restrizione presente","No existing restrictions","Aucune restriction présente","No hay restricciones","Keine bestehenden Beschränkungen","Nenhuma restrição existente"],
@@ -526,6 +536,13 @@
     function isScheduleTime(value) {
         return typeof value==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
     }
+    function isScheduleDate(value) {
+        return typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
+            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+    }
+    function isSdkPlateRule(value) {
+        return typeof value==="string"&&/^ENDS_WITH_(?:[0-9]|EVEN|ODD)$/.test(value);
+    }
     function crossesMidnight(frame) {
         return Boolean(frame.fromTime&&frame.toTime&&frame.fromTime>frame.toTime);
     }
@@ -533,10 +550,8 @@
     // No native WME SDK serialization occurs in this prototype.
     function normalizeRedSchedule(schedule) {
         if(!schedule||typeof schedule!=="object")throw Error("Invalid schedule");
-        const dateOk=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
-            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
         const start=schedule.startDate||null,end=schedule.endDate||null;
-        if((start&&!dateOk(start))||(end&&!dateOk(end))||(start&&end&&start>end))
+        if((start&&!isScheduleDate(start))||(end&&!isScheduleDate(end))||(start&&end&&start>end))
             throw Error("Invalid dates");
         const days=schedule.weekdays;
         if(!Array.isArray(days)||!days.length||
@@ -611,16 +626,13 @@
     function inspectNativeTimeFrame(frame) {
         const validObject=frame&&typeof frame==="object"&&!Array.isArray(frame);
         const data=validObject?frame:{};
-        const fields=["startDate","endDate","fromTime","toTime","weekdays","timeZone",
-            "repeatYearly","dayAlternation","daysOfMonth"];
-        const isIso=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
-            !Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
         const asString=value=>typeof value==="string"?value:null;
         const {startDate,endDate,fromTime,toTime,weekdays,timeZone,repeatYearly}=data;
         const alternation=data.dayAlternation??data.daysOfMonth??null;
-        const reviewRequired=!validObject||Object.keys(data).some(key=>!fields.includes(key))||
+        const reviewRequired=!validObject||Object.keys(data).some(key=>
+            key!=="daysOfMonth"&&!SDK_TIME_FRAME_FIELDS.includes(key))||
             (repeatYearly!=null&&repeatYearly!==false)||alternation!==null||
-            [startDate,endDate].some(value=>value!=null&&!isIso(value))||
+            [startDate,endDate].some(value=>value!=null&&!isScheduleDate(value))||
             (startDate!=null&&endDate!=null&&startDate>endDate)||
             !Array.isArray(weekdays)||!weekdays.length||
             Array.from(weekdays).some(day=>!WEEKDAYS.includes(day))||
@@ -700,7 +712,7 @@
         }
         if(occupancyFields.length){
             const value=rule[occupancyFields[0]];
-            if(![0,2,3,4].includes(value)||
+            if(!SDK_MIN_PASSENGERS.includes(value)||
                occupancyFields.some(key=>rule[key]!==value)){
                 occupancyStatus="UNKNOWN";
                 invalid=true;
@@ -719,8 +731,7 @@
         const plates=[currentPlate,legacyPlate];
         const hasPlate=plates.some(value=>value!==null&&value!=="");
         if(hasPlate)conditions.push("PLATE");
-        if(plates.some(value=>value!==null&&
-            (typeof value!=="string"||!/^ENDS_WITH_(?:[0-9]|EVEN|ODD)$/.test(value)))||
+        if(plates.some(value=>value!==null&&!isSdkPlateRule(value))||
            (Object.hasOwn(rule,"licensePlateRule")&&Object.hasOwn(rule,"licensePlateNumber")&&
             currentPlate!==legacyPlate))invalid=true;
         for(const field of ["engineType","capacityThreshold","operator","engineCapacities"]){
@@ -966,20 +977,110 @@
             items.some(x=>x.status==="UNKNOWN")?"UNKNOWN":"SEPARATE";
         return {status,items,verified:false,saveAllowed:false};
     }
+    // Report paths only. These checks neither construct update objects nor
+    // determine whether WME preserves native rules after an update.
+    function inspectRestrictionUpdateShape(rule) {
+        const issues=[];
+        const flag=(field,reason="preservation_field_shape")=>issues.push({field,reason});
+        const record=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
+        const outside=(value,allowed)=>Object.getOwnPropertyNames(value).some(key=>!allowed.includes(key));
+        const check=(prefix,fields)=>{
+            for(const [field,valid] of fields){
+                if(!valid)flag(prefix+field);
+            }
+        };
+        if(outside(rule,["defaultType","description","direction","laneScope","laneType","timeFrames",
+            "vehicleRules","disposition","driveProfiles","editable","isExpired"]))
+            flag("SegmentRestriction","preservation_field_outside");
+        if(rule.editable!==true)flag("editable","preservation_field_permission");
+        check("",[
+            ["defaultType",["BLOCKED","FREE","TOLL"].includes(rule.defaultType)],
+            ["description",rule.description===null||typeof rule.description==="string"],
+            ["direction",["FWD","REV","BOTH"].includes(rule.direction)],
+            ["laneScope",Object.values(LANE_SCOPE_CANDIDATES).includes(rule.laneScope)],
+            ["laneType",rule.laneType===null||["BUS","EXPRESS","FAST","HOT","HOV"].includes(rule.laneType)]
+        ]);
+        if(Object.hasOwn(rule,"disposition")&&rule.disposition!==rule.laneScope)
+            flag("disposition / laneScope","preservation_field_alias");
+        const legacy=compareLegacyVehicleRules(rule.vehicleRules,rule.driveProfiles);
+        if(legacy==="DIFFERENT"||legacy==="UNKNOWN")
+            flag("driveProfiles / vehicleRules","preservation_field_alias");
+
+        if(!record(rule.vehicleRules))flag("vehicleRules");
+        else{
+            const expected=rule.defaultType==="FREE"?"BLOCKED":"FREE";
+            const group=rule.vehicleRules[expected];
+            if(outside(rule.vehicleRules,[expected]))flag("vehicleRules");
+            if(!Array.isArray(group)&&(group!==undefined||rule.defaultType!=="BLOCKED"))
+                flag("vehicleRules."+expected);
+            if(Array.isArray(group)){
+                if(!group.length&&rule.defaultType!=="BLOCKED")flag("vehicleRules."+expected);
+                for(const [index,row] of group.entries()){
+                    const path="vehicleRules."+expected+"["+index+"]";
+                    if(!record(row)){flag(path);continue;}
+                    if(outside(row,["licensePlateRule","licensePlateNumber","minPassengers","numPassengers",
+                        "subscriptions","vehicleTypes"]))flag(path,"preservation_field_outside");
+                    check(path+".",[
+                        ["minPassengers",SDK_MIN_PASSENGERS.includes(row.minPassengers)],
+                        ["licensePlateRule",row.licensePlateRule===null||isSdkPlateRule(row.licensePlateRule)],
+                        ["subscriptions",Array.isArray(row.subscriptions)&&row.subscriptions.every(id=>typeof id==="string")],
+                        ["vehicleTypes",Array.isArray(row.vehicleTypes)&&
+                            row.vehicleTypes.every(type=>SDK_ADDABLE_VEHICLE_TYPES.includes(type))]
+                    ]);
+                    if(Object.hasOwn(row,"numPassengers")&&row.numPassengers!==row.minPassengers)
+                        flag(path+".numPassengers / minPassengers","preservation_field_alias");
+                    if(Object.hasOwn(row,"licensePlateNumber")&&
+                       (row.licensePlateNumber===""?null:row.licensePlateNumber)!==row.licensePlateRule)
+                        flag(path+".licensePlateNumber / licensePlateRule","preservation_field_alias");
+                }
+            }
+        }
+        if(!Array.isArray(rule.timeFrames))flag("timeFrames");
+        else for(const [index,frame] of rule.timeFrames.entries()){
+            const path="timeFrames["+index+"]";
+            if(!record(frame)){flag(path);continue;}
+            if(outside(frame,[...SDK_TIME_FRAME_FIELDS,"daysOfMonth"]))
+                flag(path,"preservation_field_outside");
+            check(path+".",[
+                ["startDate",frame.startDate===null||isScheduleDate(frame.startDate)],
+                ["endDate",frame.endDate===null||isScheduleDate(frame.endDate)],
+                ["fromTime",frame.fromTime===null||isScheduleTime(frame.fromTime)],
+                ["toTime",frame.toTime===null||isScheduleTime(frame.toTime)],
+                ["weekdays",frame.weekdays===null||Array.isArray(frame.weekdays)&&
+                    frame.weekdays.every(day=>WEEKDAYS.includes(day))],
+                ["timeZone",frame.timeZone===null||typeof frame.timeZone==="string"],
+                ["repeatYearly",frame.repeatYearly===null||typeof frame.repeatYearly==="boolean"],
+                ["dayAlternation",[null,"EVEN_DAYS","ODD_DAYS"].includes(frame.dayAlternation)]
+            ]);
+            if(Object.hasOwn(frame,"daysOfMonth")&&frame.daysOfMonth!==frame.dayAlternation)
+                flag(path+".daysOfMonth / dayAlternation","preservation_field_alias");
+        }
+        return issues;
+    }
     function auditRestrictionPreservation(segment) {
         const unknown={
             status:"UNKNOWN",count:null,frameCount:null,nonEditable:null,
             editabilityUnknown:null,opaqueVehicleRules:null,legacyFields:null,
-            incomplete:null,writeReady:false,verified:false
+            incomplete:null,entries:[],writeReady:false,verified:false
         };
         const rows=segment?.restrictions;
-        if(!Array.isArray(rows)||restrictionSnapshot(segment)===null)return unknown;
+        if(!Array.isArray(rows))return unknown;
+        const snapshotAvailable=restrictionSnapshot(segment)!==null;
+        const entries=[];
         let frameCount=0,nonEditable=0,editabilityUnknown=0,
             opaqueVehicleRules=0,legacyFields=0,incomplete=0;
-        for(const r of rows){
-            if(!r||typeof r!=="object"||Array.isArray(r)){
-                incomplete++;continue;
+        for(let index=0;index<rows.length;index++){
+            const r=Object.getOwnPropertyDescriptor(rows,index)?.value;
+            const unavailable={index:index+1,issues:[{
+                field:"SegmentRestriction",reason:"preservation_unknown"
+            }]};
+            if(!snapshotAvailable){
+                try{nativeDataSnapshot(r);}catch(_){entries.push(unavailable);continue;}
             }
+            if(!r||typeof r!=="object"||Array.isArray(r)){
+                incomplete++;entries.push(unavailable);continue;
+            }
+            entries.push({index:index+1,issues:inspectRestrictionUpdateShape(r)});
             if(r.editable===false)nonEditable++;
             else if(r.editable!==true)editabilityUnknown++;
             if(!Array.isArray(r.timeFrames)||!["BLOCKED","FREE","TOLL"].includes(r.defaultType)||
@@ -992,11 +1093,11 @@
                Object.keys(r.vehicleRules).length>0)opaqueVehicleRules++;
             if(r.disposition!=null||r.driveProfiles!=null)legacyFields++;
         }
-        if(!Number.isSafeInteger(frameCount))return unknown;
+        if(!snapshotAvailable||!Number.isSafeInteger(frameCount))return {...unknown,entries};
         return {
             status:incomplete?"UNKNOWN":rows.length?"REQUIRES_ROUNDTRIP":"NO_EXISTING",
             count:rows.length,frameCount,nonEditable,editabilityUnknown,
-            opaqueVehicleRules,legacyFields,incomplete,
+            opaqueVehicleRules,legacyFields,incomplete,entries,
             writeReady:false,verified:false
         };
     }
@@ -2325,6 +2426,21 @@
                     for(const [key,count] of entries){
                         details.append(node("p",tr(key)+": "+count));
                     }
+                }
+                for(const entry of audit.entries){
+                    const title=tr("existing_rule")+" "+entry.index+" · ";
+                    if(!entry.issues.length){
+                        details.append(node("p",title+tr("preservation_row_roundtrip")));
+                        continue;
+                    }
+                    const row=node("details");
+                    row.append(node("summary",title+tr("preservation_row_review")));
+                    const findings=node("ul");
+                    for(const issue of entry.issues){
+                        findings.append(node("li",issue.field+" · "+tr(issue.reason)));
+                    }
+                    row.append(findings);
+                    details.append(row);
                 }
                 const preservationWarning=node("p",tr("preservation_warning"));
                 preservationWarning.style.cssText="color:#991b1b;font-weight:600;";
