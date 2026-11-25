@@ -461,7 +461,7 @@ const engineSegment={id:1,restrictions:[sdkEngineRow]};
 const sameEngines=nativeEngineRow(sdkEngineRow,[[fuelRule,electricRule]],
  [[electricRule,{...fuelRule,capacityThreshold:'110'}]]);
 const matched=a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),engineSegment);
-assert.deepEqual(matched,{count:2,rows:[{index:1,count:2,status:'MATCH'}]});
+assert.deepEqual(matched,{count:2,rows:[{index:1,count:2,status:'MATCH'}],internalRows:[]});
 assert.doesNotMatch(JSON.stringify(matched),/PRIVATE_|capacityThreshold|110/);
 for(const [direct,stored] of [
  [[[fuelRule,electricRule]],[[fuelRule]]],
@@ -476,24 +476,44 @@ for(const [direct,stored] of [
 }
 const badStored=nativeEngineRow(sdkEngineRow,[[fuelRule]],[[{...fuelRule,capacityThreshold:'UNKNOWN'}]]);
 assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([badStored]),engineSegment),
- {count:1,rows:[{index:1,count:1,status:'UNAVAILABLE'}]});
+ {count:1,rows:[{index:1,count:1,status:'UNAVAILABLE'}],internalRows:[]});
+const unpairedEngine=(index,reason,fields=[])=>({index,count:null,status:'UNPAIRED',reason,fields});
+const internalMatch={index:1,count:2,status:'MATCH'};
 const unknownJson={...sameEngines,toJSON(){throw Error('PRIVATE_JSON_ERROR');}};
 assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([unknownJson]),engineSegment),
- {count:2,rows:[{index:1,count:null,status:'UNPAIRED'}]});
+ {count:2,rows:[unpairedEngine(1,'native_engine_pair_json')],
+  internalRows:[{index:1,count:2,status:'UNAVAILABLE'}]});
 assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines,sameEngines]),engineSegment),
- {count:4,rows:[{index:1,count:null,status:'UNPAIRED'}]});
+ {count:4,rows:[unpairedEngine(1,'native_engine_pair_count')],
+  internalRows:[internalMatch,{...internalMatch,index:2}]});
+assert.deepEqual(a.inspectInternalEnginePreservation({},engineSegment),
+ {count:null,rows:[unpairedEngine(1,'native_engine_pair_model')],internalRows:[]});
+const missingDirection=nativeEngineRow({},[[fuelRule,electricRule]],[[electricRule,fuelRule]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([missingDirection]),engineSegment),
+ {count:2,rows:[unpairedEngine(1,'native_engine_pair_direction_missing')],internalRows:[internalMatch]},
+ 'The internal comparison remains available without an SDK association');
+const opaqueDirection=nativeEngineRow({direction:99},[[fuelRule,electricRule]],[[electricRule,fuelRule]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([opaqueDirection]),engineSegment),
+ {count:2,rows:[unpairedEngine(1,'native_engine_pair_direction')],internalRows:[internalMatch]});
+const sensitiveScope=nativeEngineRow({...sdkEngineRow,laneScope:'PRIVATE_SCOPE'},
+ [[fuelRule,electricRule]],[[fuelRule]]);
+const scopeMismatch=a.inspectInternalEnginePreservation(rawSegmentWith([sensitiveScope]),engineSegment);
+assert.deepEqual(scopeMismatch,{count:2,rows:[unpairedEngine(1,'native_engine_pair_fields',['laneScope'])],
+ internalRows:[{index:1,count:2,status:'DIFFERENT'}]});
+assert.doesNotMatch(JSON.stringify(scopeMismatch),/PRIVATE_|capacityThreshold/);
 const reverseEngineRow={...sdkEngineRow,direction:'REV'};
 assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),{
  ...engineSegment,restrictions:[reverseEngineRow]
-}),{count:2,rows:[{index:1,count:null,status:'UNPAIRED'}]});
+}),{count:2,rows:[unpairedEngine(1,'native_engine_pair_fields',['direction'])],internalRows:[internalMatch]});
 const secondNativeEngineRow=nativeEngineRow(reverseEngineRow,[[fuelRule]],[[fuelRule]]);
 assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([secondNativeEngineRow,sameEngines]),{
  ...engineSegment,restrictions:[sdkEngineRow,reverseEngineRow]
-}),{count:3,rows:[{index:1,count:2,status:'MATCH'},{index:2,count:1,status:'MATCH'}]},
+}),{count:3,rows:[{index:1,count:2,status:'MATCH'},{index:2,count:1,status:'MATCH'}],internalRows:[]},
  'Association uses SDK-visible evidence, independent of internal list order');
 assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines,sameEngines]),{
  ...engineSegment,restrictions:[sdkEngineRow,{...sdkEngineRow}]
-}),{count:4,rows:[{index:1,count:null,status:'UNPAIRED'},{index:2,count:null,status:'UNPAIRED'}]},
+}),{count:4,rows:[unpairedEngine(1,'native_engine_pair_ambiguous'),unpairedEngine(2,'native_engine_pair_ambiguous')],
+ internalRows:[internalMatch,{...internalMatch,index:2}]},
  'Equal row counts and same direction do not resolve ambiguous association');
 assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType))'),
  'Date and time screen must include red, green and blue');

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.32
+// @version      4.0.0-alpha.33
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.32";
+    const VERSION = "4.0.0-alpha.33";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -193,6 +193,15 @@
         native_engine_difference:["Differenza tra lettura diretta e JSON interno","Direct read and internal JSON differ","Écart entre la lecture directe et le JSON interne","Diferencia entre la lectura directa y el JSON interno","Direkt gelesene Daten und internes JSON weichen ab","Diferença entre a leitura direta e o JSON interno"],
         native_engine_unpaired:["Associazione alla restrizione SDK non verificabile","Association with the SDK restriction could not be verified","Association avec la restriction SDK non vérifiable","No se pudo comprobar la asociación con la restricción del SDK","Zuordnung zur SDK-Beschränkung nicht überprüfbar","Não foi possível verificar a associação à restrição do SDK"],
         native_engine_uncompared:["Confronto tra lettura diretta e JSON interno non disponibile","Comparison of direct read and internal JSON unavailable","Comparaison entre la lecture directe et le JSON interne indisponible","Comparación entre lectura directa y JSON interno no disponible","Vergleich der direkt gelesenen Daten mit dem internen JSON nicht verfügbar","Comparação entre a leitura direta e o JSON interno indisponível"],
+        native_engine_internal_row:["Riga del modello interno","Internal model row","Ligne du modèle interne","Fila del modelo interno","Zeile im internen Modell","Linha do modelo interno"],
+        native_engine_pair_model:["Elenco interno non disponibile","Internal list unavailable","Liste interne indisponible","Lista interna no disponible","Interne Liste nicht verfügbar","Lista interna indisponível"],
+        native_engine_pair_count:["Numero di restrizioni diverso tra SDK e modello interno","SDK and internal restriction counts differ","Nombre de restrictions différent entre le SDK et le modèle interne","El número de restricciones difiere entre el SDK y el modelo interno","Unterschiedliche Anzahlen von Beschränkungen in SDK und internem Modell","Número de restrições diferente entre o SDK e o modelo interno"],
+        native_engine_pair_json:["JSON interno non leggibile","Internal JSON unreadable","JSON interne illisible","JSON interno ilegible","Internes JSON nicht lesbar","JSON interno ilegível"],
+        native_engine_pair_direction_missing:["Campo direction mancante","Missing direction field","Champ direction manquant","Falta el campo direction","Feld direction fehlt","Campo direction em falta"],
+        native_engine_pair_direction:["Direzione non confrontabile","Direction could not be compared","Direction non comparable","Dirección no comparable","Richtung nicht vergleichbar","Direção não comparável"],
+        native_engine_pair_fields:["Campi diversi tra SDK e modello interno","Fields differ between SDK and internal model","Champs différents entre le SDK et le modèle interne","Hay campos distintos entre el SDK y el modelo interno","Felder unterscheiden sich zwischen SDK und internem Modell","Campos diferentes entre o SDK e o modelo interno"],
+        native_engine_pair_ambiguous:["Più restrizioni compatibili con gli stessi dati","Multiple restrictions match the same data","Plusieurs restrictions correspondent aux mêmes données","Varias restricciones coinciden con los mismos datos","Mehrere Beschränkungen passen zu denselben Daten","Várias restrições correspondem aos mesmos dados"],
+        native_engine_pair_unreadable:["Campi di associazione non leggibili","Association fields unreadable","Champs d’association illisibles","Campos de asociación ilegibles","Zuordnungsfelder nicht lesbar","Campos de associação ilegíveis"],
         next:["Avanti","Next","Suivant","Siguiente","Weiter","Seguinte"],
         back:["Indietro","Back","Retour","Atrás","Zurück","Voltar"],
         close:["Chiudi","Close","Fermer","Cerrar","Schließen","Fechar"],
@@ -659,23 +668,23 @@
         const native=read?.rows;
         const sdk=segment?.restrictions;
         const count=read?.count??null;
-        if(!Array.isArray(sdk))return {count,rows:[]};
-        const unpaired=Array.from(sdk,(_,index)=>({index:index+1,count:null,status:"UNPAIRED"}));
-        if(!native||native.length!==sdk.length)return {count,rows:unpaired};
-        const raw=native.map(row=>{
-            try{return row.restriction?.toJSON?.()??null;}catch(_){return null;}
+        const raw=(native??[]).map(row=>{
+            try{
+                const record=row.restriction?.toJSON?.();
+                return record&&typeof record==="object"&&!Array.isArray(record)?record:null;
+            }catch(_){return null;}
         });
         // Missing private identity fields limit pairing to what both models
         // expose. A match must be unique in both directions.
-        const matches=(internal,visible)=>{
-            const requiredDirection=visible?.direction;
-            if(!internal||!["FWD","REV","BOTH"].includes(requiredDirection)||
-               internal.direction!==requiredDirection)return false;
+        const differences=(internal,visible)=>{
+            if(internal.direction!==visible.direction)return ["direction"];
             const scope=internal.laneScope??internal.disposition;
-            if(internal.disposition!=null&&internal.disposition!==scope)return false;
-            return (internal.defaultType==null||internal.defaultType===visible.defaultType)&&
-                (scope==null||scope===(visible.laneScope??visible.disposition))&&
-                (internal.laneType==null||internal.laneType===visible.laneType);
+            const fields=[];
+            if(internal.defaultType!=null&&internal.defaultType!==visible.defaultType)fields.push("defaultType");
+            if((internal.disposition!=null&&internal.disposition!==scope)||
+               (scope!=null&&scope!==(visible.laneScope??visible.disposition)))fields.push("laneScope");
+            if(internal.laneType!=null&&internal.laneType!==visible.laneType)fields.push("laneType");
+            return fields;
         };
         const stamp=data=>{
             if(!data||typeof data!=="object"||Array.isArray(data))throw Error("Missing engine condition");
@@ -689,7 +698,7 @@
             return JSON.stringify({vehicleType,engineType,operator,capacityThreshold:threshold});
         };
         const comparison=(profiles,record)=>{
-            if(!profiles)return "UNAVAILABLE";
+            if(!profiles||!record)return "UNAVAILABLE";
             try{
                 const rules=record.driveProfiles??record.vehicleRules;
                 if(rules!=null&&(typeof rules!=="object"||Array.isArray(rules)))return "UNAVAILABLE";
@@ -705,19 +714,38 @@
                 return JSON.stringify(direct)===JSON.stringify(json)?"MATCH":"DIFFERENT";
             }catch(_){return "UNAVAILABLE";}
         };
-        const rows=unpaired.map((fallback,index)=>{
+        const internal=(native??[]).map((row,index)=>({index:index+1,count:countEngineProfiles(row.profiles),
+            status:comparison(row.profiles,raw[index])}));
+        if(!Array.isArray(sdk))return {count,rows:[],internalRows:internal};
+        const paired=new Set();
+        const directions=["FWD","REV","BOTH"];
+        const rows=Array.from(sdk,(visible,index)=>{
+            const fallback=(reason,fields=[])=>({index:index+1,count:null,status:"UNPAIRED",reason,fields});
             try{
+                if(!native)return fallback("native_engine_pair_model");
+                if(native.length!==sdk.length)return fallback("native_engine_pair_count");
                 // An unreadable private identity could also match this SDK row.
-                if(raw.some(record=>!record||!["FWD","REV","BOTH"].includes(record.direction)))return fallback;
-                const candidates=raw.map((record,i)=>matches(record,sdk[index])?i:-1).filter(i=>i!==-1);
-                if(candidates.length!==1)return fallback;
+                if(raw.some(record=>!record))return fallback("native_engine_pair_json");
+                if(visible?.direction==null||raw.some(record=>record.direction==null))
+                    return fallback("native_engine_pair_direction_missing");
+                if(!directions.includes(visible?.direction)||raw.some(record=>!directions.includes(record.direction)))
+                    return fallback("native_engine_pair_direction");
+                const checks=raw.map((record,position)=>({position,fields:differences(record,visible)}));
+                const candidates=checks.filter(check=>!check.fields.length).map(check=>check.position);
+                if(!candidates.length){
+                    const sameDirection=checks.filter(check=>!check.fields.includes("direction"));
+                    const fields=sameDirection.length?[...new Set(sameDirection.flatMap(check=>check.fields))]:["direction"];
+                    return fallback("native_engine_pair_fields",fields);
+                }
+                if(candidates.length>1)return fallback("native_engine_pair_ambiguous");
                 const [position]=candidates;
-                if(sdk.filter(visible=>matches(raw[position],visible)).length!==1)return fallback;
-                const profiles=native[position].profiles;
-                return {index:index+1,count:countEngineProfiles(profiles),status:comparison(profiles,raw[position])};
-            }catch(_){return fallback;}
+                if(sdk.filter(entry=>entry&&!differences(raw[position],entry).length).length!==1)
+                    return fallback("native_engine_pair_ambiguous");
+                paired.add(position);
+                return {...internal[position],index:index+1};
+            }catch(_){return fallback("native_engine_pair_unreadable");}
         });
-        return {count,rows};
+        return {count,rows,internalRows:internal.filter((_,position)=>!paired.has(position))};
     }
     function normalizeVehicleRules(types,rules,permits) {
         const chosen=selectedVehicleTypes(types);
@@ -1560,11 +1588,15 @@
                     const review=inspectInternalEnginePreservation(page,segment);
                     result.replaceChildren(node("p",review.count===null?tr("native_engine_unavailable"):
                         tr("native_engine_count")+": "+review.count));
-                    for(const row of review.rows){
-                        const counts=row.count===null?"":tr("native_engine_row_count")+": "+row.count+" · ";
-                        const status={MATCH:"native_engine_match",DIFFERENT:"native_engine_difference",
-                            UNPAIRED:"native_engine_unpaired",UNAVAILABLE:"native_engine_uncompared"}[row.status];
-                        result.append(node("p",tr("existing_rule")+" "+row.index+" · "+counts+tr(status)));
+                    for(const [label,rows] of [["existing_rule",review.rows],["native_engine_internal_row",review.internalRows]]){
+                        for(const row of rows){
+                            const counts=row.count===null?"":tr("native_engine_row_count")+": "+row.count+" · ";
+                            const status={MATCH:"native_engine_match",DIFFERENT:"native_engine_difference",
+                                UNPAIRED:"native_engine_unpaired",UNAVAILABLE:"native_engine_uncompared"}[row.status];
+                            const reason=row.reason?" · "+tr(row.reason):"";
+                            const fields=row.fields?.length?" ("+row.fields.join(", ")+")":"";
+                            result.append(node("p",tr(label)+" "+row.index+" · "+counts+tr(status)+reason+fields));
+                        }
                     }
                 }),result);
                 motorCheckPlaced=true;

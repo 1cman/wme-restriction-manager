@@ -523,6 +523,14 @@ For an associated restriction, the diagnostic compares engine conditions from th
 
 **Verification.** Node tests cover a two-condition match, different thresholds or counts, conditions moved between profiles, missing JSON, incompatible shapes, reordered restriction rows and ambiguous assignments. In WME Standard and Beta, select the same motorcycle segment and expand **Native condition details (diagnostic)**. Click **Count engine conditions in the internal model**. Check that the segment total is 2 and note whether **Restriction 1** displays a matching comparison, unavailable comparison or unverified association. Close the wizard and confirm Save is still disabled when the wizard was the only action on the map.
 
+## Alpha 33 — Independent internal comparison and association diagnostics (2026-11-25)
+
+**Live evidence from Alpha 32.** The maintainer's screenshot shows a total of two native engine conditions. The SDK row is reported as unpaired. The prior UI did not expose the reason or the result of comparing the internal engine data independently, so the precise cause is still open on the live segment.
+
+**Read-only behavior.** The opt-in check compares the getter result with the internal JSON for each native restriction before trying to pair it with an SDK row. Results for unpaired records are displayed under **Internal model row**, separate from SDK restriction numbering. When pairing remains unverified, the SDK row reports the reason, such as a list-count mismatch, unreadable JSON, missing or unrecognized direction, differences in known identity fields, or ambiguity. Field values remain private. The evidence and uniqueness requirements for a positive association are unchanged, and the check cannot authorize writing.
+
+**Verification.** Node tests cover an unavailable native model, different list sizes, missing or unreadable identity data, a mismatch on a whitelisted field, ambiguity, and a successful internal comparison without an SDK association. In WME Standard and Beta, on the same segment, expand **Native condition details (diagnostic)** and click **Count engine conditions in the internal model**. Confirm the segment total is still 2. If the SDK row remains unpaired, capture its reason and the result shown for **Internal model row 1**. A matching internal comparison still leaves SDK association and post-update preservation to verify.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.
