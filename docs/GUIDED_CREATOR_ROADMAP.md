@@ -541,6 +541,14 @@ For an associated restriction, the diagnostic compares engine conditions from th
 
 **Verification.** Node tests cover all observed scope and lane-type codes, distinct handling of `NONE`, disagreement between legacy and current fields, and unsupported values. In WME Standard and Beta, on the same segment, open **Native condition details (diagnostic)** and click **Count engine conditions in the internal model**. An association supported by the observed conversion should show **Restriction 1 · Engine conditions: 2 · Direct read and internal JSON match**. If the diagnostic remains unpaired, note the displayed field. Close the draft and confirm Save remains disabled if the wizard was the only action on the map.
 
+## Alpha 35 — Read-only Before/After draft (2026-11-25)
+
+**Live evidence from Alpha 34.** The maintainer's screenshot shows that the two engine conditions now match both the direct reading and internal JSON under **Restriction 1**. This confirms the pairing and the comparison for that existing restriction. Preservation after an actual WME update still needs evidence.
+
+**Read-only projection.** The final summary has a **Before/After (read-only draft)** panel. **Before** contains the original restriction inspector and its engine diagnostic. **Proposed after** lists each existing restriction to retain by its original number and shows one projected addition per draft time frame, together with direction, lane, default rule and selected vehicle groups. Overnight additions retain the following-day label. The blue draft repeats the segment-wide scope of the toll flag. The separate SAFE12 estimate still shows the projected totals. When the SDK list is unavailable, the projection explicitly shows that the list of restrictions to retain is unknown. On entry to the summary the wizard uses the newest SDK data it read, while incomplete snapshots still prevent a positive preservation finding. This projection is an in-memory summary and produces no SDK update data. The actual write and round-trip gates remain blocked.
+
+**Verification.** Node tests cover retained entries that are noneditable or opaque, missing and empty native lists, numbered placeholders for unreadable list slots, and separate daytime and overnight additions. In WME Standard and Beta, open the same motorcycle segment, draft one overnight period and advance to the summary. Open **Before/After (read-only draft)**. Confirm that **Before** contains **Restriction 1** and its diagnostic, and that **Proposed after** retains **Restriction 1** with one projected addition ending the next day. The separate SAFE12 estimate should be 2 restrictions / 2 time frames for that segment. The conversion review should still show that saving is unavailable.
+
 ## Acceptance criteria before real editing
 
 - Read country from the selected segment address, independently of UI language and editor location.

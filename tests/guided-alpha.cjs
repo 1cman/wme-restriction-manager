@@ -716,6 +716,33 @@ assert.ok(src.includes('estimateSafe12Budget(') &&
 assert.ok(src.includes('tr("budget_unknown")') &&
  src.includes('tr(estimate.status==="OVER"?"budget_over":"budget_within")'),
  'Budget must be transparent about over-limit and unknown cases');
+const previewSchedule=a.normalizeRedSchedule({...overnightDraft,slots:[
+ ...overnightDraft.slots,{fromTime:'08:00',toTime:'09:00'}
+]});
+const previewInput=Object.freeze({restrictions:Object.freeze([
+ Object.freeze({editable:false,licensePlateRule:'PRIVATE-PLATE'}),
+ Object.freeze({vehicleRules:{BLOCKED:[{vehicleTypes:['MOTORCYCLE'],engineType:'PRIVATE-ENGINE'}]}})
+])});
+const projectedDraft=a.previewDraftBeforeAfter(previewInput,previewSchedule);
+assert.deepEqual(projectedDraft.before,[1,2]);
+assert.deepEqual(projectedDraft.after.retained,[1,2]);
+assert.notEqual(projectedDraft.before,projectedDraft.after.retained);
+assert.equal(projectedDraft.after.additions.length,2);
+assert.deepEqual(projectedDraft.after.additions[0],{
+ startDate:'2026-12-06',endDate:'2026-12-06',weekdays:['SUNDAY'],fromTime:'22:00',toTime:'06:00'
+});
+assert.notEqual(projectedDraft.after.additions[0].weekdays,previewSchedule.timeFrames[0].weekdays);
+assert.doesNotMatch(JSON.stringify(projectedDraft),/PRIVATE-|sdkWritePayload/);
+assert.equal(projectedDraft.saveAllowed,false);
+assert.equal(projectedDraft.verified,false);
+const unknownDraftPreview=a.previewDraftBeforeAfter({restrictions:null},previewSchedule);
+assert.equal(unknownDraftPreview.before,null);
+assert.equal(unknownDraftPreview.after.retained,null,'An unavailable list must not look empty');
+assert.deepEqual(unknownDraftPreview.after.additions,projectedDraft.after.additions);
+assert.deepEqual(a.previewDraftBeforeAfter({restrictions:[]},previewSchedule).after.retained,[]);
+assert.deepEqual(a.previewDraftBeforeAfter({restrictions:Array(1)},previewSchedule).after.retained,[1]);
+assert.equal(a.listExistingRestrictions({restrictions:Array(1)}).entries[0].index,1,
+ 'An unreadable list slot is still shown as an existing row');
 // Alpha 16: proposed laneScope values are NOT a verified SDK write contract.
 assert.deepEqual(a.LANE_SCOPE_CANDIDATES,{
  segment:'WHOLE_SEGMENT',left:'LEFT_LANE',
@@ -1268,7 +1295,8 @@ assert.ok(src.includes('function renderExistingRestrictionList(') &&
  'Existing restrictions must be visible immediately in the guided sidebar');
 assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,true));'),
  'Existing restrictions must be visible before filling in a new draft');
-assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,false));'),
+assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false));') &&
+ src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
  'Existing restrictions remain accessible in the final review');
 assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));'),
  'Conflict review must be visible before and in the final summary');

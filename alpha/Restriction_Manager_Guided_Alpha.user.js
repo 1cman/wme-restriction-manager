@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.34
+// @version      4.0.0-alpha.35
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.34";
+    const VERSION = "4.0.0-alpha.35";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -260,6 +260,12 @@
         green_schedule:["Date e fasce orarie del transito consentito","Dates and times of permitted traffic","Dates et horaires de circulation autorisée","Fechas y horarios del tráfico permitido","Zeiten der erlaubten Durchfahrt","Datas e horários da circulação autorizada"],
         green_schedule_intro:["Questi orari riguardano i veicoli autorizzati e le loro condizioni individuali (pass, occupanti). Fuori dai periodi indicati non è definita alcuna autorizzazione da questa bozza. Da verificare in WME.","This schedule applies to authorized vehicle classes and their individual permit/occupancy conditions. Outside these windows this draft grants no permission. Verify in native WME.","Le calendrier concerne les véhicules autorisés et leurs conditions ; à vérifier dans WME.","El calendario se aplica a los vehículos autorizados y sus condiciones; verificar en WME.","Der Zeitplan gilt für die zugelassenen Fahrzeuge und deren Bedingungen; in WME prüfen.","O calendário aplica-se aos veículos autorizados e às respetivas condições; verificar no WME."],
         budget_heading:["Controllo preliminare SAFE12","Preliminary SAFE12 check","Vérification préliminaire SAFE12","Comprobación preliminar SAFE12","Vorläufige SAFE12-Prüfung","Verificação preliminar SAFE12"],
+        before_after_title:["Prima/Dopo (bozza in sola lettura)","Before/After (read-only draft)","Avant/Après (brouillon en lecture seule)","Antes/Después (borrador de solo lectura)","Vorher/Nachher (Entwurf im Lesemodus)","Antes/Depois (rascunho só de leitura)"],
+        before_after_before:["Prima","Before","Avant","Antes","Vorher","Antes"],
+        before_after_after:["Dopo previsto","Proposed after","Après prévu","Después previsto","Geplantes Nachher","Depois previsto"],
+        before_after_retained:["Restrizioni da conservare nella bozza","Restrictions to retain in the draft","Restrictions à conserver dans le brouillon","Restricciones que se conservarían en el borrador","Im Entwurf zu erhaltende Beschränkungen","Restrições a conservar no rascunho"],
+        before_after_unknown:["Elenco delle restrizioni da conservare non disponibile.","List of restrictions to retain unavailable.","Liste des restrictions à conserver indisponible.","Lista de restricciones que se conservarían no disponible.","Liste der zu erhaltenden Beschränkungen nicht verfügbar.","Lista de restrições a conservar indisponível."],
+        before_after_addition:["Aggiunta prevista","Proposed addition","Ajout prévu","Adición prevista","Geplanter Zusatz","Adição prevista"],
         budget_existing:["Restrizioni già presenti","Existing restrictions","Restrictions existantes","Restricciones existentes","Bestehende Beschränkungen","Restrições existentes"],
         budget_existing_frames:["Definizioni temporali già presenti","Existing time-frame definitions","Définitions horaires existantes","Definiciones temporales existentes","Bestehende Zeitdefinitionen","Definições temporais existentes"],
         budget_new:["Restrizioni proposte","Proposed restrictions","Restrictions proposées","Restricciones propuestas","Vorgeschlagene Beschränkungen","Restrições propostas"],
@@ -528,6 +534,16 @@
             limit:MAX_DRAFT_TIME_FRAMES,
             verified:false
         };
+    }
+    // Projection for the summary. Keep every existing row by position and
+    // represent proposed additions as calendar labels, never as SDK data.
+    function previewDraftBeforeAfter(segment,schedule) {
+        const existing=Array.isArray(segment?.restrictions)?
+            Array.from(segment.restrictions,(_,index)=>index+1):null;
+        const additions=schedule.timeFrames.map(({startDate,endDate,weekdays,fromTime,toTime})=>
+            ({startDate,endDate,weekdays:[...weekdays],fromTime,toTime}));
+        return {before:existing,after:{retained:existing?.slice()??null,additions},
+            verified:false,saveAllowed:false};
     }
     function nextWizardStep(step,intent,types=[]) {
         if(step===4&&intent==="BLOCKED")return types.includes("MOTORCYCLE")?5:7;
@@ -822,7 +838,7 @@
         const primitive=value=>(typeof value==="string"||typeof value==="number")?
             String(value):null;
         return {available:true,verified:false,
-            entries:segment.restrictions.map((r,index)=>{
+            entries:Array.from(segment.restrictions,(r,index)=>{
                 const frames=Array.isArray(r?.timeFrames)?
                     Array.from(r.timeFrames,inspectNativeTimeFrame):[];
                 const groups=r?.vehicleRules&&typeof r.vehicleRules==="object"&&
@@ -1424,7 +1440,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1830,18 +1846,52 @@
         function isScheduleValid(){
             try {normalizeRedSchedule(redSchedule);return true;}catch(_){return false;}
         }
+        function formatScheduleFrame(frame){
+            const dates=(frame.startDate||tr("no_condition"))+" → "+
+                (frame.endDate||tr("no_condition"));
+            const days=frame.weekdays.map(day=>tr(day)).join(", ");
+            const hours=frame.fromTime===null?tr("schedule_all_day"):
+                frame.fromTime+"–"+frame.toTime+
+                (crossesMidnight(frame)?" ("+tr("schedule_next_day")+")":"");
+            return dates+" · "+days+" · "+hours;
+        }
         function renderScheduleSummary(schedule,intro){
             dialog.append(node("h4",tr("schedule_summary")));
-            for(const frame of schedule.timeFrames){
-                const dates=(frame.startDate||tr("no_condition"))+" → "+
-                    (frame.endDate||tr("no_condition"));
-                const days=frame.weekdays.map(day=>tr(day)).join(", ");
-                const hours=frame.fromTime===null?tr("schedule_all_day"):
-                    frame.fromTime+"–"+frame.toTime+
-                    (crossesMidnight(frame)?" ("+tr("schedule_next_day")+")":"");
-                dialog.append(node("p",dates+" · "+days+" · "+hours));
-            }
+            for(const frame of schedule.timeFrames)dialog.append(node("p",formatScheduleFrame(frame)));
             dialog.append(node("p",tr(intro)));
+        }
+        function renderBeforeAfterPreview(schedule,conversion){
+            const preview=previewDraftBeforeAfter(current.segment,schedule);
+            const details=node("details");
+            details.style.cssText="border:1px solid #cbd5e1;border-radius:8px;padding:10px;"+
+                "margin-top:12px;background:#f8fafc;";
+            const heading=node("summary",tr("before_after_title"));
+            heading.style.cssText="font-weight:600;cursor:pointer;";
+            details.append(heading,node("h4",tr("before_after_before")));
+            if(preview.before===null)details.append(node("p",tr("existing_unknown")));
+            else details.append(renderExistingRestrictionList(current.segment,false));
+            details.append(node("h4",tr("before_after_after")));
+            const retained=preview.after.retained;
+            if(retained===null)details.append(node("p",tr("before_after_unknown")));
+            else if(!retained.length)details.append(node("p",tr("preservation_none")));
+            else{
+                const names=retained.map(index=>tr("existing_rule")+" "+index);
+                details.append(node("p",tr("before_after_retained")+" · "+names.join(", ")),
+                    node("p",tr(conversion.preservation.status==="UNKNOWN"?"preservation_unknown":"preservation_roundtrip")));
+            }
+            const additions=node("ol");
+            const design=[conversion.restrictionIntent,conversion.directionDesign,
+                conversion.laneScopeDesign,conversion.laneTypeDesign].map(tr).join(" · ");
+            details.append(node("p",tr("before_after_addition")+" · "+design+" · SDK "+conversion.defaultType));
+            if(conversion.overrideType){
+                const types=conversion.vehicleConditionRows.map(row=>
+                    vehicleLabels[row.vehicleType]?.[LANGS.indexOf(lang)]||row.vehicleType);
+                details.append(node("p",tr("conversion_overrides")+" · "+conversion.overrideType+" · "+types.join(", ")));
+            }
+            for(const frame of preview.after.additions)additions.append(node("li",formatScheduleFrame(frame)));
+            details.append(additions);
+            if(conversion.plannedHasToll===true)details.append(node("p",tr("toll_both_directions")));
+            return details;
         }
         function refreshNext(){
             const next=dialog.querySelector('[data-guided-next="true"]');
@@ -1994,6 +2044,7 @@
             }
             const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);
             if(destination===null)return;
+            if(destination===6)current=fresh;
             step=destination;
             render();
         }
@@ -2461,6 +2512,11 @@
             }
             if(step===6) {
                 const schedule=normalizeRedSchedule(redSchedule);
+                // Read-only design review. Never pass this object to updateSegment.
+                const conversion=reviewSdkConversion(
+                    draft,current.segment,redSchedule,vehicleRules,
+                    current.permits,motorDraft,current.country
+                );
                 if(draft.restrictionType==="ALLOWED"){
                     const checked=normalizeDraft(draft,current.segment);
                     const conditions=normalizeVehicleRules(
@@ -2552,6 +2608,7 @@
                     renderScheduleSummary(schedule,"toll_schedule_intro");
                     dialog.append(node("p",tr("vehicles_unknown")));
                 }
+                dialog.append(renderBeforeAfterPreview(schedule,conversion));
                 // Conservative budget only: not an SDK write plan and NOT
                 // a pass from the stable v3.2 SAFE12 full-operation validator.
                 const estimate=estimateSafe12Budget(
@@ -2599,13 +2656,7 @@
                         tr("lane_special_pending"):tr("lane_none_requested")),
                     node("p",tr("lane_caution")));
                 dialog.append(laneBox);
-                dialog.append(renderExistingRestrictionList(current.segment,false));
                 dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
-                // Read-only design review. Never pass this object to updateSegment.
-                const conversion=reviewSdkConversion(
-                    draft,current.segment,redSchedule,vehicleRules,
-                    current.permits,motorDraft,current.country
-                );
                 const details=node("details");
                 details.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
                     "padding:10px;margin-top:12px;background:#f8fafc;";
