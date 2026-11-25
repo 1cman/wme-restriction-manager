@@ -561,6 +561,45 @@ assert.deepEqual(a.findEnginePreservationGaps({
   {index:4,count:0,status:'MATCH'}],internalRows:[internalMatch]
 }),[],'Only positive matching evidence paired to a specific SDK restriction yields a warning');
 
+let currentEngineRows=[sameEngines],engineReadCount=0;
+const liveEngineModel={W:{model:{segments:{getObjectById:()=>{
+ engineReadCount++;
+ return {attributes:{restrictions:currentEngineRows}};
+}}}}};
+const trackEngines=a.trackInternalEnginePreservation(liveEngineModel,engineSegment);
+assert.equal(engineReadCount,0,'Opening the summary does not read private engine conditions');
+assert.deepEqual(trackEngines(),{...matched,changes:[]},'The first match establishes the baseline');
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[electricRule,fuelRule]],[[fuelRule,electricRule]])];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'SAME'}],'Condition order within a profile may vary');
+const changedFuelRule={...fuelRule,capacityThreshold:12345};
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[changedFuelRule,electricRule]],[[changedFuelRule,electricRule]])];
+const changedEngines=trackEngines();
+assert.deepEqual(changedEngines,{...matched,changes:[{index:1,status:'CHANGED'}]},
+ 'Both current reads agree and the count is unchanged, but the first verified threshold differs');
+assert.doesNotMatch(JSON.stringify(changedEngines),/PRIVATE_|capacityThreshold|snapshot|12345/);
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[changedFuelRule,electricRule]],[[fuelRule,electricRule]])];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'UNKNOWN'}],
+ 'Disagreeing reads cannot confirm a change');
+currentEngineRows=[sameEngines,sameEngines];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'UNKNOWN'}],
+ 'Losing the unique SDK association makes a reread inconclusive');
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[],[])];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'CHANGED'}],'Removing the conditions is a change');
+currentEngineRows=[sameEngines];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'SAME'}],
+ 'Intermediate discrepancies do not replace the first verified baseline');
+assert.deepEqual(a.trackInternalEnginePreservation(liveEngineModel,engineSegment)().changes,[],
+ 'Each new summary starts with an independent baseline');
+const trackLateRead=a.trackInternalEnginePreservation(liveEngineModel,engineSegment);
+currentEngineRows=null;
+assert.deepEqual(trackLateRead().changes,[],'An unavailable read does not set the baseline');
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[],[])];
+assert.deepEqual(trackLateRead().changes,[]);
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[]],[[]])];
+assert.deepEqual(trackLateRead().changes,[],'Profile changes with no engine conditions produce no engine alert');
+currentEngineRows=[sameEngines];
+assert.deepEqual(trackLateRead().changes,[{index:1,status:'CHANGED'}],'New engine conditions are detected');
+
 const sdkCalendar=Object.freeze({startDate:'2026-11-25',endDate:'2026-12-25',
  fromTime:'22:00',toTime:'06:00',repeatYearly:false,dayAlternation:'EVEN_DAYS',
  weekdays:Object.freeze(['SUNDAY','MONDAY']),timeZone:'Europe/Rome'});
