@@ -1,5 +1,7 @@
 # Restriction Manager for Waze Map Editor
 
+> **Developers / Codex — Guided Creator 4.0 (development branch):** start with [AGENTS.md](AGENTS.md) for architecture, safety constraints, validated behavior and next tasks; read the [full Guided Creator roadmap](docs/GUIDED_CREATOR_ROADMAP.md) and the [copy-ready Codex handoff prompt](docs/CODEX_HANDOFF_PROMPT.md). The guided Alpha is separate and read-only; this README's stable install link still targets the published stable release.
+
 **Restriction Manager (SDK)** is an independent Tampermonkey userscript for Waze Map Editor (WME). It provides reusable restriction presets, calendars with holiday exclusions, before/after previews, conflict warnings and SDK diagnostics.
 
 **Restriction Manager (SDK)** è uno userscript indipendente per Tampermonkey e Waze Map Editor (WME), con preset di restrizioni, calendari e festività, anteprime Prima/Dopo, controllo dei conflitti e diagnostica SDK.
