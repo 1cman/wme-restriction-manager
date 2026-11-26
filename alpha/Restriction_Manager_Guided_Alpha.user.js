@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.39
+// @version      4.0.0-alpha.40
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.39";
+    const VERSION = "4.0.0-alpha.40";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -106,6 +106,19 @@
         conversion_unknown:["Verifica dei dati SDK esistenti incompleta.","Existing SDK data review is incomplete.","Vérification des données SDK existantes incomplète.","Revisión de los datos SDK existentes incompleta.","Prüfung vorhandener SDK-Daten unvollständig.","Verificação dos dados SDK existentes incompleta."],
         conversion_overbudget:["Stima SAFE12 oltre il limite: rivedere il calendario.","SAFE12 estimate exceeds the limit; revise the schedule.","Estimation SAFE12 au-dessus de la limite.","Estimación SAFE12 sobre el límite.","SAFE12-Schätzung überschreitet das Limit.","Estimativa SAFE12 acima do limite."],
         conversion_country:["Disponibilità e permessi locali del Paese/segmento da verificare.","Country/segment rule eligibility and permissions unverified.","Éligibilité du pays/segment à vérifier.","Elegibilidad del país/segmento sin verificar.","Zulässigkeit für Land/Segment ungeprüft.","Elegibilidade do país/segmento por verificar."],
+        conversion_no_permission:["Permessi insufficienti sul segmento: lo SDK segnala nessun permesso di modifica.","Insufficient segment permissions: SDK reports no editing permissions.","Autorisations insuffisantes sur le segment : le SDK ne signale aucun droit de modification.","Permisos insuficientes en el segmento: el SDK indica que no hay permisos de edición.","Unzureichende Segmentberechtigungen: SDK meldet keine Bearbeitungsrechte.","Permissões insuficientes no segmento: o SDK indica ausência de permissões de edição."],
+        conversion_non_drivable:["Tipo di strada non percorribile secondo lo SDK: restrizioni veicolari non applicabili.","Road type is non-drivable according to the SDK: vehicle restrictions do not apply.","Type de route non carrossable selon le SDK : restrictions véhicules non applicables.","Tipo de vía no transitable según el SDK: las restricciones de vehículos no aplican.","Straßentyp laut SDK nicht befahrbar: Fahrzeugbeschränkungen nicht anwendbar.","Tipo de via não transitável segundo o SDK: restrições de veículos não se aplicam."],
+        conversion_toll_state_unknown:["Stato base del pedaggio non distinguibile dallo SDK: ripristino sicuro non verificabile.","Baseline road toll flag cannot be distinguished via SDK: safe rollback cannot be verified.","État de base du péage non distinguable via le SDK : retour arrière sûr non vérifiable.","Estado base del peaje no distinguible por SDK: reversión segura no verificable.","Basis-Mautstatus im SDK nicht unterscheidbar: sicheres Zurücksetzen nicht prüfbar.","Estado base da portagem não distinguível via SDK: reversão segura não verificável."],
+        inspection_permissions:["Permessi sul segmento (SDK)","Segment permissions (SDK)","Autorisations sur le segment (SDK)","Permisos del segmento (SDK)","Segmentberechtigungen (SDK)","Permissões do segmento (SDK)"],
+        eligibility_no_permission:["Nessun permesso di modifica sul segmento","No editing permission on this segment","Aucune autorisation de modification sur ce segment","Sin permisos de edición en este segmento","Keine Bearbeitungsberechtigung für dieses Segment","Sem permissão de edição neste segmento"],
+        eligibility_some_permission:["Permessi generali presenti (permessi specifici per restrizioni/pedaggio da verificare)","General permissions present (specific restriction/toll permissions still unverified)","Autorisations générales présentes (droits spécifiques restrictions/péage à vérifier)","Permisos generales presentes (permisos específicos de restricciones/peaje sin verificar)","Allgemeine Berechtigungen vorhanden (spezifische Rechte für Beschränkungen/Maut ungeprüft)","Permissões gerais presentes (permissões específicas de restrições/portagem por verificar)"],
+        inspection_drivable:["Tipo di strada percorribile (SDK)","Drivable road type (SDK)","Type de route carrossable (SDK)","Tipo de vía transitable (SDK)","Befahrbarer Straßentyp (SDK)","Tipo de via transitável (SDK)"],
+        eligibility_non_drivable:["No (tipo di strada non percorribile)","No (non-drivable road type)","Non (type de route non carrossable)","No (tipo de vía no transitable)","Nein (nicht befahrbarer Straßentyp)","Não (tipo de via não transitável)"],
+        inspection_toll_state:["Stato pedaggio segmento (SDK isTollSegment)","Segment toll state (SDK isTollSegment)","État péage du segment (SDK isTollSegment)","Estado de peaje del segmento (SDK isTollSegment)","Segment-Mautstatus (SDK isTollSegment)","Estado de portagem do segmento (SDK isTollSegment)"],
+        toll_state_not_toll:["Nessun pedaggio rilevato (isTollSegment: false)","No toll detected (isTollSegment: false)","Aucun péage détecté (isTollSegment : false)","Sin peaje detectado (isTollSegment: false)","Keine Maut erkannt (isTollSegment: false)","Sem portagem detetada (isTollSegment: false)"],
+        toll_state_road_only:["Pedaggio rilevato senza restrizioni TOLL (flag per direzione e ripristino non esposti dallo SDK)","Toll detected with no TOLL restrictions (per-direction flags and rollback not exposed by SDK)","Péage détecté sans restriction TOLL (indicateurs par sens et retour arrière non exposés par le SDK)","Peaje detectado sin restricciones TOLL (marcas por sentido y reversión no expuestas por el SDK)","Maut ohne TOLL-Beschränkungen erkannt (Richtungsflags und Rückgängigmachen nicht im SDK)","Portagem detetada sem restrições TOLL (sinalizadores por sentido e reversão não expostos pelo SDK)"],
+        toll_state_ambiguous_restriction:["Pedaggio rilevato con restrizioni TOLL già presenti: il flag base strada a pedaggio non è distinguibile dallo SDK","Toll detected with existing TOLL restrictions: underlying road toll flag cannot be distinguished via SDK","Péage détecté avec restrictions TOLL existantes : l’attribut péage de base n’est pas distinguable via le SDK","Peaje detectado con restricciones TOLL existentes: el atributo base de vía de peaje no es distinguible por SDK","Maut mit vorhandenen TOLL-Beschränkungen erkannt: Basis-Mautattribut im SDK nicht unterscheidbar","Portagem detetada com restrições TOLL existentes: o atributo base de portagem não é distinguível via SDK"],
+        toll_state_ambiguous_unknown:["Pedaggio rilevato, ma elenco restrizioni incompleto: impossibile distinguere flag strada e restrizioni TOLL","Toll detected, but existing restriction list is incomplete: cannot distinguish road flag from TOLL restrictions","Péage détecté, mais liste des restrictions incomplète : impossible de distinguer péage routier et restrictions TOLL","Peaje detectado, pero lista de restricciones incompleta: no se puede distinguir peaje vial de restricciones TOLL","Maut erkannt, aber Beschränkungsliste unvollständig: Straßenflag und TOLL-Regeln nicht unterscheidbar","Portagem detetada, mas lista de restrições incompleta: impossível distinguir portagem viária de restrições TOLL"],
         preservation_title:["Controllo conservazione restrizioni esistenti","Existing restrictions preservation audit","Audit de conservation des restrictions existantes","Auditoría de conservación de restricciones existentes","Prüfung der Erhaltung vorhandener Beschränkungen","Auditoria de preservação das restrições existentes"],
         preservation_status:["Esito controllo","Inspection result","Résultat du contrôle","Resultado del control","Prüfergebnis","Resultado da verificação"],
         preservation_none:["Nessuna restrizione esistente da conservare","No existing restrictions to preserve","Aucune restriction existante à conserver","No hay restricciones que conservar","Keine bestehenden Beschränkungen zu erhalten","Sem restrições existentes para preservar"],
@@ -1475,10 +1488,80 @@
             writeReady:false,verified:false
         };
     }
+    // Official SDK Segments.isTollSegment returns true if the segment is a toll
+    // road OR has a toll-free restriction. It cannot distinguish the underlying
+    // road toll flag when TOLL restrictions exist or restrictions are incomplete.
+    function inspectSegmentTollState(segment,sdkIsTollSegment=null) {
+        const isTollSegment=typeof sdkIsTollSegment==="boolean"?sdkIsTollSegment:null;
+        const rows=Array.isArray(segment?.restrictions)?segment.restrictions:null;
+        let existingTollRestrictions=null;
+        if(rows){
+            let known=true,tollCount=0;
+            for(let index=0;index<rows.length;index++){
+                const desc=Object.getOwnPropertyDescriptor(rows,index);
+                const row=desc&&"value" in desc?desc.value:null;
+                let defaultType=null;
+                try{
+                    if(row&&typeof row==="object"&&!Array.isArray(row))defaultType=row.defaultType;
+                }catch(_){known=false;break;}
+                if(!["BLOCKED","FREE","TOLL"].includes(defaultType)){known=false;break;}
+                if(defaultType==="TOLL")tollCount++;
+            }
+            if(known)existingTollRestrictions=tollCount;
+        }
+        let status="UNKNOWN";
+        if(isTollSegment===false){
+            if(existingTollRestrictions===0)status="NOT_TOLL";
+        }else if(isTollSegment===true){
+            if(existingTollRestrictions===null)status="AMBIGUOUS_UNKNOWN_RESTRICTIONS";
+            else if(existingTollRestrictions>0)status="AMBIGUOUS_WITH_TOLL_RESTRICTION";
+            else status="TOLL_WITHOUT_TOLL_RESTRICTION";
+        }
+        return {
+            status,isTollSegment,existingTollRestrictions,
+            rollbackVerified:false,writeReady:false,verified:false
+        };
+    }
+    // Official SDK Segments.hasPermissions({segmentId}) without a specific
+    // SegmentPermission checks only whether the editor has ANY permission.
+    // true never proves restriction- or toll-editing rights; false blocks edits.
+    function inspectSegmentEligibility(segment,access={}) {
+        const hasAnyPermission=typeof access?.hasPermissions==="boolean"?access.hasPermissions:null;
+        let segDrivable=null;
+        try{
+            if(typeof segment?.isDrivable==="boolean")segDrivable=segment.isDrivable;
+        }catch(_){segDrivable=null;}
+        const roadDrivable=typeof access?.isRoadTypeDrivable==="boolean"?access.isRoadTypeDrivable:null;
+        const drivable=segDrivable!==null&&roadDrivable!==null&&segDrivable!==roadDrivable?
+            null:(segDrivable??roadDrivable);
+        let hasNonEditableRestrictions=null;
+        if(Array.isArray(segment?.restrictions)){
+            const rows=segment.restrictions;
+            let hasFalse=false,hasUnknown=false;
+            for(let index=0;index<rows.length;index++){
+                const desc=Object.getOwnPropertyDescriptor(rows,index);
+                const row=desc&&"value" in desc?desc.value:null;
+                let editable;
+                try{
+                    if(row&&typeof row==="object"&&!Array.isArray(row))editable=row.editable;
+                }catch(_){hasUnknown=true;continue;}
+                if(editable===false)hasFalse=true;
+                else if(editable!==true)hasUnknown=true;
+            }
+            hasNonEditableRestrictions=hasFalse?true:hasUnknown?null:false;
+        }
+        const status=hasAnyPermission===false?"BLOCKED_NO_PERMISSION":
+            drivable===false?"BLOCKED_NON_DRIVABLE":
+            hasAnyPermission===true&&drivable===true?"NEEDS_NATIVE_PERMISSION_CHECK":"UNKNOWN";
+        return {
+            status,hasAnyPermission,drivable,hasNonEditableRestrictions,
+            writeReady:false,verified:false
+        };
+    }
     // Deterministic conversion REVIEW, not SegmentRestrictionData and not a
     // Segments.updateSegment payload. Only the top-level rule pairing is
     // supported by the published SDK docs. Everything else fails closed.
-    function reviewSdkConversion(draft,segment,schedule,vehicleRules,permits,motorDraft,country) {
+    function reviewSdkConversion(draft,segment,schedule,vehicleRules,permits,motorDraft,country,segmentContext={}) {
         const normalized=normalizeDraft(draft,segment);
         const dateDraft=normalizeRedSchedule(schedule);
         let vehicleConditionRows=[];
@@ -1506,8 +1589,14 @@
         }
         const budget=estimateSafe12Budget(segment?.restrictions,dateDraft.timeFrames);
         const preservation=auditRestrictionPreservation(segment);
+        const eligibility=inspectSegmentEligibility(segment,segmentContext?.access);
+        const tollState=inspectSegmentTollState(segment,segmentContext?.isTollSegment);
         const blockers=["conversion_sdk_contract","conversion_schedule",
             "conversion_lane","conversion_safe12","conversion_country"];
+        if(eligibility.hasAnyPermission===false)
+            blockers.push("conversion_no_permission");
+        if(eligibility.drivable===false)
+            blockers.push("conversion_non_drivable");
         if(preservation.status==="UNKNOWN")
             blockers.push("conversion_unknown");
         if(preservation.status==="REQUIRES_ROUNDTRIP")
@@ -1520,8 +1609,11 @@
             blockers.push("conversion_conditions");
         if(motorMode==="MATCHING_ENGINES")
             blockers.push("conversion_engine");
-        if(normalized.restrictionIntent==="TOLL")
+        if(normalized.restrictionIntent==="TOLL"){
             blockers.push("conversion_toll_atomic");
+            if(["UNKNOWN","AMBIGUOUS_WITH_TOLL_RESTRICTION","AMBIGUOUS_UNKNOWN_RESTRICTIONS"].includes(tollState.status))
+                blockers.push("conversion_toll_state_unknown");
+        }
         // Do not infer segment timezone from the user's browser or UI language.
         // Do not copy/write private or noneditable existing restrictions.
         return {
@@ -1536,7 +1628,8 @@
             plannedHasToll:normalized.restrictionIntent==="TOLL"?true:null,
             existingRestrictionCount:Array.isArray(segment?.restrictions)?
                 segment.restrictions.length:null,
-            budgetStatus:budget.status,budget,preservation,blockers:[...new Set(blockers)]
+            budgetStatus:budget.status,budget,preservation,eligibility,tollState,
+            blockers:[...new Set(blockers)]
         };
     }
     async function readPermits(sdk,country) {
@@ -1593,11 +1686,32 @@
         let address = null;
         try { address = await sdk.DataModel.Segments.getAddress({segmentId:segment.id}); } catch (_) {}
         const country=countryIdentity(address);
-        return {segment,country,permits:await readPermits(sdk,country)};
+        let hasPermissions=null,isTollSegment=null,isRoadTypeDrivable=null;
+        if(typeof sdk?.DataModel?.Segments?.hasPermissions==="function"){
+            try{
+                const value=await sdk.DataModel.Segments.hasPermissions({segmentId:segment.id});
+                if(typeof value==="boolean")hasPermissions=value;
+            }catch(_){}
+        }
+        if(typeof sdk?.DataModel?.Segments?.isTollSegment==="function"){
+            try{
+                const value=await sdk.DataModel.Segments.isTollSegment({segmentId:segment.id});
+                if(typeof value==="boolean")isTollSegment=value;
+            }catch(_){}
+        }
+        if(typeof sdk?.DataModel?.Segments?.isRoadTypeDrivable==="function"&&
+           segment.roadType!==undefined&&segment.roadType!==null){
+            try{
+                const value=await sdk.DataModel.Segments.isRoadTypeDrivable({roadType:segment.roadType});
+                if(typeof value==="boolean")isRoadTypeDrivable=value;
+            }catch(_){}
+        }
+        return {segment,country,permits:await readPermits(sdk,country),
+            access:{hasPermissions,isRoadTypeDrivable},isTollSegment};
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1895,6 +2009,16 @@
         wrap.append(note);
         return wrap;
     }
+    const permissionLabel=eligibility=>eligibility.hasAnyPermission===false?"eligibility_no_permission":
+        eligibility.hasAnyPermission===true?"eligibility_some_permission":"unknown";
+    const drivableLabel=eligibility=>eligibility.drivable===true?"existing_yes":
+        eligibility.drivable===false?"eligibility_non_drivable":"unknown";
+    const tollStateLabel=state=>({
+        NOT_TOLL:"toll_state_not_toll",
+        TOLL_WITHOUT_TOLL_RESTRICTION:"toll_state_road_only",
+        AMBIGUOUS_WITH_TOLL_RESTRICTION:"toll_state_ambiguous_restriction",
+        AMBIGUOUS_UNKNOWN_RESTRICTIONS:"toll_state_ambiguous_unknown"
+    }[state?.status]||"unknown");
     function renderPanel() {
         const root = pane.querySelector("#"+ID+"-root");
         if (!root) return;
@@ -1907,6 +2031,8 @@
         root.append(launch,node("p",tr("anchor")+": "+(nativeButton?.isConnected?tr("found"):tr("fallback"))));
         root.append(renderExistingRestrictionList(context.segment,true));
         const inspection=inspectRestrictionCapabilities(context.segment);
+        const eligibility=inspectSegmentEligibility(context.segment,context.access);
+        const tollState=inspectSegmentTollState(context.segment,context.isTollSegment);
         const details=node("details");
         details.style.cssText="margin-top:10px;padding:10px;border:1px solid #d1d5db;"+
             "border-radius:8px;background:#f8fafc;font-size:12px;";
@@ -1925,6 +2051,11 @@
         const counts=inspection.editable;
         details.append(node("p",tr("inspection_editable")+": "+
             [counts.yes,counts.no,counts.unknown].join(" / ")));
+        details.append(
+            node("p",tr("inspection_permissions")+": "+tr(permissionLabel(eligibility))),
+            node("p",tr("inspection_drivable")+": "+tr(drivableLabel(eligibility))),
+            node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(tollState)))
+        );
         const snap=restrictionSnapshot(context.segment);
         details.append(node("p",tr("inspection_snapshot")+": "+
             (snap===null?tr("unknown"):tr("found"))));
@@ -1942,8 +2073,9 @@
             lang=LANGS.includes(candidate)?candidate:"en";
             context=await readContext(sdk);
             const injected=placeNative();
-            const key=JSON.stringify([lang,context?.segment.id,context?.country,
-                availableDirections(context?.segment),restrictionSnapshot(context?.segment,true),injected]);
+            const key=JSON.stringify([lang,context?.segment.id,context?.country,context?.access,
+                context?.isTollSegment,availableDirections(context?.segment),
+                restrictionSnapshot(context?.segment,true),injected]);
             if (key!==lastKey) { lastKey=key; renderPanel(); }
         } catch (_) { context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();} }
         finally { refreshing=false; }
@@ -2029,6 +2161,9 @@
             const heading=node("summary",tr("before_after_title"));
             heading.style.cssText="font-weight:600;cursor:pointer;";
             details.append(heading,node("h4",tr("before_after_before")));
+            if(conversion.plannedHasToll===true){
+                details.append(node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(conversion.tollState))));
+            }
             const engineGaps=node("div");
             engineGaps.setAttribute("role","status");
             engineGaps.style.cssText="color:#92400e;font-weight:600;";
@@ -2219,6 +2354,8 @@
             if (!fresh || fresh.segment.id!==current.segment.id ||
                 JSON.stringify(fresh.country)!==JSON.stringify(current.country) ||
                 JSON.stringify(fresh.permits)!==JSON.stringify(current.permits) ||
+                JSON.stringify(fresh.access)!==JSON.stringify(current.access) ||
+                fresh.isTollSegment!==current.isTollSegment ||
                 !availableDirections(fresh.segment).includes(draft.direction))
                 return {reason:"changed"};
             // A comparable SDK projection can detect changes even when
@@ -2732,7 +2869,8 @@
                 // Read-only design review. Never pass this object to updateSegment.
                 const conversion=reviewSdkConversion(
                     draft,current.segment,redSchedule,vehicleRules,
-                    current.permits,motorDraft,current.country
+                    current.permits,motorDraft,current.country,
+                    {access:current.access,isTollSegment:current.isTollSegment}
                 );
                 if(draft.restrictionType==="ALLOWED"){
                     const checked=normalizeDraft(draft,current.segment);
@@ -2886,8 +3024,12 @@
                         row=>row.vehicleType).join(", "):
                     tr("conversion_no_override"));
                 put("conversion_frames",String(conversion.proposedFrameCount));
-                if(conversion.plannedHasToll===true)
+                put("inspection_permissions",tr(permissionLabel(conversion.eligibility)));
+                put("inspection_drivable",tr(drivableLabel(conversion.eligibility)));
+                if(conversion.plannedHasToll===true){
+                    put("inspection_toll_state",tr(tollStateLabel(conversion.tollState)));
                     put("conversion_toll","hasToll: true ("+tr("toll_both_directions")+")");
+                }
                 const blocked=node("p",tr("conversion_blocked"));
                 blocked.style.cssText="font-weight:600;color:#991b1b;";
                 blocked.setAttribute("role","status");

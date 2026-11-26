@@ -1810,6 +1810,126 @@ assert.ok(src.includes('tr("native_conditions_intro")'),
 assert.ok(!/\.updateSegment\s*\(/.test(src),
  'No SDK mutations in the read-only diagnostics');
 assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
+// Alpha 40: read-only segment permissions, drivability and toll-state preflight.
+const headerVersion=/^\/\/ @version\s+(\S+)/m.exec(src)?.[1];
+assert.ok(headerVersion && src.includes(`const VERSION = "${headerVersion}";`),
+ 'Userscript @version header and runtime VERSION constant must match');
+const tollSegmentEmpty=Object.freeze({id:40,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:Object.freeze([])});
+const tollSegmentWithFree=Object.freeze({...tollSegmentEmpty,restrictions:Object.freeze([Object.freeze({defaultType:'FREE',editable:true})])});
+const tollSegmentWithToll=Object.freeze({...tollSegmentEmpty,restrictions:Object.freeze([Object.freeze({defaultType:'TOLL',editable:true})])});
+const tollSegmentIncomplete=Object.freeze({...tollSegmentEmpty,restrictions:[{defaultType:'UNKNOWN_TYPE'}]});
+const tollSegmentSparse={...tollSegmentEmpty,restrictions:Array(1)};
+const tollSegmentThrowing={...tollSegmentEmpty,restrictions:[Object.defineProperty({},'defaultType',{get(){throw Error('boom');}})]};
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentEmpty,false),{
+ status:'NOT_TOLL',isTollSegment:false,existingTollRestrictions:0,
+ rollbackVerified:false,writeReady:false,verified:false
+});
+assert.equal(a.inspectSegmentTollState(tollSegmentWithFree,false).status,'NOT_TOLL');
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentWithToll,false),{
+ status:'UNKNOWN',isTollSegment:false,existingTollRestrictions:1,
+ rollbackVerified:false,writeReady:false,verified:false
+},'isTollSegment=false contradicting an existing TOLL restriction must fail closed');
+assert.equal(a.inspectSegmentTollState({...tollSegmentEmpty,restrictions:null},false).status,'UNKNOWN');
+assert.equal(a.inspectSegmentTollState(tollSegmentSparse,false).status,'UNKNOWN');
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentEmpty,true),{
+ status:'TOLL_WITHOUT_TOLL_RESTRICTION',isTollSegment:true,existingTollRestrictions:0,
+ rollbackVerified:false,writeReady:false,verified:false
+});
+assert.equal(a.inspectSegmentTollState(tollSegmentWithFree,true).status,'TOLL_WITHOUT_TOLL_RESTRICTION');
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentWithToll,true),{
+ status:'AMBIGUOUS_WITH_TOLL_RESTRICTION',isTollSegment:true,existingTollRestrictions:1,
+ rollbackVerified:false,writeReady:false,verified:false
+});
+for(const ambiguous of [{...tollSegmentEmpty,restrictions:null},tollSegmentIncomplete,tollSegmentSparse,tollSegmentThrowing]){
+ const state=a.inspectSegmentTollState(ambiguous,true);
+ assert.equal(state.status,'AMBIGUOUS_UNKNOWN_RESTRICTIONS');
+ assert.equal(state.existingTollRestrictions,null);
+ assert.equal(state.rollbackVerified,false);
+ assert.equal(state.writeReady,false);
+}
+for(const badToll of [null,undefined,1,'true',{}]){
+ const state=a.inspectSegmentTollState(tollSegmentEmpty,badToll);
+ assert.equal(state.status,'UNKNOWN');
+ assert.equal(state.isTollSegment,null);
+}
+assert.deepEqual(a.inspectSegmentEligibility(tollSegmentEmpty,{hasPermissions:false,isRoadTypeDrivable:true}),{
+ status:'BLOCKED_NO_PERMISSION',hasAnyPermission:false,drivable:true,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+});
+assert.deepEqual(a.inspectSegmentEligibility({...tollSegmentEmpty,isDrivable:undefined},{hasPermissions:true,isRoadTypeDrivable:false}),{
+ status:'BLOCKED_NON_DRIVABLE',hasAnyPermission:true,drivable:false,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+});
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,isDrivable:false},{hasPermissions:true,isRoadTypeDrivable:null}).status,'BLOCKED_NON_DRIVABLE');
+assert.deepEqual(a.inspectSegmentEligibility({...tollSegmentEmpty,isDrivable:true},{hasPermissions:true,isRoadTypeDrivable:false}),{
+ status:'UNKNOWN',hasAnyPermission:true,drivable:null,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+},'Conflicting segment.isDrivable and isRoadTypeDrivable readings must fail closed');
+assert.deepEqual(a.inspectSegmentEligibility(tollSegmentEmpty,{hasPermissions:true,isRoadTypeDrivable:true}),{
+ status:'NEEDS_NATIVE_PERMISSION_CHECK',hasAnyPermission:true,drivable:true,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+},'General segment permission never proves restriction or toll write permission');
+assert.equal(a.inspectSegmentEligibility(tollSegmentEmpty,{}).status,'UNKNOWN');
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,restrictions:[{editable:true},{editable:false}]},{}).hasNonEditableRestrictions,true);
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,restrictions:[{editable:true},{editable:null}]},{}).hasNonEditableRestrictions,null);
+assert.equal(a.inspectSegmentEligibility(tollSegmentSparse,{}).hasNonEditableRestrictions,null);
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,restrictions:null},{}).hasNonEditableRestrictions,null);
+const alpha40Schedule={startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]};
+const alpha40NoMotor={enabled:false,conditions:[]};
+const alpha40Country={id:1,name:'Italy'};
+const alpha40RedDraft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]};
+const alpha40TollDraft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'TOLL',vehicleTypes:['TAXI']};
+const noPermReview=a.reviewSdkConversion(alpha40RedDraft,tollSegmentEmpty,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:false,isRoadTypeDrivable:true},isTollSegment:false});
+assert.ok(noPermReview.blockers.includes('conversion_no_permission'));
+assert.ok(!noPermReview.blockers.includes('conversion_non_drivable'));
+assert.ok(!noPermReview.blockers.includes('conversion_toll_state_unknown'));
+assert.equal(noPermReview.saveAllowed,false);
+assert.equal(noPermReview.sdkWritePayload,null);
+const nonDrivableReview=a.reviewSdkConversion(alpha40RedDraft,{...tollSegmentEmpty,isDrivable:false},alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:false,isRoadTypeDrivable:false},isTollSegment:null});
+assert.ok(nonDrivableReview.blockers.includes('conversion_no_permission'));
+assert.ok(nonDrivableReview.blockers.includes('conversion_non_drivable'));
+assert.ok(!nonDrivableReview.blockers.includes('conversion_toll_state_unknown'));
+const tollNotTollReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentEmpty,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:false});
+assert.equal(tollNotTollReview.tollState.status,'NOT_TOLL');
+assert.ok(tollNotTollReview.blockers.includes('conversion_toll_atomic'));
+assert.ok(!tollNotTollReview.blockers.includes('conversion_toll_state_unknown'));
+const tollRoadOnlyReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentWithFree,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:true});
+assert.equal(tollRoadOnlyReview.tollState.status,'TOLL_WITHOUT_TOLL_RESTRICTION');
+assert.ok(tollRoadOnlyReview.blockers.includes('conversion_toll_atomic'));
+assert.ok(!tollRoadOnlyReview.blockers.includes('conversion_toll_state_unknown'));
+const tollAmbiguousReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentWithToll,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:true});
+assert.equal(tollAmbiguousReview.tollState.status,'AMBIGUOUS_WITH_TOLL_RESTRICTION');
+assert.ok(tollAmbiguousReview.blockers.includes('conversion_toll_atomic'));
+assert.ok(tollAmbiguousReview.blockers.includes('conversion_toll_state_unknown'));
+const tollUnknownReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentEmpty,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:null});
+assert.equal(tollUnknownReview.tollState.status,'UNKNOWN');
+assert.ok(tollUnknownReview.blockers.includes('conversion_toll_state_unknown'));
+assert.ok(src.includes('node("p",tr("inspection_permissions")+": "+tr(permissionLabel(eligibility)))') &&
+ src.includes('node("p",tr("inspection_drivable")+": "+tr(drivableLabel(eligibility)))') &&
+ src.includes('node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(tollState)))'),
+ 'Sidebar technical inspection must display read-only permissions, drivability and toll state');
+assert.ok(src.includes('if(conversion.plannedHasToll===true){') &&
+ src.includes('details.append(node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(conversion.tollState))));'),
+ 'Before/After preview must show baseline SDK toll state for blue toll drafts');
+assert.ok(src.includes('JSON.stringify(fresh.access)!==JSON.stringify(current.access)') &&
+ src.includes('fresh.isTollSegment!==current.isTollSegment'),
+ 'Draft context check must detect permission, drivability and toll-state changes');
+for(const key of ['conversion_no_permission','conversion_non_drivable','conversion_toll_state_unknown',
+ 'inspection_permissions','eligibility_no_permission','eligibility_some_permission',
+ 'inspection_drivable','eligibility_non_drivable','inspection_toll_state',
+ 'toll_state_not_toll','toll_state_road_only','toll_state_ambiguous_restriction','toll_state_ambiguous_unknown']){
+ const match=new RegExp(`\\b${key}:\\[([^\\]]+)\\]`).exec(src);
+ assert.ok(match,'Missing label key: '+key);
+ const entries=JSON.parse('['+match[1]+']');
+ assert.equal(entries.length,6,'Label key must provide 6 language translations: '+key);
+ assert.ok(entries.every(text=>typeof text==='string'&&text.trim().length>0),'Empty translation in key: '+key);
+}
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;
@@ -1823,10 +1943,34 @@ assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*
  assert.equal(await a.readPermits({DataModel:{}},{id:77}),null);
  assert.deepEqual(await a.readPermits({DataModel:{Countries:{getById:async()=>({restrictionSubscriptions:[]})}}},{id:77}),[]);
  assert.equal(await a.readPermits({DataModel:{Countries:{getById:async()=>{throw Error('Unavailable')}}}},{id:77}),null);
- const segment={id:1,isAtoB:true,restrictions:[]};
+ const segment={id:1,isAtoB:true,roadType:3,restrictions:[]};
  const sdk={Editing:{getSelection:async()=>({objectType:'segment',ids:[1]})},DataModel:{Segments:{getById:async()=>segment,getAddress:async()=>({country:{id:1,name:'Italy'}})}}};
  assert.equal((await a.readContext(sdk)).country.name,'Italy');
  assert.equal((await a.readContext(sdk)).permits,null);
+ assert.deepEqual((await a.readContext(sdk)).access,{hasPermissions:null,isRoadTypeDrivable:null});
+ assert.equal((await a.readContext(sdk)).isTollSegment,null);
+ let permArgs=null,tollArgs=null,drivableArgs=null;
+ sdk.DataModel.Segments.hasPermissions=async args=>{permArgs=args;return true;};
+ sdk.DataModel.Segments.isTollSegment=async args=>{tollArgs=args;return false;};
+ sdk.DataModel.Segments.isRoadTypeDrivable=async args=>{drivableArgs=args;return true;};
+ const fullCtx=await a.readContext(sdk);
+ assert.deepEqual(permArgs,{segmentId:1});
+ assert.deepEqual(tollArgs,{segmentId:1});
+ assert.deepEqual(drivableArgs,{roadType:3});
+ assert.deepEqual(fullCtx.access,{hasPermissions:true,isRoadTypeDrivable:true});
+ assert.equal(fullCtx.isTollSegment,false);
+ sdk.DataModel.Segments.hasPermissions=async()=>{throw Error('denied');};
+ sdk.DataModel.Segments.isTollSegment=async()=>'not-a-boolean';
+ sdk.DataModel.Segments.isRoadTypeDrivable=async()=>{throw Error('unsupported');};
+ const degradedCtx=await a.readContext(sdk);
+ assert.deepEqual(degradedCtx.access,{hasPermissions:null,isRoadTypeDrivable:null});
+ assert.equal(degradedCtx.isTollSegment,null);
+ let drivableCalled=false;
+ sdk.DataModel.Segments.getById=async()=>({id:1,isAtoB:true,restrictions:[]});
+ sdk.DataModel.Segments.isRoadTypeDrivable=async()=>{drivableCalled=true;return true;};
+ await a.readContext(sdk);
+ assert.equal(drivableCalled,false,'isRoadTypeDrivable must not be called when segment.roadType is missing');
+ sdk.DataModel.Segments.getById=async()=>segment;
  sdk.DataModel.Countries=countrySdk.DataModel.Countries;
  assert.deepEqual((await a.readContext(sdk)).permits,mockPermits);
  sdk.DataModel.Segments.getAddress=async()=>{throw Error('unknown')};
