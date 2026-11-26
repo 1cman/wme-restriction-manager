@@ -1923,13 +1923,88 @@ assert.ok(src.includes('JSON.stringify(fresh.access)!==JSON.stringify(current.ac
 for(const key of ['conversion_no_permission','conversion_non_drivable','conversion_toll_state_unknown',
  'inspection_permissions','eligibility_no_permission','eligibility_some_permission',
  'inspection_drivable','eligibility_non_drivable','inspection_toll_state',
- 'toll_state_not_toll','toll_state_road_only','toll_state_ambiguous_restriction','toll_state_ambiguous_unknown']){
+ 'toll_state_not_toll','toll_state_road_only','toll_state_ambiguous_restriction','toll_state_ambiguous_unknown',
+ 'existing_alert_title','existing_alert_body','existing_alert_unknown','edit_or_delete_native',
+ 'conflict_gate_potential','conflict_gate_overlap','conflict_gate_unknown','conversion_conflict_blocked']){
  const match=new RegExp(`\\b${key}:\\[([^\\]]+)\\]`).exec(src);
  assert.ok(match,'Missing label key: '+key);
  const entries=JSON.parse('['+match[1]+']');
  assert.equal(entries.length,6,'Label key must provide 6 language translations: '+key);
  assert.ok(entries.every(text=>typeof text==='string'&&text.trim().length>0),'Empty translation in key: '+key);
 }
+// Alpha 41: immediate existing-restriction warning and hard conflict gate.
+assert.deepEqual(a.inspectExistingRestrictionNotice({restrictions:[]}),{
+ present:false,unknown:false,count:0,verified:false
+});
+assert.deepEqual(a.inspectExistingRestrictionNotice({restrictions:[{defaultType:'BLOCKED'},{defaultType:'FREE'}]}),{
+ present:true,unknown:false,count:2,verified:false
+});
+assert.deepEqual(a.inspectExistingRestrictionNotice({restrictions:null}),{
+ present:true,unknown:true,count:null,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'NONE'}),{
+ blocked:false,status:'NONE',reason:null,editExistingRecommended:false,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'SEPARATE'}),{
+ blocked:false,status:'SEPARATE',reason:null,editExistingRecommended:false,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'POTENTIAL_CONFLICT'}),{
+ blocked:true,status:'POTENTIAL_CONFLICT',reason:'conflict_gate_potential',
+ editExistingRecommended:true,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'OVERLAP_REVIEW'}),{
+ blocked:true,status:'OVERLAP_REVIEW',reason:'conflict_gate_overlap',
+ editExistingRecommended:true,verified:false
+});
+for(const uncertain of [{status:'UNKNOWN'},{status:'UNEXPECTED'},{},null,undefined]){
+ assert.deepEqual(a.evaluateConflictGate(uncertain),{
+  blocked:true,status:'UNKNOWN',reason:'conflict_gate_unknown',
+  editExistingRecommended:true,verified:false
+ });
+}
+const alpha41DaySchedule={startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'10:00'}]};
+const alpha41Frame={startDate:null,endDate:null,fromTime:'08:00',toTime:'10:00',weekdays:['MONDAY'],timeZone:'Europe/Rome',repeatYearly:false,dayAlternation:null};
+const alpha41BaseSegment={id:41,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true};
+const alpha41Separate=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:[{
+ defaultType:'BLOCKED',direction:'REV',laneScope:'WHOLE_SEGMENT',laneType:null,
+ editable:true,vehicleRules:{},timeFrames:[alpha41Frame]
+}]},alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41Separate.conflictStatus,'SEPARATE');
+assert.equal(alpha41Separate.conflictGate.blocked,false);
+assert.ok(!alpha41Separate.blockers.includes('conversion_conflict_blocked'));
+const alpha41OverlapSame=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:[{
+ defaultType:'BLOCKED',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ editable:true,vehicleRules:{},timeFrames:[alpha41Frame]
+}]},alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41OverlapSame.conflictStatus,'OVERLAP_REVIEW');
+assert.equal(alpha41OverlapSame.conflictGate.blocked,true);
+assert.equal(alpha41OverlapSame.conflictGate.reason,'conflict_gate_overlap');
+assert.ok(alpha41OverlapSame.blockers.includes('conversion_conflict_blocked'));
+assert.equal(alpha41OverlapSame.saveAllowed,false);
+assert.equal(alpha41OverlapSame.sdkWritePayload,null);
+const alpha41Potential=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:[{
+ defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ editable:true,vehicleRules:{BLOCKED:[{vehicleTypes:['TAXI']}]},timeFrames:[alpha41Frame]
+}]},alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41Potential.conflictStatus,'POTENTIAL_CONFLICT');
+assert.equal(alpha41Potential.conflictGate.blocked,true);
+assert.equal(alpha41Potential.conflictGate.reason,'conflict_gate_potential');
+assert.ok(alpha41Potential.blockers.includes('conversion_conflict_blocked'));
+const alpha41Unknown=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:null},
+ alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41Unknown.conflictStatus,'UNKNOWN');
+assert.equal(alpha41Unknown.conflictGate.blocked,true);
+assert.equal(alpha41Unknown.conflictGate.reason,'conflict_gate_unknown');
+assert.ok(alpha41Unknown.blockers.includes('conversion_conflict_blocked'));
+assert.ok(src.includes('const existingAlert=renderExistingAlert(context.segment);') &&
+ src.includes('const existingAlert=renderExistingAlert(current.segment);'),
+ 'Existing restrictions must trigger an immediate warning in both sidebar and wizard step 0');
+assert.ok(src.includes('if(currentConflictGate().blocked)return;') &&
+ src.includes('if(step===7&&currentConflictGate(fresh.segment).blocked){current=fresh;render();return;}') &&
+ src.includes('(step===7&&currentConflictGate().blocked)'),
+ 'Conflicting, overlapping or unverifiable additional restrictions must be blocked at step 7');
+assert.ok(src.includes('button(tr("edit_or_delete_native"),openNativeEditRestrictions)'),
+ 'Warning and conflict-block UI must route edit/delete directly to the native WME panel');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;

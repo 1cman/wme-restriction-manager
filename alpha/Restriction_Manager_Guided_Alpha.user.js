@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.40
+// @version      4.0.0-alpha.41
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.40";
+    const VERSION = "4.0.0-alpha.41";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -119,6 +119,14 @@
         toll_state_road_only:["Pedaggio rilevato senza restrizioni TOLL (flag per direzione e ripristino non esposti dallo SDK)","Toll detected with no TOLL restrictions (per-direction flags and rollback not exposed by SDK)","Péage détecté sans restriction TOLL (indicateurs par sens et retour arrière non exposés par le SDK)","Peaje detectado sin restricciones TOLL (marcas por sentido y reversión no expuestas por el SDK)","Maut ohne TOLL-Beschränkungen erkannt (Richtungsflags und Rückgängigmachen nicht im SDK)","Portagem detetada sem restrições TOLL (sinalizadores por sentido e reversão não expostos pelo SDK)"],
         toll_state_ambiguous_restriction:["Pedaggio rilevato con restrizioni TOLL già presenti: il flag base strada a pedaggio non è distinguibile dallo SDK","Toll detected with existing TOLL restrictions: underlying road toll flag cannot be distinguished via SDK","Péage détecté avec restrictions TOLL existantes : l’attribut péage de base n’est pas distinguable via le SDK","Peaje detectado con restricciones TOLL existentes: el atributo base de vía de peaje no es distinguible por SDK","Maut mit vorhandenen TOLL-Beschränkungen erkannt: Basis-Mautattribut im SDK nicht unterscheidbar","Portagem detetada com restrições TOLL existentes: o atributo base de portagem não é distinguível via SDK"],
         toll_state_ambiguous_unknown:["Pedaggio rilevato, ma elenco restrizioni incompleto: impossibile distinguere flag strada e restrizioni TOLL","Toll detected, but existing restriction list is incomplete: cannot distinguish road flag from TOLL restrictions","Péage détecté, mais liste des restrictions incomplète : impossible de distinguer péage routier et restrictions TOLL","Peaje detectado, pero lista de restricciones incompleta: no se puede distinguir peaje vial de restricciones TOLL","Maut erkannt, aber Beschränkungsliste unvollständig: Straßenflag und TOLL-Regeln nicht unterscheidbar","Portagem detetada, mas lista de restrições incompleta: impossível distinguir portagem viária de restrições TOLL"],
+        existing_alert_title:["Attenzione: restrizioni già presenti sul segmento","Warning: existing restrictions on this segment","Attention : restrictions déjà présentes sur ce segment","Atención: ya existen restricciones en este segmento","Achtung: vorhandene Beschränkungen auf diesem Segment","Atenção: já existem restrições neste segmento"],
+        existing_alert_body:["Prima di crearne di nuove, valuta di modificare o eliminare quelle esistenti nel pannello WME: non sarà consentito aggiungere restrizioni in conflitto o sovrapposte.","Before creating new ones, consider editing or deleting existing rules in the native WME panel: conflicting or overlapping additions will be blocked.","Avant d’en créer de nouvelles, envisagez de modifier ou supprimer les règles existantes dans WME : les ajouts en conflit ou en chevauchement seront bloqués.","Antes de crear nuevas, considera editarlas o eliminarlas en el panel nativo de WME: se bloquearán las reglas adicionales en conflicto o solapadas.","Prüfe zuerst, ob du bestehende Regeln im WME-Panel ändern oder löschen solltest: widersprüchliche oder überlappende Zusätze werden blockiert.","Antes de criar novas, considere editar ou eliminar as regras existentes no painel nativo do WME: adições em conflito ou sobrepostas serão bloqueadas."],
+        existing_alert_unknown:["Impossibile leggere le restrizioni esistenti dallo SDK: verifica nel pannello WME prima di procedere. Non sarà consentito aggiungere nuove restrizioni senza poter escludere conflitti.","Existing restrictions could not be read from the SDK: inspect the native WME panel first. Adding new restrictions is blocked unless conflicts can be ruled out.","Impossible de lire les restrictions existantes via le SDK : vérifiez dans WME. L’ajout est bloqué tant que les conflits ne peuvent pas être exclus.","No se pudieron leer las restricciones existentes desde el SDK: revisa el panel nativo de WME. No se permite añadir nuevas restricciones sin descartar conflictos.","Vorhandene Beschränkungen konnten nicht über das SDK gelesen werden: prüfe zuerst das WME-Panel. Neue Regeln bleiben blockiert, solange Konflikte nicht ausgeschlossen sind.","Não foi possível ler as restrições existentes no SDK: verifique no painel nativo do WME. Novas restrições ficam bloqueadas enquanto não for possível excluir conflitos."],
+        edit_or_delete_native:["Modifica o elimina nel pannello WME","Edit or delete in native WME panel","Modifier ou supprimer dans WME","Editar o eliminar en el panel WME","Im WME-Panel bearbeiten oder löschen","Editar ou eliminar no painel WME"],
+        conflict_gate_potential:["Creazione aggiuntiva bloccata: possibile conflitto con una restrizione già presente. Modifica o elimina prima le restrizioni esistenti nel pannello WME, oppure scegli direzione, corsia o orari separati.","Additional restriction blocked: potential conflict with an existing restriction. Edit or delete existing rules in the WME panel first, or choose a separate direction, lane or schedule.","Ajout bloqué : conflit potentiel avec une restriction existante. Modifiez ou supprimez d’abord la règle dans WME, ou choisissez un sens, une voie ou un horaire distinct.","Creación adicional bloqueada: posible conflicto con una restricción existente. Edita o elimina primero las existentes en WME, o elige dirección, carril u horario separados.","Zusätzliche Beschränkung blockiert: möglicher Konflikt mit einer vorhandenen Regel. Bearbeite oder lösche diese zuerst im WME-Panel oder wähle eine getrennte Richtung, Spur oder Zeit.","Criação adicional bloqueada: possível conflito com uma restrição existente. Edite ou elimine primeiro as existentes no painel WME, ou escolha sentido, via ou horário separados."],
+        conflict_gate_overlap:["Creazione aggiuntiva bloccata: sovrapposizione con una restrizione già presente. È preferibile modificare o eliminare prima la restrizione esistente nel pannello WME.","Additional restriction blocked: overlaps an existing restriction. Edit or delete the existing restriction in the WME panel first.","Ajout bloqué : chevauchement avec une restriction existante. Modifiez ou supprimez d’abord la restriction existante dans WME.","Creación adicional bloqueada: se solapa con una restricción existente. Es mejor editar o eliminar primero la restricción existente en WME.","Zusätzliche Beschränkung blockiert: Überlappung mit einer vorhandenen Beschränkung. Bearbeite oder lösche zuerst die bestehende Regel im WME-Panel.","Criação adicional bloqueada: sobreposição com uma restrição existente. É preferível editar ou eliminar primeiro a restrição existente no painel WME."],
+        conflict_gate_unknown:["Creazione aggiuntiva bloccata: impossibile escludere conflitti con le restrizioni esistenti (dati, orari notturni o ricorrenze non verificabili). Modifica o verifica prima le restrizioni esistenti nel pannello WME.","Additional restriction blocked: conflicts with existing restrictions cannot be ruled out (unverifiable data, overnight spillover or recurrences). Review or edit existing rules in the WME panel first.","Ajout bloqué : impossible d’exclure un conflit avec les restrictions existantes (données, plages nocturnes ou récurrences non vérifiables). Vérifiez ou modifiez d’abord dans WME.","Creación adicional bloqueada: no se pueden descartar conflictos con las restricciones existentes (datos, horarios nocturnos o recurrencias sin verificar). Revisa o edita primero en WME.","Zusätzliche Beschränkung blockiert: Konflikte mit bestehenden Regeln können nicht ausgeschlossen werden (ungeprüfte Daten, Nachtzeiten oder Wiederholungen). Prüfe oder bearbeite zuerst im WME-Panel.","Criação adicional bloqueada: não é possível excluir conflitos com as restrições existentes (dados, horários noturnos ou recorrências não verificáveis). Verifique ou edite primeiro no painel WME."],
+        conversion_conflict_blocked:["Creazione aggiuntiva bloccata per potenziale conflitto, sovrapposizione o separazione non dimostrabile rispetto alle restrizioni esistenti.","Additional restriction blocked due to potential conflict, overlap or unproven separation from existing restrictions.","Ajout bloqué en raison d’un conflit potentiel, d’un chevauchement ou d’une séparation non prouvée.","Creación adicional bloqueada por posible conflicto, solapamiento o separación no demostrable respecto a las restricciones existentes.","Zusätzliche Beschränkung wegen möglichem Konflikt, Überlappung oder nicht nachweisbarer Trennung blockiert.","Criação adicional bloqueada por possível conflito, sobreposição ou separação não demonstrável face às restrições existentes."],
         preservation_title:["Controllo conservazione restrizioni esistenti","Existing restrictions preservation audit","Audit de conservation des restrictions existantes","Auditoría de conservación de restricciones existentes","Prüfung der Erhaltung vorhandener Beschränkungen","Auditoria de preservação das restrições existentes"],
         preservation_status:["Esito controllo","Inspection result","Résultat du contrôle","Resultado del control","Prüfergebnis","Resultado da verificação"],
         preservation_none:["Nessuna restrizione esistente da conservare","No existing restrictions to preserve","Aucune restriction existante à conserver","No hay restricciones que conservar","Keine bestehenden Beschränkungen zu erhalten","Sem restrições existentes para preservar"],
@@ -1558,6 +1566,28 @@
             writeReady:false,verified:false
         };
     }
+    // Immediately flag segments that already have restrictions (or unreadable
+    // restriction arrays) so editors are warned to edit/delete before adding.
+    function inspectExistingRestrictionNotice(segment) {
+        const listed=listExistingRestrictions(segment);
+        if(!listed.available)return {present:true,unknown:true,count:null,verified:false};
+        return {present:listed.entries.length>0,unknown:false,
+            count:listed.entries.length,verified:false};
+    }
+    // Never allow creating an additional restriction when conflict screening
+    // finds a potential conflict, overlap, or cannot prove separation.
+    function evaluateConflictGate(report) {
+        const status=report?.status;
+        if(status==="NONE"||status==="SEPARATE"){
+            return {blocked:false,status,reason:null,
+                editExistingRecommended:false,verified:false};
+        }
+        const reason=status==="POTENTIAL_CONFLICT"?"conflict_gate_potential":
+            status==="OVERLAP_REVIEW"?"conflict_gate_overlap":"conflict_gate_unknown";
+        return {blocked:true,
+            status:status==="POTENTIAL_CONFLICT"||status==="OVERLAP_REVIEW"?status:"UNKNOWN",
+            reason,editExistingRecommended:true,verified:false};
+    }
     // Deterministic conversion REVIEW, not SegmentRestrictionData and not a
     // Segments.updateSegment payload. Only the top-level rule pairing is
     // supported by the published SDK docs. Everything else fails closed.
@@ -1591,12 +1621,16 @@
         const preservation=auditRestrictionPreservation(segment);
         const eligibility=inspectSegmentEligibility(segment,segmentContext?.access);
         const tollState=inspectSegmentTollState(segment,segmentContext?.isTollSegment);
+        const conflicts=previewRestrictionConflicts(draft,segment,schedule,{vehicleRules,motorDraft});
+        const conflictGate=evaluateConflictGate(conflicts);
         const blockers=["conversion_sdk_contract","conversion_schedule",
             "conversion_lane","conversion_safe12","conversion_country"];
         if(eligibility.hasAnyPermission===false)
             blockers.push("conversion_no_permission");
         if(eligibility.drivable===false)
             blockers.push("conversion_non_drivable");
+        if(conflictGate.blocked)
+            blockers.push("conversion_conflict_blocked");
         if(preservation.status==="UNKNOWN")
             blockers.push("conversion_unknown");
         if(preservation.status==="REQUIRES_ROUNDTRIP")
@@ -1629,6 +1663,7 @@
             existingRestrictionCount:Array.isArray(segment?.restrictions)?
                 segment.restrictions.length:null,
             budgetStatus:budget.status,budget,preservation,eligibility,tollState,
+            conflictStatus:conflicts.status,conflictGate,
             blockers:[...new Set(blockers)]
         };
     }
@@ -1711,7 +1746,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,evaluateConflictGate,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -2019,6 +2054,24 @@
         AMBIGUOUS_WITH_TOLL_RESTRICTION:"toll_state_ambiguous_restriction",
         AMBIGUOUS_UNKNOWN_RESTRICTIONS:"toll_state_ambiguous_unknown"
     }[state?.status]||"unknown");
+    function renderExistingAlert(segment){
+        const notice=inspectExistingRestrictionNotice(segment);
+        if(!notice.present)return null;
+        const box=node("div");
+        box.setAttribute("role","alert");
+        box.style.cssText="margin:10px 0;padding:10px 12px;border:2px solid #d97706;"+
+            "border-radius:8px;background:#fffbeb;color:#78350f;";
+        const title=node("strong",tr("existing_alert_title")+
+            (notice.unknown?"":" · "+notice.count));
+        title.style.display="block";
+        box.append(title,node("p",tr(notice.unknown?"existing_alert_unknown":"existing_alert_body")));
+        if(nativeEditActionAvailable()){
+            const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
+            edit.style.marginTop="4px";
+            box.append(edit);
+        }
+        return box;
+    }
     function renderPanel() {
         const root = pane.querySelector("#"+ID+"-root");
         if (!root) return;
@@ -2026,6 +2079,8 @@
         if (!context) { root.append(node("p",tr("select"))); return; }
         root.append(node("p",tr("country")+": "+(context.country?.name || tr("unknown"))));
         root.append(node("p",tr("observed")+": "+(Array.isArray(context.segment.restrictions)?context.segment.restrictions.length:tr("unknown"))));
+        const existingAlert=renderExistingAlert(context.segment);
+        if(existingAlert)root.append(existingAlert);
         const launch=button(tr("launch"),openWizard);
         launch.disabled=!availableDirections(context.segment).length;
         root.append(launch,node("p",tr("anchor")+": "+(nativeButton?.isConnected?tr("found"):tr("fallback"))));
@@ -2372,6 +2427,15 @@
             // There was no map action to undo.
             dialog.replaceChildren(node("p",tr(reason)),button(tr("close"),()=>dialog.close()));
         }
+        function currentConflictGate(targetSegment=current.segment){
+            try{
+                return evaluateConflictGate(previewRestrictionConflicts(
+                    draft,targetSegment,redSchedule,{vehicleRules,motorDraft}
+                ));
+            }catch(_){
+                return evaluateConflictGate(null);
+            }
+        }
         async function advance() {
             // Guard progress here as well as in the button state: no implicit scope.
             if (step === 1 && !SCOPES.includes(draft.scope)) return;
@@ -2391,11 +2455,13 @@
             }
             if(step===7){
                 try{normalizeRedSchedule(redSchedule);}catch(_){return;}
+                if(currentConflictGate().blocked)return;
             }
             const activeDialog=dialog,activeStep=step,activeControl=dialog.querySelector('[data-guided-next="true"]');
             const {fresh,reason}=await checkDraftContext();
             if(activeDialog!==dialog||!activeDialog.open||step!==activeStep||!activeControl?.isConnected)return;
             if(reason){showDraftContextProblem(reason);return;}
+            if(step===7&&currentConflictGate(fresh.segment).blocked){current=fresh;render();return;}
             const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);
             if(destination===null)return;
             if(destination===6)current=fresh;
@@ -2405,6 +2471,8 @@
         function render(){
             dialog.replaceChildren(node("h2",tr("launch")),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
             if(step===0) {
+                const existingAlert=renderExistingAlert(current.segment);
+                if(existingAlert)dialog.append(existingAlert);
                 dialog.append(renderExistingRestrictionList(current.segment,true));
                 dialog.append(node("h3",tr("direction")),
                     options(availableDirections(current.segment),draft.direction,v=>draft.direction=v));
@@ -2856,6 +2924,20 @@
                 }
                 if(isScheduleValid()){
                     dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
+                    const gate=currentConflictGate();
+                    if(gate.blocked){
+                        const blockBox=node("div");
+                        blockBox.setAttribute("role","alert");
+                        blockBox.style.cssText="margin-top:10px;padding:10px 12px;border:2px solid #dc2626;"+
+                            "border-radius:8px;background:#fef2f2;color:#991b1b;font-weight:600;";
+                        blockBox.append(node("p",tr(gate.reason)));
+                        if(nativeEditActionAvailable()){
+                            const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
+                            edit.style.marginTop="4px";
+                            blockBox.append(edit);
+                        }
+                        dialog.append(blockBox);
+                    }
                 }
                 if(!isScheduleValid()){
                     const error=node("p",tr("schedule_invalid"));
@@ -3092,7 +3174,8 @@
                     (step===2&&!LANES.includes(draft.lane))||
                     (step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length) ||
                     (step===5&&!isAdvancedValid())||
-                    (step===7&&!isScheduleValid());
+                    (step===7&&!isScheduleValid())||
+                    (step===7&&currentConflictGate().blocked);
                 footer.append(next);
             }
             dialog.append(footer);
