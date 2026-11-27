@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.42
+// @version      4.0.0-alpha.43
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.42";
+    const VERSION = "4.0.0-alpha.43";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -266,7 +266,6 @@
         BLOCKED:["Transito vietato (con eventuali eccezioni)","No entry (with optional exceptions)","Accès interdit (avec exceptions éventuelles)","Acceso prohibido (con excepciones opcionales)","Durchfahrt verboten (mit möglichen Ausnahmen)","Passagem proibida (com exceções opcionais)"],
         ALLOWED:["Transito consentito (solo ai veicoli autorizzati)","Access allowed (authorized traffic only)","Accès autorisé (véhicules autorisés uniquement)","Acceso permitido (solo vehículos autorizados)","Zufahrt erlaubt (nur berechtigte Fahrzeuge)","Acesso permitido (apenas veículos autorizados)"],
         TOLL:["Transito esente da pedaggio","Toll-free passage exemption","Exemption de péage","Tránsito exento de peaje","Mautbefreite Durchfahrt","Trânsito isento de portagem"],
-        vehicle_step:["Per quali veicoli vuoi definire un'eccezione?","Which vehicles should receive an exception?","Quels véhicules reçoivent une exception ?","¿Qué vehículos tendrán una excepción?","Welche Fahrzeuge sollen eine Ausnahme erhalten?","Que veículos devem ter uma exceção?"], 
         blocked_vehicle_step:["A quali veicoli vuoi vietare il transito?","Which vehicles should be prohibited?","Quels véhicules doivent être interdits ?","¿Qué vehículos quieres prohibir?","Welche Fahrzeugarten sollen gesperrt werden?","Que veículos pretende proibir?"],
         vehicles_optional:["Nessuna selezione = transito vietato a TUTTI. Seleziona uno o più tipi di veicolo per vietare il transito SOLO a quelli scelti; gli altri restano autorizzati.","No selection = ALL vehicles prohibited. Select vehicle types to prohibit ONLY those types; others remain allowed.","Aucun choix : TOUS les véhicules interdits. Sinon seuls les types choisis sont interdits.","Sin selección: TODOS prohibidos. Con selección, solo se prohíben los tipos elegidos.","Ohne Auswahl: ALLE Fahrzeuge gesperrt. Mit Auswahl nur die gewählten Arten.","Sem seleção: TODOS proibidos. Com seleção apenas os tipos escolhidos."],
         vehicles_allowed:["Seleziona almeno un tipo di veicolo autorizzato. Tutte le altre categorie rimangono vietate; pass e occupanti si impostano nel passaggio successivo.","Select at least one allowed vehicle type. All other traffic stays blocked; permits and occupancy are configured next.","Choisissez au moins un type de véhicule autorisé. Les autres restent interdits ; permis et occupants à l'étape suivante.","Selecciona al menos un tipo de vehículo autorizado. Los demás siguen prohibidos; permisos y ocupantes se configuran después.","Wähle mindestens eine zugelassene Fahrzeugart. Alle anderen bleiben gesperrt; Berechtigungen und Insassen folgen.","Selecione pelo menos um tipo de veículo autorizado. Os restantes ficam bloqueados; autorizações e ocupantes seguem-se."],
@@ -274,7 +273,6 @@
         allowed_required:["Seleziona almeno un tipo di veicolo autorizzato per proseguire.","Select at least one allowed vehicle type to continue.","Sélectionnez au moins un type de véhicule autorisé pour continuer.","Selecciona al menos un tipo de vehículo autorizado para continuar.","Wähle mindestens eine zugelassene Fahrzeugart, um fortzufahren.","Selecione pelo menos um tipo de veículo autorizado para continuar."],
         allowed_default:["Transito vietato per impostazione predefinita","Access blocked by default","Accès interdit par défaut","Acceso prohibido por defecto","Zufahrt standardmäßig gesperrt","Passagem proibida por predefinição"],
         toll_default:["Transito a pedaggio per impostazione predefinita","Toll by default","Péage par défaut","Peaje por defecto","Standardmäßig mautpflichtig","Portagem por predefinição"],
-        allowed_preview:["Criteri per il transito consentito","Allowed traffic criteria","Critères d'accès autorisé","Criterios de acceso permitido","Kriterien für die erlaubte Zufahrt","Critérios de acesso permitido"],
         blocked_preview:["Veicoli ai quali è vietato il transito","Vehicles prohibited from passing","Véhicules interdits de circulation","Vehículos con circulación prohibida","Gesperrte Fahrzeugarten","Veículos proibidos de circular"],
         blocked_everyone:["Transito vietato a tutti i veicoli","All vehicles prohibited","Circulation interdite à tous les véhicules","Tránsito prohibido a todos los vehículos","Durchfahrt für alle Fahrzeuge verboten","Passagem proibida para todos os veículos"],
         blocked_selected_base:["Transito consentito agli altri veicoli per impostazione predefinita","Other vehicle types allowed by default","Les autres véhicules sont autorisés par défaut","Otros vehículos permitidos por defecto","Andere Fahrzeugarten standardmäßig erlaubt","Outros veículos permitidos por predefinição"],
@@ -313,15 +311,12 @@
         toll_both_directions:["L'attributo Strada a pedaggio sarà impostato su ENTRAMBE le direzioni del segmento, anche se l'esenzione riguarda un solo senso.","The toll-road flag will apply to BOTH segment directions, even if the exemption is one-way.","Le péage s'appliquera aux DEUX sens du segment, même si l'exemption est unidirectionnelle.","El peaje se aplicará a AMBOS sentidos, incluso con exención unidireccional.","Das Maut-Attribut gilt für BEIDE Fahrtrichtungen, selbst bei einseitiger Befreiung.","A portagem aplica-se aos DOIS sentidos do segmento, mesmo com isenção num sentido."],
         toll_activation_pending:["Anteprima: hasToll = true. Verrà predisposto insieme all'esenzione al momento dell'applicazione guidata; questa Alpha non modifica WME.","Preview: hasToll = true. Intended for guided application together with exemption; this Alpha does not edit WME.","Aperçu : hasToll = true ; aucune modification dans cette Alpha.","Vista previa: hasToll = true; esta Alpha no modifica WME.","Vorschau: hasToll = true; diese Alpha bearbeitet WME nicht.","Pré-visualização: hasToll = true; esta Alpha não altera o WME."],
         toll_nonexempt:["Gli altri veicoli restano soggetti al pedaggio.","All other vehicles remain subject to toll.","Les autres véhicules restent soumis au péage.","Los demás vehículos pagan peaje.","Andere Fahrzeuge bleiben mautpflichtig.","Os outros veículos continuam sujeitos a portagem."],
-        all_vehicle_types:["Qualsiasi categoria che soddisfi le condizioni avanzate (da verificare nel WME nativo)","Any vehicle type meeting advanced criteria (verify in native WME)","Toute catégorie répondant aux conditions avancées (à vérifier dans WME)","Cualquier tipo que cumpla las condiciones avanzadas (verificar en WME)","Alle Typen, die die Bedingungen erfüllen (in WME prüfen)","Qualquer categoria que cumpra as condições (verificar no WME)"],
         others_blocked:["Ogni altro traffico rimane vietato.","All other traffic remains prohibited.","Toute autre circulation reste interdite.","El resto del tráfico sigue prohibido.","Alle anderen Fahrzeuge bleiben gesperrt.","Todo o restante tráfego continua proibido."],
         criteria_unverified:["La combinazione tra categorie, pass e occupanti è ancora una bozza: AND/OR e compatibilità locali non verificati.","Combining vehicle types, permits and occupancy is still a draft: AND/OR and local eligibility are unverified.","Combinaison des critères à vérifier (ET/OU et règles locales).","Combinación de criterios sin verificar (Y/O y normas locales).","Kombination der Kriterien noch ungeprüft (UND/ODER, Länderregeln).","Combinação de critérios por verificar (E/OU e regras locais)."],
         vehicles_toll:["Seleziona almeno un tipo di veicolo esente dal pedaggio.","Select at least one vehicle type to exempt from the toll.","Choisissez au moins un type de véhicule exempté du péage.","Selecciona al menos un tipo de vehículo exento del peaje.","Wähle mindestens eine von der Maut befreite Fahrzeugart.","Seleciona pelo menos um tipo de veículo isento da portagem."],
         vehicles_unknown:["Elenco limitato a quattro categorie: Auto private, Veicoli elettrici, Motociclette e Taxi. La disponibilità locale delle combinazioni resta da verificare. Nessuna modifica alla mappa.","List limited to four categories: private cars, electric vehicles, motorcycles and taxis. Local rule eligibility is unverified. No map changes.","Liste limitée à quatre catégories : voitures privées, véhicules électriques, motos et taxis. Compatibilité locale non vérifiée. Aucune modification.","Lista limitada a cuatro categorías: coches particulares, vehículos eléctricos, motocicletas y taxis. Compatibilidad local sin verificar. Sin cambios.","Liste auf vier Kategorien begrenzt: private Pkw, Elektrofahrzeuge, Motorräder und Taxis. Lokale Zulässigkeit ungeprüft. Keine Änderungen.","Lista limitada a quatro categorias: automóveis particulares, veículos elétricos, motociclos e táxis. Disponibilidade local por verificar. Sem alterações."],
         select_vehicle:["Seleziona almeno un veicolo per questo tipo di restrizione.","Select at least one vehicle for this restriction type.","Sélectionnez au moins un véhicule pour ce type de restriction.","Selecciona al menos un vehículo para este tipo de restricción.","Wähle mindestens eine Fahrzeugart für diese Beschränkung.","Seleciona pelo menos um veículo para este tipo de restrição."],
         rule_preview:["Regola principale","Default behavior","Règle principale","Regla principal","Grundregel","Regra principal"],
-        vehicle_preview:["Eccezione per i veicoli selezionati","Exception for selected vehicles","Exception pour les véhicules choisis","Excepción para vehículos seleccionados","Ausnahme für gewählte Fahrzeuge","Exceção para os veículos selecionados"],
-        no_exceptions:["Nessuna eccezione","No exceptions","Aucune exception","Sin excepciones","Keine Ausnahmen","Sem exceções"],
         summary:["Riepilogo di prova","Test summary","Résumé de test","Resumen de prueba","Testübersicht","Resumo de teste"],
         advanced:["Condizioni avanzate (anteprima)","Advanced conditions (preview)","Conditions avancées (aperçu)","Condiciones avanzadas (vista previa)","Erweiterte Bedingungen (Vorschau)","Condições avançadas (pré-visualização)"],
         advanced_allowed_intro:["Per ogni tipo di veicolo scegli se sono necessari un pass o un numero minimo di occupanti. Senza condizioni aggiuntive, il veicolo è autorizzato direttamente.","For each vehicle type, choose whether a permit or minimum occupancy is required. With neither selected, access is unconditional.","Pour chaque véhicule, choisissez permis ou occupants. Sans condition, accès direct.","Para cada tipo de vehículo, selecciona permiso u ocupantes. Sin condiciones, acceso directo.","Für jeden Fahrzeugtyp Berechtigung oder Insassen wählen. Ohne Bedingungen direkte Zulassung.","Para cada veículo, selecione autorização ou ocupantes. Sem condições, acesso direto."],
@@ -333,9 +328,6 @@
         missing_vehicle_occupancy:["Indica almeno 2 occupanti per questo veicolo.","Enter at least 2 occupants for this vehicle.","Saisissez au moins 2 occupants pour ce véhicule.","Indica al menos 2 ocupantes para este vehículo.","Mindestens 2 Insassen für dieses Fahrzeug eingeben.","Indique pelo menos 2 ocupantes para este veículo."],
         vehicle_rules_summary:["Condizioni per ciascun veicolo autorizzato","Conditions for each authorized vehicle","Conditions pour chaque véhicule autorisé","Condiciones para cada vehículo autorizado","Bedingungen für jedes zugelassene Fahrzeug","Condições por veículo autorizado"],
         both_conditions:["Per questo veicolo sono richiesti sia il pass sia il numero minimo di occupanti (combinazione da verificare in WME).","Both permit and occupancy are required for this vehicle (verify in WME).","Permis et occupants requis pour ce véhicule (à vérifier dans WME).","Permiso y ocupantes requeridos para este vehículo (verificar en WME).","Berechtigung und Insassen erforderlich (in WME prüfen).","Autorização e ocupação exigidas para este veículo (verificar no WME)."],
-        occupancy:["Occupanti minimi (facoltativo)","Minimum occupants (optional)","Occupants minimum (facultatif)","Ocupantes mínimos (opcional)","Mindestinsassen (optional)","Ocupantes mínimos (opcional)"],
-        occupancy_help:["Vuoto = nessun vincolo. Altrimenti inserisci un intero da 2 in su.","Blank = no limit. Otherwise enter an integer of at least 2.","Vide = aucune limite. Sinon entier à partir de 2.","Vacío = sin límite. Introduce entero de 2 o más.","Leer = keine Begrenzung. Sonst ganze Zahl ab 2.","Vazio = sem limite. Introduz inteiro a partir de 2."],
-        occupancy_error:["Il numero di occupanti deve essere un intero di almeno 2.","Occupants must be an integer of at least 2.","Le nombre doit être un entier à partir de 2.","El número debe ser entero de 2 o más.","Ganze Zahl ab 2 erforderlich.","Necessário inteiro a partir de 2."],
         country_permits:["Pass disponibili nell'elenco del Paese","Permits listed for the segment country","Permis listés pour ce pays","Permisos listados para el país","Berechtigungen des Landes","Autorizações listadas para o país"],
         permit_search:["Cerca un pass","Search for a permit","Rechercher un permis","Buscar un permiso","Berechtigung suchen","Pesquisar uma autorização"],
         permit_search_placeholder:["Digita il nome del pass...","Type a permit name...","Saisissez un nom de permis...","Escribe el nombre del permiso...","Name der Berechtigung eingeben...","Introduza o nome da autorização..."],
@@ -359,10 +351,6 @@
         motor_experimental_note:["Questi tipi di motore e confronti riproducono l'interfaccia nativa come bozza. Codici interni e valori supportati da verificare prima di un'applicazione reale.","These engine types and comparisons are a draft of the native UI; SDK codes and supported combinations are unverified.","Types et comparateurs provisoires : vérifier les codes SDK.","Tipos y comparadores provisionales: verificar los códigos SDK.","Entwurf der nativen UI; SDK-Codes noch zu prüfen.","Tipos e comparações provisórios; códigos SDK por verificar."],
         motorcycle_intro:["Facoltativo, solo per le motociclette a cui vietare il transito. Senza condizioni motore, tutte le motociclette selezionate saranno vietate. Questa Alpha non crea ancora regole reali; la stabile 3.2.0 conserva le condizioni motore esistenti.","Optional, for prohibited motorcycles only. Without engine conditions, all selected motorcycles are blocked. Alpha is read-only; stable 3.2.0 preserves existing motor rules.","Facultatif, motos interdites uniquement. Sans condition moteur, toutes sont interdites. Alpha en lecture seule.","Opcional, solo motos prohibidas. Sin condiciones de motor, se prohíben todas. Alpha de solo lectura.","Optional nur für gesperrte Motorräder. Ohne Motorbedingung sind alle gesperrt. Alpha schreibgeschützt.","Opcional, apenas para motos proibidas. Sem condições do motor, todas ficam proibidas. Alpha de leitura."],
         motorcycle_enable:["Limita il divieto in base al motore (sperimentale)","Limit the prohibition by engine (experimental)","Limiter l'interdiction selon le moteur (expérimental)","Limitar la prohibición por motor (experimental)","Verbot nach Motor einschränken (experimentell)","Limitar a proibição pelo motor (experimental)"],
-        motorcycle_engine:["Tipo di motore / codice WME","Engine type / WME code","Type de moteur / code WME","Tipo de motor / código WME","Motortyp / WME-Code","Tipo de motor / código WME"],
-        motorcycle_engine_hint:["Inserisci il codice rilevato nel pannello WME; se disponibile sono suggeriti i valori già presenti sul segmento. Nessun codice viene considerato automaticamente valido.","Enter the code shown in WME; existing values on the segment may be suggested. No code is presumed valid.","Saisissez le code WME; des valeurs existantes peuvent être proposées, sans validation.","Introduce el código WME; se sugieren valores existentes, sin validación.","WME-Code eingeben; vorhandene Werte werden vorgeschlagen, aber nicht validiert.","Introduza o código WME; são sugeridos valores existentes, sem validação."],
-        motorcycle_engine_error:["Indica un tipo di motore oppure disattiva la condizione sperimentale.","Enter an engine type or disable the experimental condition.","Indiquez un type de moteur ou désactivez l'option.","Introduce un tipo de motor o desactiva la opción.","Motortyp eingeben oder die Option deaktivieren.","Indique um tipo de motor ou desative a opção."],
-        motorcycle_unchecked:["Vietate tutte le motociclette selezionate, indipendentemente dal motore","All selected motorcycles prohibited, regardless of engine","Toutes les motos sélectionnées interdites, indépendamment du moteur","Todas las motos seleccionadas prohibidas, independientemente del motor","Alle ausgewählten Motorräder gesperrt, unabhängig vom Motor","Todas as motas selecionadas proibidas, independentemente do motor"],
         red_schedule:["Date e fasce orarie del divieto","Restriction dates and time ranges","Dates et plages horaires de l'interdiction","Fechas y horarios de la prohibición","Daten und Zeitfenster des Verbots","Datas e horários da proibição"],
         red_schedule_intro:["Il calendario riguarda il divieto rosso e le sue esenzioni. È una bozza: fuso orario del segmento, ricorrenze speciali e festività andranno verificati prima di modificare WME.","This calendar applies to the red prohibition and its exemptions. Draft only: segment time zone, special recurrences and holidays require verification.","Ce calendrier s'applique à l'interdiction rouge. Fuseau horaire et jours fériés non vérifiés.","El calendario corresponde a la prohibición roja. Zona horaria y festivos pendientes de verificar.","Dieser Kalender gilt für das rote Verbot. Zeitzone und Feiertage noch ungeprüft.","O calendário aplica-se à proibição vermelha. Fuso horário e feriados por verificar."],
         schedule_start:["Data di inizio (facoltativa)","Start date (optional)","Date de début (facultative)","Fecha de inicio (opcional)","Startdatum (optional)","Data de início (opcional)"],
@@ -1747,7 +1735,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,evaluateConflictGate,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,evaluateConflictGate,reviewSdkConversion,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -2161,7 +2149,6 @@
         let step=0;
         const baselineSnapshot=restrictionSnapshot(current.segment,true);
         const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};
-        const advanced={minPassengers:null,permitIds:[]};
         const vehicleRules=Object.create(null);
         const motorDraft={enabled:false,conditions:[]};
         const redSchedule={
@@ -2201,7 +2188,7 @@
                     normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);
                 else if(draft.restrictionType==="BLOCKED")
                     normalizeMotorDraft(motorDraft,draft.vehicleTypes.includes("MOTORCYCLE"));
-                else normalizeAdvanced(advanced,current.permits);
+                else return false;
                 return true;
             }catch(_){return false;}
         }
@@ -2465,7 +2452,7 @@
                         normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);
                     else if(draft.restrictionType==="BLOCKED")
                         normalizeMotorDraft(motorDraft,draft.vehicleTypes.includes("MOTORCYCLE"));
-                    else normalizeAdvanced(advanced,current.permits);
+                    else return;
                     normalizeDraft(draft,current.segment);
                 }catch(_){return;}
             }
@@ -2528,8 +2515,6 @@
                     options(RESTRICTION_TYPES,draft.restrictionType,v=>{
                         draft.restrictionType=v;
                         draft.vehicleTypes=[];
-                        advanced.minPassengers=null;
-                        advanced.permitIds=[];
                         motorDraft.enabled=false;motorDraft.conditions=[];
                         redSchedule.startDate="";redSchedule.endDate="";
                         redSchedule.weekdays=[...WEEKDAYS];redSchedule.allDay=true;
@@ -2737,137 +2722,6 @@
                     }
                     dialog.append(node("p",tr("permit_note")),node("p",tr("plate_note")),
                         node("p",tr("criteria_unverified")));
-                }else{
-                dialog.append(node("h3",tr("advanced")));
-                const occ=node("label",tr("occupancy")),number=node("input");
-                occ.style.cssText="display:block;font-weight:600;margin:12px 0;";
-                number.type="number";number.min="2";number.step="1";
-                number.value=advanced.minPassengers===null?"":String(advanced.minPassengers);
-                number.style.cssText="display:block;width:110px;padding:6px;margin:5px 0;border:1px solid #9ca3af;border-radius:6px;";
-                number.addEventListener("change",()=>{
-                    advanced.minPassengers=number.value.trim()===""?null:Number(number.value);render();
-                });
-                occ.append(number);dialog.append(occ,node("p",tr("occupancy_help")),node("h4",tr("country_permits")));
-                if(current.permits===null)dialog.append(node("p",tr("permits_missing")));
-                else if(!current.permits.length)dialog.append(node("p",tr("permits_empty")));
-                else {
-                    // Sort pass choices alphabetically in the WME interface language.
-                    const sorted=sortPermits(current.permits,lang);
-                    const searchLabel=node("label",tr("permit_search"));
-                    searchLabel.style.cssText="display:block;font-weight:600;margin:6px 0;";
-                    const search=node("input");
-                    search.type="search";search.autocomplete="off";
-                    search.placeholder=tr("permit_search_placeholder");
-                    search.id=ID+"-permit-search";
-                    search.style.cssText="display:block;width:100%;box-sizing:border-box;padding:8px;"+
-                        "margin:5px 0;border:1px solid #9ca3af;border-radius:7px;";
-                    search.setAttribute("role","combobox");
-                    search.setAttribute("aria-autocomplete","list");
-                    search.setAttribute("aria-controls",ID+"-permit-suggestions");
-                    search.setAttribute("aria-expanded","false");
-                    searchLabel.append(search);
-                    const suggestions=node("div");
-                    suggestions.id=ID+"-permit-suggestions";
-                    suggestions.setAttribute("role","listbox");
-                    suggestions.style.cssText="display:none;max-height:145px;overflow:auto;"+
-                        "border:1px solid #9ca3af;border-radius:7px;margin-bottom:8px;";
-                    const box=node("div");
-                    box.style.cssText="max-height:155px;overflow:auto;border:1px solid #d1d5db;"+
-                        "padding:6px;border-radius:7px;";
-                    const count=node("p");
-                    count.setAttribute("aria-live","polite");
-                    count.style.cssText="margin:5px 0;color:#4b5563;font-size:12px;";
-                    let activeIndex=-1;
-                    let matches=[];
-                    const togglePermit=id=>{
-                        advanced.permitIds=advanced.permitIds.includes(id)?
-                            advanced.permitIds.filter(value=>value!==id):
-                            [...advanced.permitIds,id];
-                    };
-                    const updatePicker=()=>{
-                        const query=normalizePermitSearch(search.value);
-                        matches=filterPermits(sorted,query,lang);
-                        box.replaceChildren();
-                        count.textContent=tr("permit_selected_count")+": "+advanced.permitIds.length;
-                        if(!matches.length){
-                            box.append(node("p",tr("permit_search_empty")));
-                        }else{
-                            for(const permit of matches){
-                                const item=node("label"),check=node("input");
-                                item.style.cssText="display:flex;align-items:center;gap:8px;margin:5px 0;cursor:pointer;";
-                                check.type="checkbox";check.value=permit.id;
-                                check.checked=advanced.permitIds.includes(permit.id);
-                                check.addEventListener("change",()=>{
-                                    togglePermit(permit.id);
-                                    updatePicker();
-                                });
-                                item.append(check,document.createTextNode(permit.name));box.append(item);
-                            }
-                        }
-                        suggestions.replaceChildren();
-                        const choices=query?matches.slice(0,8):[];
-                        if(activeIndex>=choices.length)activeIndex=-1;
-                        suggestions.style.display=choices.length?"block":"none";
-                        search.setAttribute("aria-expanded",choices.length?"true":"false");
-                        if(activeIndex<0)search.removeAttribute("aria-activedescendant");
-                        for(const [index,permit] of choices.entries()){
-                            const option=button(
-                                (advanced.permitIds.includes(permit.id)?"✓ ":"+ ")+permit.name,
-                                ()=>{
-                                    togglePermit(permit.id);
-                                    search.value="";
-                                    activeIndex=-1;
-                                    updatePicker();
-                                    search.focus();
-                                });
-                            option.id=ID+"-permit-suggestion-"+index;
-                            option.setAttribute("role","option");
-                            option.setAttribute("aria-selected",String(advanced.permitIds.includes(permit.id)));
-                            option.style.cssText="display:block;width:100%;text-align:left;padding:7px 9px;"+
-                                "background:"+(index===activeIndex?"#dbeafe":"#fff")+";"+
-                                "border:0;border-radius:0;cursor:pointer;color:#202938;font:inherit;";
-                            suggestions.append(option);
-                        }
-                        if(activeIndex>=0)search.setAttribute("aria-activedescendant",
-                            ID+"-permit-suggestion-"+activeIndex);
-                    };
-                    search.addEventListener("input",()=>{activeIndex=-1;updatePicker();});
-                    search.addEventListener("keydown",event=>{
-                        if(event.key==="Escape"&&search.value){
-                            search.value="";activeIndex=-1;updatePicker();event.preventDefault();return;
-                        }
-                        if(!normalizePermitSearch(search.value)||!matches.length)return;
-                        const total=Math.min(matches.length,8);
-                        if(event.key==="ArrowDown"||event.key==="ArrowUp"){
-                            activeIndex=event.key==="ArrowDown"?(activeIndex+1)%total:
-                                (activeIndex<=0?total-1:activeIndex-1);
-                            updatePicker();
-                            event.preventDefault();
-                        }else if(event.key==="Enter"){
-                            const selected=matches[activeIndex<0?0:activeIndex];
-                            if(selected){
-                                togglePermit(selected.id);
-                                search.value="";activeIndex=-1;updatePicker();
-                                event.preventDefault();
-                            }
-                        }
-                    });
-                    dialog.append(searchLabel,suggestions,count,box);
-                    updatePicker();
-                }
-                dialog.append(node("p",tr("permit_note")),node("p",tr("plate_note")));
-                if(draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft)){
-                    const warning=node("p",tr("allowed_required"));
-                    warning.setAttribute("role","alert");
-                    warning.style.cssText="color:#c62828;font-weight:600;";
-                    dialog.append(warning);
-                }
-                if(draft.restrictionType==="ALLOWED")dialog.append(node("p",tr("criteria_unverified")));
-                if(advanced.minPassengers!==null&&
-                    (!Number.isSafeInteger(advanced.minPassengers)||advanced.minPassengers<2)){
-                    const error=node("p",tr("occupancy_error"));
-                    error.style.color="#c62828";error.setAttribute("role","alert");dialog.append(error);
-                }
                 }
             }
             if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType)){

@@ -151,10 +151,11 @@ assert.ok(src.includes('(step===4&&(draft.restrictionType==="TOLL"||draft.restri
 assert.ok(src.includes('normalizeDraft(draft,current.segment);') &&
           src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);'),
   'Advanced vehicle draft must be validated before proceeding and in the summary');
-assert.ok(src.includes('draft.restrictionType==="ALLOWED"&&!hasAllowedCriteria(draft)'),
+assert.ok(src.includes('draft.restrictionType==="ALLOWED" && !hasAllowedCriteria(draft)'),
   'ALLOWED requires vehicle types irrespective of passes and occupancy');
-assert.ok(src.includes('advanced.minPassengers=null;') && src.includes('advanced.permitIds=[];'),
-  'Changing restriction intent must clear stale advanced permissions');
+assert.ok(src.includes('for(const key of Object.keys(vehicleRules))delete vehicleRules[key];') &&
+          src.includes('motorDraft.enabled=false;motorDraft.conditions=[];'),
+  'Changing restriction intent must clear stale per-vehicle and motor conditions');
 assert.ok(src.includes('node("p",tr("others_blocked"))'),
   'Whitelist summary must clearly state the default prohibition');
 // Sorting and typeahead must be locale aware, accent-insensitive, and non-mutating.
@@ -179,10 +180,10 @@ assert.ok(src.includes('search.addEventListener("input"'),
   'Pass autocomplete must refresh on each keystroke');
 assert.ok(src.includes('search.addEventListener("keydown"'),
   'Pass autocomplete must support keyboard input');
-assert.ok(src.includes('const sorted=sortPermits(current.permits,lang);'),
-  'Visible pass list must be sorted by WME locale');
-assert.ok(src.includes('advanced.permitIds=advanced.permitIds.includes(id)?'),
-  'Autocomplete and checkboxes must share a persistent selection');
+assert.ok(src.includes('matches=filterPermits(current.permits,search.value,lang);'),
+  'Visible pass list must be sorted and filtered by WME locale via filterPermits');
+assert.ok(src.includes('rule.permitIds=rule.permitIds.includes(id)?'),
+  'Autocomplete and checkboxes must share a persistent per-vehicle selection');
 assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
   'Next button must still guard scope');
 // Alpha 15: only the four editor-requested categories are valid in a new draft.
@@ -2037,6 +2038,51 @@ assert.ok(src.includes('if(step===7)next.disabled=!isScheduleValid()||currentCon
 assert.ok(src.includes('threshold.addEventListener("input",updateThreshold);') &&
  src.includes('input.addEventListener("input",updateOccupancy);'),
  'Step 5 numeric inputs must update validation and Next button without destroying focus');
+// Alpha 43: complete 6-language i18n integrity, version alignment, and dead-code cleanup.
+const headerVersionMatch=src.match(/^\/\/\s*@version\s+([^\s]+)$/m);
+assert.ok(headerVersionMatch && headerVersionMatch[1]===a.VERSION,
+ '@version header must match exported VERSION constant');
+assert.deepEqual(a.LANGS,['it','en','fr','es','de','pt'],
+ 'Guided Alpha must preserve the six supported UI languages');
+for(const [tableName,table] of [['labels',a.labels],['vehicleLabels',a.vehicleLabels]]){
+ const keys=Object.keys(table);
+ assert.ok(keys.length>0,tableName+' must not be empty');
+ for(const key of keys){
+  const entry=table[key];
+  assert.ok(Array.isArray(entry)&&entry.length===a.LANGS.length,
+   `${tableName}.${key} must have exactly ${a.LANGS.length} translations`);
+  for(let i=0;i<a.LANGS.length;i++){
+   assert.ok(typeof entry[i]==='string'&&entry[i].trim().length>0,
+    `${tableName}.${key}[${a.LANGS[i]}] must be a non-empty string`);
+  }
+ }
+}
+const labelsBlockMatch=src.match(/const labels = \{([\s\S]*?)\n    \};/);
+const vehicleLabelsBlockMatch=src.match(/const vehicleLabels = \{([\s\S]*?)\n    \};/);
+assert.ok(labelsBlockMatch&&vehicleLabelsBlockMatch,'Must locate labels and vehicleLabels source blocks');
+for(const [blockName,blockBody] of [['labels',labelsBlockMatch[1]],['vehicleLabels',vehicleLabelsBlockMatch[1]]]){
+ const seen=new Set();
+ for(const match of blockBody.matchAll(/^\s*([A-Za-z0-9_]+)\s*:/gm)){
+  const key=match[1];
+  assert.ok(!seen.has(key),`Duplicate key ${key} in ${blockName}`);
+  seen.add(key);
+ }
+}
+for(const match of src.matchAll(/\btr\("([A-Za-z0-9_]+)"\)/g)){
+ const key=match[1];
+ assert.ok(Object.hasOwn(a.labels,key),`Missing translation key referenced by tr("${key}")`);
+}
+for(const removedKey of [
+ 'vehicle_step','allowed_preview','all_vehicle_types','vehicle_preview','no_exceptions',
+ 'occupancy','occupancy_help','occupancy_error',
+ 'motorcycle_engine','motorcycle_engine_hint','motorcycle_engine_error','motorcycle_unchecked'
+]){
+ assert.ok(!Object.hasOwn(a.labels,removedKey),`Dead label ${removedKey} must remain removed`);
+}
+assert.ok(!src.includes('const advanced={minPassengers:null,permitIds:[]};') &&
+ !src.includes('else normalizeAdvanced(advanced,current.permits);') &&
+ !src.includes('ID+"-permit-suggestion-"'),
+ 'Superseded unreachable Step 5 else UI branch must remain removed');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;

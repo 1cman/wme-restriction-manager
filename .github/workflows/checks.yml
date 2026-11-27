@@ -3,6 +3,9 @@ on:
   push:
     branches: [main, develop/v4-guided-restrictions]
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -13,5 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: node --check dist/Restriction_Manager.user.js
+      - run: node --check alpha/Restriction_Manager_Guided_Alpha.user.js
       - run: node tests/validate.cjs
       - run: node tests/guided-alpha.cjs
