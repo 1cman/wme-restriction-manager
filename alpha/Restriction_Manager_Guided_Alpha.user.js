@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.49
-// @description  Guided segment and lane restrictions (Phase 4A: controlled pending WME edits + safe internal preservation of existing motorcycle engine rules, manual Save). Separate from stable 3.2.0.
+// @version      4.0.0-alpha.50
+// @description  Guided segment and lane restrictions (Phase 4A: controlled pending WME edits + guided editing & safe internal preservation of existing motorcycle engine rules, manual Save). Separate from stable 3.2.0.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
 // @match        https://beta.waze.com/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.49";
+    const VERSION = "4.0.0-alpha.50";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -121,7 +121,7 @@
         toll_state_ambiguous_restriction:["Pedaggio rilevato con restrizioni TOLL già presenti: il flag base strada a pedaggio non è distinguibile dallo SDK","Toll detected with existing TOLL restrictions: underlying road toll flag cannot be distinguished via SDK","Péage détecté avec restrictions TOLL existantes : l’attribut péage de base n’est pas distinguable via le SDK","Peaje detectado con restricciones TOLL existentes: el atributo base de vía de peaje no es distinguible por SDK","Maut mit vorhandenen TOLL-Beschränkungen erkannt: Basis-Mautattribut im SDK nicht unterscheidbar","Portagem detetada com restrições TOLL existentes: o atributo base de portagem não é distinguível via SDK"],
         toll_state_ambiguous_unknown:["Pedaggio rilevato, ma elenco restrizioni incompleto: impossibile distinguere flag strada e restrizioni TOLL","Toll detected, but existing restriction list is incomplete: cannot distinguish road flag from TOLL restrictions","Péage détecté, mais liste des restrictions incomplète : impossible de distinguer péage routier et restrictions TOLL","Peaje detectado, pero lista de restricciones incompleta: no se puede distinguir peaje vial de restricciones TOLL","Maut erkannt, aber Beschränkungsliste unvollständig: Straßenflag und TOLL-Regeln nicht unterscheidbar","Portagem detetada, mas lista de restrições incompleta: impossível distinguir portagem viária de restrições TOLL"],
         existing_alert_title:["Attenzione: restrizioni già presenti sul segmento","Warning: existing restrictions on this segment","Attention : restrictions déjà présentes sur ce segment","Atención: ya existen restricciones en este segmento","Achtung: vorhandene Beschränkungen auf diesem Segment","Atenção: já existem restrições neste segmento"],
-        existing_alert_body:["Prima di crearne di nuove, valuta di modificare o eliminare quelle esistenti nel pannello WME: non sarà consentito aggiungere restrizioni in conflitto o sovrapposte.","Before creating new ones, consider editing or deleting existing rules in the native WME panel: conflicting or overlapping additions will be blocked.","Avant d’en créer de nouvelles, envisagez de modifier ou supprimer les règles existantes dans WME : les ajouts en conflit ou en chevauchement seront bloqués.","Antes de crear nuevas, considera editarlas o eliminarlas en el panel nativo de WME: se bloquearán las reglas adicionales en conflicto o solapadas.","Prüfe zuerst, ob du bestehende Regeln im WME-Panel ändern oder löschen solltest: widersprüchliche oder überlappende Zusätze werden blockiert.","Antes de criar novas, considere editar ou eliminar as regras existentes no painel nativo do WME: adições em conflito ou sobrepostas serão bloqueadas."],
+        existing_alert_body:["Puoi modificare o eliminare le restrizioni esistenti qui sotto con la procedura guidata. Non è consentito aggiungere nuove restrizioni in conflitto o sovrapposte.","You can edit or delete existing restrictions below using the guided actions. Adding conflicting or overlapping restrictions is blocked.","Vous pouvez modifier ou supprimer les restrictions existantes ci-dessous avec les actions guidées. L’ajout de restrictions en conflit ou en chevauchement est bloqué.","Puedes editar o eliminar las restricciones existentes abajo con las acciones guiadas. No se permite añadir restricciones en conflicto o solapadas.","Du kannst bestehende Beschränkungen unten direkt geführt bearbeiten oder löschen. Widersprüchliche oder überlappende Zusätze werden blockiert.","Podes editar ou eliminar as restrições existentes abaixo com as ações guiadas. Adicionar restrições em conflito ou sobrepostas é bloqueado."],
         existing_alert_unknown:["Impossibile leggere le restrizioni esistenti dallo SDK: verifica nel pannello WME prima di procedere. Non sarà consentito aggiungere nuove restrizioni senza poter escludere conflitti.","Existing restrictions could not be read from the SDK: inspect the native WME panel first. Adding new restrictions is blocked unless conflicts can be ruled out.","Impossible de lire les restrictions existantes via le SDK : vérifiez dans WME. L’ajout est bloqué tant que les conflits ne peuvent pas être exclus.","No se pudieron leer las restricciones existentes desde el SDK: revisa el panel nativo de WME. No se permite añadir nuevas restricciones sin descartar conflictos.","Vorhandene Beschränkungen konnten nicht über das SDK gelesen werden: prüfe zuerst das WME-Panel. Neue Regeln bleiben blockiert, solange Konflikte nicht ausgeschlossen sind.","Não foi possível ler as restrições existentes no SDK: verifique no painel nativo do WME. Novas restrições ficam bloqueadas enquanto não for possível excluir conflitos."],
         edit_or_delete_native:["Modifica o elimina nel pannello WME","Edit or delete in native WME panel","Modifier ou supprimer dans WME","Editar o eliminar en el panel WME","Im WME-Panel bearbeiten oder löschen","Editar ou eliminar no painel WME"],
         edit_native_switch_tab:["Per modificare o eliminare le restrizioni esistenti, apri la scheda del segmento in WME e clicca «Modifica restrizioni» (oppure avvia la procedura dal pannello del segmento).","To edit or delete existing restrictions, open the segment tab in WME and click “Edit restrictions” (or launch the wizard from the segment panel).","Pour modifier ou supprimer les restrictions existantes, ouvrez l’onglet du segment dans WME et cliquez sur « Modifier les restrictions » (ou lancez l’assistant depuis le panneau du segment).","Para editar o eliminar las restricciones existentes, abre la pestaña del segmento en WME y haz clic en «Editar restricciones» (o inicia el asistente desde el panel del segmento).","Um bestehende Beschränkungen zu bearbeiten oder zu löschen, öffne den Segment-Tab in WME und klicke auf „Beschränkungen bearbeiten“ (oder starte den Assistenten im Segment-Panel).","Para editar ou eliminar as restrições existentes, abra o separador do segmento no WME e clique em «Editar restrições» (ou inicie o assistente a partir do painel do segmento)."],
@@ -284,7 +284,7 @@
         toll_vehicle_step:["Quali veicoli vuoi esentare dal pedaggio?","Which vehicles should be exempt from tolls?","Quels véhicules exempter du péage ?","¿Qué vehículos quieres eximir del peaje?","Welche Fahrzeuge sollen von der Maut befreit werden?","Que veículos pretende isentar da portagem?"],
         toll_schedule:["Date e fasce orarie dell'esenzione dal pedaggio","Toll exemption dates and times","Dates et horaires d'exemption de péage","Fechas y horarios de exención del peaje","Daten und Uhrzeiten der Mautbefreiung","Datas e horários da isenção de portagem"],
         green_schedule:["Date e fasce orarie del transito consentito","Dates and times of permitted traffic","Dates et horaires de circulation autorisée","Fechas y horarios del tráfico permitido","Zeiten der erlaubten Durchfahrt","Datas e horários da circulação autorizada"],
-        green_schedule_intro:["Questi orari riguardano i veicoli autorizzati e le loro condizioni individuali (pass, occupanti). Fuori dai periodi indicati non è definita alcuna autorizzazione da questa bozza. Da verificare in WME.","This schedule applies to authorized vehicle classes and their individual permit/occupancy conditions. Outside these windows this draft grants no permission. Verify in native WME.","Le calendrier concerne les véhicules autorisés et leurs conditions ; à vérifier dans WME.","El calendario se aplica a los vehículos autorizados y sus condiciones; verificar en WME.","Der Zeitplan gilt für die zugelassenen Fahrzeuge und deren Bedingungen; in WME prüfen.","O calendário aplica-se aos veículos autorizados e às respetivas condições; verificar no WME."],
+        green_schedule_intro:["Imposta date, giorni e fasce orarie per i veicoli autorizzati e le loro condizioni (pass, occupanti).","Set dates, weekdays and time ranges for authorized vehicles and their conditions (permits, occupancy).","Définissez les dates, jours et horaires pour les véhicules autorisés et leurs conditions (permis, occupants).","Indica fechas, días y horarios para los vehículos autorizados y sus condiciones (permisos, ocupantes).","Lege Daten, Wochentage und Zeiten für zugelassene Fahrzeuge und deren Bedingungen (Ausweis, Insassen) fest.","Define datas, dias e horários para os veículos autorizados e respetivas condições (autorizações, ocupantes)."],
         budget_heading:["Controllo preliminare SAFE12","Preliminary SAFE12 check","Vérification préliminaire SAFE12","Comprobación preliminar SAFE12","Vorläufige SAFE12-Prüfung","Verificação preliminar SAFE12"],
         before_after_title:["Prima/Dopo (bozza in sola lettura)","Before/After (read-only draft)","Avant/Après (brouillon en lecture seule)","Antes/Después (borrador de solo lectura)","Vorher/Nachher (Entwurf im Lesemodus)","Antes/Depois (rascunho só de leitura)"],
         before_after_before:["Prima","Before","Avant","Antes","Vorher","Antes"],
@@ -351,6 +351,8 @@
         motor_preserve_ready:["Conservabile con condizioni motore moto (verifica interna WME attiva)","Preservable with motorcycle engine conditions (internal WME verification active)","Conservable avec conditions moteur moto (vérification interne WME active)","Conservable con condiciones de motor de moto (verificación interna WME activa)","Mit Motorrad-Motorbedingungen erhaltbar (interne WME-Prüfung aktiv)","Conservável com condições de motor de moto (verificação interna WME ativa)"],
         motor_preserve_notice:["Questa operazione conserva anche le condizioni motore moto tramite modello interno WME, con verifica automatica dopo l'applicazione e annullamento di sicurezza in caso di discrepanza.","This operation also preserves motorcycle engine conditions via the internal WME model, with automatic post-apply verification and safety undo on any mismatch.","Cette opération conserve aussi les conditions moteur moto via le modèle interne WME, avec vérification automatique et annulation de sécurité en cas d'écart.","Esta operación conserva también las condiciones de motor de moto mediante el modelo interno WME, con verificación automática y deshacer de seguridad ante cualquier discrepancia.","Dieser Vorgang erhält auch Motorrad-Motorbedingungen über das interne WME-Modell, inklusive automatischer Prüfung und Rückgängigmachen bei Abweichung.","Esta operação preserva também as condições de motor de moto através do modelo interno WME, com verificação automática e anulação de segurança em caso de discrepância."],
         motor_internal_unavailable:["Modello interno WME non disponibile: impossibile conservare in sicurezza le condizioni motore moto.","Internal WME model unavailable: cannot safely preserve motorcycle engine conditions.","Modèle interne WME indisponible : impossible de conserver sûrement les conditions moteur moto.","Modelo interno WME no disponible: no se pueden conservar con seguridad las condiciones de motor de moto.","Internes WME-Modell nicht verfügbar: Motorrad-Motorbedingungen können nicht sicher erhalten werden.","Modelo interno WME indisponível: impossível preservar com segurança as condições de motor de moto."],
+        motor_preserved_auto:["conservate automaticamente","preserved automatically","conservées automatiquement","conservadas automáticamente","automatisch erhalten","preservadas automaticamente"],
+        motor_edit_preserve_note:["Questa restrizione contiene già condizioni motore moto: modificando direzione, corsia, date o orari verranno conservate automaticamente. Per cambiare le soglie cc/kW usa il pannello nativo WME.","This restriction already includes motorcycle engine conditions: editing direction, lane, dates or times will preserve them automatically. To change the cc/kW limits themselves, use the native WME panel.","Cette restriction contient déjà des conditions moteur moto : modifier le sens, la voie, les dates ou les horaires les conservera automatiquement. Pour changer les seuils cm³/kW, utilisez le panneau natif WME.","Esta restricción ya incluye condiciones de motor de moto: al cambiar dirección, carril, fechas u horarios se conservarán automáticamente. Para modificar los límites cc/kW usa el panel nativo de WME.","Diese Beschränkung enthält bereits Motorrad-Motorbedingungen: beim Ändern von Richtung, Spur, Daten oder Zeiten bleiben sie automatisch erhalten. Zum Ändern der cm³/kW-Grenzen das native WME-Panel nutzen.","Esta restrição já inclui condições de motor de moto: alterar sentido, via, datas ou horários preserva-as automaticamente. Para mudar os limites cc/kW usa o painel nativo do WME."],
         calendar_read_check:["Confronta calendario SDK e modello interno","Compare SDK and internal calendars","Comparer les calendriers SDK et interne","Comparar los calendarios del SDK y del modelo interno","SDK-Kalender mit internem Modell vergleichen","Comparar os calendários do SDK e do modelo interno"],
         calendar_read_match:["I campi del calendario coincidono","Calendar fields match","Les champs du calendrier concordent","Los campos del calendario coinciden","Kalenderfelder stimmen überein","Os campos do calendário coincidem"],
         calendar_read_different:["Differenze nei campi del calendario","Calendar fields differ","Les champs du calendrier diffèrent","Los campos del calendario difieren","Kalenderfelder unterscheiden sich","Os campos do calendário diferem"],
@@ -366,7 +368,7 @@
         budget_over:["La stima supera SAFE12: prima dell'applicazione occorre ridurre gli elementi o rivedere l'operazione.","Estimate exceeds SAFE12; reduce elements or revise the operation before applying.","Estimation au-dessus de SAFE12 : réduire les éléments.","Estimación supera SAFE12: reduce elementos.","SAFE12 überschritten: Elemente reduzieren.","Estimativa ultrapassa SAFE12: reduza os elementos."],
         budget_unknown:["Stima non disponibile: dati delle restrizioni esistenti assenti o incompleti. Nessuna ipotesi sui valori mancanti.","Estimate unavailable: existing restriction data missing or incomplete. No assumptions about missing values.","Estimation indisponible : données des restrictions incomplètes.","Estimación no disponible: faltan datos.","Schätzung nicht verfügbar: Bestandsdaten fehlen.","Estimativa indisponível: dados existentes incompletos."],
         budget_assumption:["Conteggio conservativo: si mantengono le restrizioni presenti e si ipotizza una nuova restrizione per ogni fascia. I limiti vanno ricontrollati sul piano di modifica completo della stabile.","Conservative assumption: retain existing restrictions and add one new restriction per time frame. Recheck against the stable full-operation plan.","Hypothèse prudente : conserver les restrictions et ajouter une restriction par plage.","Supuesto conservador: conservar restricciones y añadir una por franja.","Vorsichtige Annahme: bestehende Regeln plus eine neue Regel je Zeitfenster.","Hipótese prudente: manter restrições e adicionar uma por intervalo."],
-        toll_schedule_intro:["Le fasce orarie si applicano all'esenzione dei veicoli scelti. Gli altri restano soggetti al pedaggio. Nessuna modifica viene effettuata in questa Alpha.","Time ranges apply to selected vehicle exemptions. Others remain subject to toll. This Alpha makes no edits.","Les horaires s'appliquent aux véhicules exemptés. Les autres paient le péage. Aucune modification.","Los horarios se aplican a los vehículos exentos. Los demás pagan peaje. Sin cambios en esta Alpha.","Zeitfenster gelten für die befreiten Fahrzeuge. Andere bleiben mautpflichtig. Keine Bearbeitung.","Os horários aplicam-se aos veículos isentos. Outros pagam portagem. Sem alterações."],
+        toll_schedule_intro:["Le fasce orarie si applicano all'esenzione dei veicoli scelti. Gli altri restano soggetti al pedaggio.","Time ranges apply to the selected exempt vehicles. All other vehicles remain subject to toll.","Les plages horaires s’appliquent aux véhicules exemptés. Les autres restent soumis au péage.","Las franjas horarias se aplican a los vehículos exentos. Los demás siguen sujetos al peaje.","Die Zeitfenster gelten für die befreiten Fahrzeuge. Alle anderen bleiben mautpflichtig.","Os horários aplicam-se aos veículos isentos. Os restantes continuam sujeitos a portagem."],
         toll_auto_flag:["Strada a pedaggio: attivazione prevista automaticamente","Toll road: automatic activation planned","Route à péage : activation automatique prévue","Vía de peaje: activación automática prevista","Mautstraße: automatische Aktivierung vorgesehen","Estrada com portagem: ativação automática prevista"],
         toll_both_directions:["L'attributo Strada a pedaggio sarà impostato su ENTRAMBE le direzioni del segmento, anche se l'esenzione riguarda un solo senso.","The toll-road flag will apply to BOTH segment directions, even if the exemption is one-way.","Le péage s'appliquera aux DEUX sens du segment, même si l'exemption est unidirectionnelle.","El peaje se aplicará a AMBOS sentidos, incluso con exención unidireccional.","Das Maut-Attribut gilt für BEIDE Fahrtrichtungen, selbst bei einseitiger Befreiung.","A portagem aplica-se aos DOIS sentidos do segmento, mesmo com isenção num sentido."],
         toll_activation_pending:["Anteprima: hasToll = true. Verrà predisposto insieme all'esenzione al momento dell'applicazione guidata; questa Alpha non modifica WME.","Preview: hasToll = true. Intended for guided application together with exemption; this Alpha does not edit WME.","Aperçu : hasToll = true ; aucune modification dans cette Alpha.","Vista previa: hasToll = true; esta Alpha no modifica WME.","Vorschau: hasToll = true; diese Alpha bearbeitet WME nicht.","Pré-visualização: hasToll = true; esta Alpha não altera o WME."],
@@ -412,7 +414,7 @@
         motorcycle_intro:["Facoltativo, solo per le motociclette a cui vietare il transito. Senza condizioni motore, tutte le motociclette selezionate saranno vietate. Questa Alpha non crea ancora regole reali; la stabile 3.2.0 conserva le condizioni motore esistenti.","Optional, for prohibited motorcycles only. Without engine conditions, all selected motorcycles are blocked. Alpha is read-only; stable 3.2.0 preserves existing motor rules.","Facultatif, motos interdites uniquement. Sans condition moteur, toutes sont interdites. Alpha en lecture seule.","Opcional, solo motos prohibidas. Sin condiciones de motor, se prohíben todas. Alpha de solo lectura.","Optional nur für gesperrte Motorräder. Ohne Motorbedingung sind alle gesperrt. Alpha schreibgeschützt.","Opcional, apenas para motos proibidas. Sem condições do motor, todas ficam proibidas. Alpha de leitura."],
         motorcycle_enable:["Limita il divieto in base al motore (sperimentale)","Limit the prohibition by engine (experimental)","Limiter l'interdiction selon le moteur (expérimental)","Limitar la prohibición por motor (experimental)","Verbot nach Motor einschränken (experimentell)","Limitar a proibição pelo motor (experimental)"],
         red_schedule:["Date e fasce orarie del divieto","Restriction dates and time ranges","Dates et plages horaires de l'interdiction","Fechas y horarios de la prohibición","Daten und Zeitfenster des Verbots","Datas e horários da proibição"],
-        red_schedule_intro:["Il calendario riguarda il divieto rosso e le sue esenzioni. È una bozza: fuso orario del segmento, ricorrenze speciali e festività andranno verificati prima di modificare WME.","This calendar applies to the red prohibition and its exemptions. Draft only: segment time zone, special recurrences and holidays require verification.","Ce calendrier s'applique à l'interdiction rouge. Fuseau horaire et jours fériés non vérifiés.","El calendario corresponde a la prohibición roja. Zona horaria y festivos pendientes de verificar.","Dieser Kalender gilt für das rote Verbot. Zeitzone und Feiertage noch ungeprüft.","O calendário aplica-se à proibição vermelha. Fuso horário e feriados por verificar."],
+        red_schedule_intro:["Imposta date, giorni della settimana e fasce orarie del divieto.","Set the dates, weekdays and time ranges for the prohibition.","Définissez les dates, les jours de la semaine et les plages horaires de l’interdiction.","Indica las fechas, los días de la semana y las franjas horarias de la prohibición.","Lege Daten, Wochentage und Zeitfenster für das Verbot fest.","Define as datas, os dias da semana e os horários da proibição."],
         schedule_start:["Data di inizio (facoltativa)","Start date (optional)","Date de début (facultative)","Fecha de inicio (opcional)","Startdatum (optional)","Data de início (opcional)"],
         schedule_end:["Data di fine (facoltativa)","End date (optional)","Date de fin (facultative)","Fecha de fin (opcional)","Enddatum (optional)","Data de fim (opcional)"],
         schedule_days:["Giorni della settimana","Days of the week","Jours de la semaine","Días de la semana","Wochentage","Dias da semana"],
@@ -2230,6 +2232,10 @@
                 if(zones.length===1)recordedTimeZone=zones[0];
             }
         }
+        if(roundTrip.requiresInternalMotorPreservation&&
+           (restrictionType!=="BLOCKED"||!vehicleTypes.includes("MOTORCYCLE"))){
+            blockers.push("serializer_engine_gap");
+        }
         const uniqueBlockers=[...new Set(blockers)];
         if(uniqueBlockers.length||!redSchedule||!restrictionType){
             return {
@@ -2238,6 +2244,11 @@
                 preloaded:null,saveAllowed:false,verified:false
             };
         }
+        const preservedMotorSpec=roundTrip.requiresInternalMotorPreservation&&roundTrip.internalMotorSpec?{
+            rawJson:JSON.parse(JSON.stringify(roundTrip.internalMotorSpec.rawJson)),
+            motorStamp:roundTrip.internalMotorSpec.motorStamp,
+            count:roundTrip.internalMotorSpec.count
+        }:null;
         return {
             editableInWizard:true,
             blockers:[],
@@ -2246,7 +2257,9 @@
                 vehicleRules,
                 motorDraft:{enabled:false,conditions:[]},
                 redSchedule,
-                recordedTimeZone
+                recordedTimeZone,
+                preservedMotorSpec,
+                preservedVehicleTypes:preservedMotorSpec?[...vehicleTypes]:[]
             },
             saveAllowed:false,verified:false
         };
@@ -2344,6 +2357,24 @@
         if(targetEditable&&allRetainedReady&&addition.status==="CANDIDATE_READY"){
             const beforeRows=retained.filter(row=>row.index<targetIndex);
             const afterRows=retained.filter(row=>row.index>targetIndex);
+            const rawReplSpec=options?.replacementMotorSpec;
+            const validReplSpec=Boolean(
+                options?.preserveMotorsWithInternal&&
+                rawReplSpec&&typeof rawReplSpec==="object"&&!Array.isArray(rawReplSpec)&&
+                rawReplSpec.rawJson&&typeof rawReplSpec.rawJson==="object"&&!Array.isArray(rawReplSpec.rawJson)&&
+                typeof rawReplSpec.motorStamp==="string"&&rawReplSpec.motorStamp!=="[]"&&
+                Array.isArray(addition.candidateRestrictions)&&addition.candidateRestrictions.length>0&&
+                addition.candidateRestrictions.every(row=>
+                    row.defaultType==="FREE"&&
+                    Array.isArray(row.vehicleRules?.BLOCKED)&&
+                    row.vehicleRules.BLOCKED.some(r=>Array.isArray(r.vehicleTypes)&&r.vehicleTypes.includes("MOTORCYCLE"))
+                )
+            );
+            const cloneReplSpec=()=>validReplSpec?{
+                rawJson:JSON.parse(JSON.stringify(rawReplSpec.rawJson)),
+                motorStamp:rawReplSpec.motorStamp,
+                count:rawReplSpec.count
+            }:null;
             combined=[
                 ...beforeRows.map(row=>row.candidateData),
                 ...addition.candidateRestrictions,
@@ -2351,7 +2382,7 @@
             ];
             internalMotorSpecs=[
                 ...beforeRows.map(row=>row.internalMotorSpec??null),
-                ...addition.candidateRestrictions.map(()=>null),
+                ...addition.candidateRestrictions.map(()=>cloneReplSpec()),
                 ...afterRows.map(row=>row.internalMotorSpec??null)
             ];
         }
@@ -2656,11 +2687,14 @@
                             throw Error("SegmentRestriction.with unavailable");
                         }
                         const sdkGenerated=restriction.toJSON?.()||{};
-                        const next=restriction.with({
+                        const patchedJson={
                             ...JSON.parse(JSON.stringify(spec.rawJson)),
-                            direction:cleanPayload[i].direction,
+                            direction:sdkGenerated.direction??cleanPayload[i].direction,
                             timeFrames:sdkGenerated.timeFrames??JSON.parse(JSON.stringify(cleanPayload[i].timeFrames))
-                        });
+                        };
+                        if("disposition" in sdkGenerated)patchedJson.disposition=sdkGenerated.disposition;
+                        if("laneScope" in sdkGenerated)patchedJson.laneScope=sdkGenerated.laneScope;
+                        const next=restriction.with(patchedJson);
                         if(extractNormalizedMotorStamp(next)!==spec.motorStamp){
                             throw Error("Motor preservation verification failed");
                         }
@@ -2870,7 +2904,7 @@
         anchor.click();
     }
     function renderExistingRestrictionList(segment,expanded=false,options={}){
-        const {onEngineReview,beforeRead,allowGuidedActions,permits}=options||{};
+        const {allowGuidedActions,permits}=options||{};
         const data=listExistingRestrictions(segment);
         const wrap=node("details");
         wrap.open=expanded;
@@ -2888,7 +2922,7 @@
             wrap.append(node("p",tr("existing_none")));
             return wrap;
         }
-        let motorCheckPlaced=false;
+        const motorChecks=autoEngineChecksForSegment(segment);
         for(const entry of data.entries){
             const item=node("details");
             item.open=data.entries.length===1;
@@ -2910,84 +2944,44 @@
             field("existing_kind",entry.defaultType);
             field("existing_direction",entry.direction);
             field("existing_scope",entry.laneScope);
-            field("existing_lane",entry.laneType);
+            if(entry.laneType)field("existing_lane",entry.laneType);
             field("existing_editability",entry.editable===null?null:
                 tr(entry.editable?"existing_yes":"existing_no"));
-            if(entry.expired!==null)
-                field("existing_expired",tr(entry.expired?"existing_yes":"existing_no"));
+            if(entry.expired===true)
+                field("existing_expired",tr("existing_yes"));
             if(entry.description)
                 field("existing_description",entry.description);
-            field("existing_rules",entry.ruleGroups.join(", ")||tr("inspection_none"));
             const diagnostics=inspectNativeVehicleRules(
                 segment.restrictions[entry.index-1]);
-            const nativeDetails=node("details");
-            nativeDetails.style.cssText="border:1px solid #e2e8f0;padding:7px;"+
-                "border-radius:6px;margin:9px 0;background:#f8fafc;";
-            const nativeTitle=node("summary",tr("native_conditions_title"));
-            nativeTitle.style.cssText="font-weight:600;cursor:pointer;";
-            nativeDetails.append(nativeTitle,node("p",tr("native_conditions_intro")));
-            if(diagnostics.legacyComparison==="SAME")
-                nativeDetails.append(node("p",tr("native_profiles_equal")));
-            if(diagnostics.legacyComparison==="DIFFERENT")
-                nativeDetails.append(node("p",tr("native_profiles_differ")));
-            if(diagnostics.legacyComparison==="UNKNOWN")
-                nativeDetails.append(node("p",tr("preservation_alias_unknown")));
-            for(const rule of diagnostics.rows){
-                const line=node("div");
-                line.style.cssText="margin:8px 0;padding:7px;border-left:3px solid "+
-                    (rule.status==="UNKNOWN"?"#b45309":"#64748b")+";"+
-                    "background:#fff;border-radius:4px;font-size:12px;";
-                const addText=text=>line.append(node("p",text));
-                addText(tr("native_group")+": "+rule.group+" #"+rule.index+
-                    " · "+(rule.status==="UNKNOWN"?tr("native_uncertain"):rule.status));
-                addText(tr("native_types")+": "+
-                    (rule.types.join(", ")||tr("unknown")));
-                if(rule.passCount!==null)
-                    addText(tr("native_passes")+": "+rule.passCount);
-                if(rule.occupancyFields.length){
-                    const fields=" ("+rule.occupancyFields.join(" / ")+")";
+            const motorInfo=motorChecks?.get(entry.index)??null;
+            if(diagnostics.rows.length){
+                for(const rule of diagnostics.rows){
+                    const names=rule.types.map(t=>vehicleLabels[t]?.[LANGS.indexOf(lang)]||t);
+                    const parts=[rule.group+": "+(names.join(", ")||tr("unknown"))];
+                    if(rule.passCount!==null&&rule.passCount>0)
+                        parts.push(tr("native_passes")+": "+rule.passCount);
                     if(rule.occupancyStatus==="MINIMUM")
-                        addText(tr("native_occupants")+": "+rule.minPassengers+fields);
-                    else if(rule.occupancyStatus==="ZERO")
-                        addText(tr("native_occupants_uncertain")+": 0"+fields);
-                    else
-                        addText(tr("native_occupants_uncertain")+fields);
+                        parts.push(tr("native_occupants")+": "+rule.minPassengers);
+                    if(rule.hasPlate)parts.push(tr("native_plate"));
+                    if(rule.unknownFields.length)
+                        parts.push(tr("native_other_fields")+": "+rule.unknownFields.join(", "));
+                    const p=node("p",parts.join(" · "));
+                    p.style.cssText="margin:5px 0;overflow-wrap:anywhere;font-size:12px;color:#334155;";
+                    item.append(p);
                 }
-                if(rule.hasPlate)addText(tr("native_plate"));
-                if(rule.hasEngine)addText(tr("native_engine"));
-                else if(rule.types.includes("MOTORCYCLE"))addText(tr("native_engine_review"));
-                if(rule.unknownFields.length)
-                    addText(tr("native_other_fields")+": "+
-                        rule.unknownFields.join(", "));
-                if(rule.status==="UNKNOWN"&&!rule.unknownFields.length)
-                    addText(tr("native_uncertain"));
-                nativeDetails.append(line);
+            }else if(entry.ruleGroups.length){
+                field("existing_rules",entry.ruleGroups.join(", "));
             }
-            if(!motorCheckPlaced&&diagnostics.rows.some(rule=>rule.types.includes("MOTORCYCLE"))){
-                const result=node("div");
-                result.setAttribute("role","status");
-                const read=onEngineReview?trackInternalEnginePreservation(page,segment):
-                    ()=>inspectInternalEnginePreservation(page,segment);
-                nativeDetails.append(button(tr("native_engine_check"),async()=>{
-                    if(beforeRead&&!(await beforeRead()))return;
-                    const review=read();
-                    result.replaceChildren(node("p",review.count===null?tr("native_engine_unavailable"):
-                        tr("native_engine_count")+": "+review.count));
-                    for(const [label,rows] of [["existing_rule",review.rows],["native_engine_internal_row",review.internalRows]]){
-                        for(const row of rows){
-                            const counts=row.count===null?"":tr("native_engine_row_count")+": "+row.count+" · ";
-                            const status={MATCH:"native_engine_match",DIFFERENT:"native_engine_difference",
-                                UNPAIRED:"native_engine_unpaired",UNAVAILABLE:"native_engine_uncompared"}[row.status];
-                            const reason=row.reason?" · "+tr(row.reason):"";
-                            const fields=row.fields?.length?" ("+row.fields.join(", ")+")":"";
-                            result.append(node("p",tr(label)+" "+row.index+" · "+counts+tr(status)+reason+fields));
-                        }
-                    }
-                    onEngineReview?.(review);
-                }),result);
-                motorCheckPlaced=true;
+            if(motorInfo?.status==="MATCH"&&motorInfo.count>0){
+                const mp=node("p",tr("native_engine_row_count")+": "+motorInfo.count+" · "+tr("motor_preserved_auto"));
+                mp.dataset.guidedMotorSummary="true";
+                mp.style.cssText="margin:5px 0;padding:5px 8px;border-left:3px solid #2563eb;background:#eff6ff;color:#1e3a8a;font-size:12px;font-weight:600;";
+                item.append(mp);
+            }else if(diagnostics.rows.some(r=>r.hasEngine)){
+                const mp=node("p",tr("native_engine"));
+                mp.style.cssText="margin:5px 0;font-size:12px;color:#92400e;";
+                item.append(mp);
             }
-            item.append(nativeDetails);
             if(!entry.framesKnown)
                 field("existing_times",tr("unknown"));
             else if(!entry.frames.length)
@@ -3024,7 +3018,8 @@
                     let preload;
                     try{
                         preload=preloadExistingRestrictionToWizard(
-                            nativeRow,segment,permits??context?.permits??null
+                            nativeRow,segment,permits??context?.permits??null,
+                            {engineCheck:motorInfo,preserveMotorsWithInternal:true}
                         );
                     }catch(_){
                         preload={editableInWizard:false,blockers:["preservation_unknown"],
@@ -3058,23 +3053,29 @@
             edit.style.marginTop="8px";
             wrap.append(edit);
         }
-        const help=node("p",tr("edit_native_hint"));
-        help.style.cssText="font-size:12px;color:#475569;margin-top:7px;";
-        wrap.append(help);
         return wrap;
     }
     function renderConflictPreflight(draft,segment,schedule,proposal={}){
         const report=previewRestrictionConflicts(draft,segment,schedule,proposal);
         const wrap=node("section");
+        const textOf=status=>status==="POTENTIAL_CONFLICT"?"conflict_potential":
+            status==="OVERLAP_REVIEW"?"conflict_overlap":
+            status==="SEPARATE"?"conflict_separate":
+            status==="NONE"?"conflict_absent":"conflict_unknown";
+        if(report.status==="NONE"||report.status==="SEPARATE"){
+            wrap.style.cssText="border:1px solid #bbf7d0;border-radius:8px;"+
+                "padding:8px 10px;margin-top:12px;background:#f0fdf4;";
+            const okLine=node("p","✓ "+tr(textOf(report.status)));
+            okLine.setAttribute("role","status");
+            okLine.style.cssText="margin:0;font-weight:600;color:#166534;font-size:13px;";
+            wrap.append(okLine);
+            return wrap;
+        }
         wrap.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
             "padding:10px;margin-top:12px;background:#f8fafc;";
         const heading=node("h4",tr("conflict_title"));
         heading.style.cssText="margin:2px 0 8px;";
         wrap.append(heading);
-        const textOf=status=>status==="POTENTIAL_CONFLICT"?"conflict_potential":
-            status==="OVERLAP_REVIEW"?"conflict_overlap":
-            status==="SEPARATE"?"conflict_separate":
-            status==="NONE"?"conflict_absent":"conflict_unknown";
         const colorOf=status=>status==="POTENTIAL_CONFLICT"?"#b91c1c":
             status==="SEPARATE"||status==="NONE"?"#286244":"#92400e";
         const headline=node("p",tr(textOf(report.status)));
@@ -3157,14 +3158,16 @@
             (notice.unknown?"":" · "+notice.count));
         title.style.display="block";
         box.append(title,node("p",tr(notice.unknown?"existing_alert_unknown":"existing_alert_body")));
-        if(nativeEditActionAvailable()){
-            const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
-            edit.style.marginTop="4px";
-            box.append(edit);
-        }else{
-            const hint=node("p",tr("edit_native_switch_tab"));
-            hint.style.cssText="font-size:12px;margin:6px 0 0;";
-            box.append(hint);
+        if(notice.unknown){
+            if(nativeEditActionAvailable()){
+                const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
+                edit.style.marginTop="4px";
+                box.append(edit);
+            }else{
+                const hint=node("p",tr("edit_native_switch_tab"));
+                hint.style.cssText="font-size:12px;margin:6px 0 0;";
+                box.append(hint);
+            }
         }
         return box;
     }
@@ -3308,7 +3311,6 @@
         }
         document.body.append(dialog);
         const baselineSnapshot=restrictionSnapshot(current.segment,true);
-        const activeDialog=dialog;
         const checkDeleteContext=async()=>{
             let fresh;
             try{fresh=await readContext(sdk);}catch(_){}
@@ -3318,15 +3320,6 @@
                 return {reason:"inspection_changed"};
             }
             return {fresh};
-        };
-        const beforeRead=async()=>{
-            const check=await checkDeleteContext();
-            if(activeDialog!==dialog||!activeDialog.open)return false;
-            if(check.reason){
-                dialog.replaceChildren(node("p",tr(check.reason)),button(tr("close"),()=>dialog.close()));
-                return false;
-            }
-            return true;
         };
         const targetRow=current.segment?.restrictions?.[targetIndex-1];
         if(!canDeleteExistingRestrictionInWizard(targetRow)){
@@ -3384,7 +3377,6 @@
         const remainingNote=node("p",otherIndices.length?
             tr("delete_preview_remaining")+": "+otherIndices.map(i=>tr("existing_rule")+" "+i).join(", "):
             tr("delete_preview_none_left"));
-        const onEngineReview=()=>renderDeletePlan(autoEngineChecksForSegment(current.segment,targetIndex));
         const footer=node("div");
         footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
         footer.append(button(tr("close"),()=>dialog.close()));
@@ -3401,7 +3393,7 @@
             node("p",tr("country")+": "+(current.country?.name||tr("unknown"))),
             node("p",tr("mode_readonly_note")),
             node("h4",tr("before_after_before")),
-            renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}),
+            renderExistingRestrictionList(current.segment,false,{allowGuidedActions:false}),
             node("h4",tr("before_after_after")),
             removing,remainingNote,planBox,applyBox,footer
         );
@@ -3433,6 +3425,8 @@
             startDate:"",endDate:"",weekdays:[...WEEKDAYS],allDay:true,
             slots:[{fromTime:"08:00",toTime:"18:00"}]
         };
+        let preservedMotorSpec=null;
+        let preservedVehicleTypes=[];
         if(targetIndex!==null){
             const targetRow=current.segment?.restrictions?.[targetIndex-1];
             if(!canDeleteExistingRestrictionInWizard(targetRow)){
@@ -3444,7 +3438,11 @@
                 return;
             }
             if(actionMode==="EDIT"){
-                const pre=preloadExistingRestrictionToWizard(targetRow,current.segment,current.permits);
+                const targetMotorChecks=autoEngineChecksForSegment(current.segment);
+                const pre=preloadExistingRestrictionToWizard(
+                    targetRow,current.segment,current.permits,
+                    {engineCheck:targetMotorChecks?.get(targetIndex)??null,preserveMotorsWithInternal:true}
+                );
                 if(!pre.editableInWizard||!pre.preloaded){
                     dialog.replaceChildren(
                         node("p",tr("edit_guided_unavailable")+": "+pre.blockers.map(tr).join("; ")),
@@ -3464,8 +3462,19 @@
                 redSchedule.weekdays=[...pre.preloaded.redSchedule.weekdays];
                 redSchedule.allDay=pre.preloaded.redSchedule.allDay;
                 redSchedule.slots=pre.preloaded.redSchedule.slots.map(s=>({...s}));
+                preservedMotorSpec=pre.preloaded.preservedMotorSpec||null;
+                preservedVehicleTypes=Array.isArray(pre.preloaded.preservedVehicleTypes)?
+                    [...pre.preloaded.preservedVehicleTypes]:[];
             }
         }
+        const activeReplacementMotorSpec=()=>{
+            if(!preservedMotorSpec||actionMode!=="EDIT")return null;
+            if(draft.restrictionType!=="BLOCKED"||motorDraft.enabled)return null;
+            const currentTypes=selectedVehicleTypes(draft.vehicleTypes);
+            if(currentTypes.length!==preservedVehicleTypes.length)return null;
+            if(!preservedVehicleTypes.every(t=>currentTypes.includes(t)))return null;
+            return preservedMotorSpec;
+        };
         const remainingSegmentFor=seg=>{
             if(targetIndex===null||!Array.isArray(seg?.restrictions))return seg;
             return {...seg,restrictions:seg.restrictions.filter((_,idx)=>idx!==targetIndex-1)};
@@ -3537,9 +3546,6 @@
             if(conversion.plannedHasToll===true){
                 details.append(node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(conversion.tollState))));
             }
-            const engineGaps=node("div");
-            engineGaps.setAttribute("role","status");
-            engineGaps.style.cssText="color:#92400e;font-weight:600;";
             const planBox=node("div");
             planBox.dataset.guidedPlanStatus="true";
             planBox.style.cssText="margin-top:10px;padding:8px 10px;border:1px solid #cbd5e1;"+
@@ -3553,7 +3559,9 @@
                         buildExistingActionPlan(
                             "REPLACE",targetIndex,current.segment,
                             {draft,schedule:redSchedule,vehicleRules,permits:current.permits,motorDraft},
-                            {mode:actionMode,access:current.access,engineChecks,preserveMotorsWithInternal:true}
+                            {mode:actionMode,access:current.access,engineChecks,
+                                preserveMotorsWithInternal:true,
+                                replacementMotorSpec:activeReplacementMotorSpec()}
                         ):
                         buildStructuredBeforeAfterPlan(
                             draft,current.segment,redSchedule,vehicleRules,current.permits,motorDraft,
@@ -3611,31 +3619,8 @@
                     });
                 }
             };
-            const activeDialog=dialog;
-            const beforeRead=async()=>{
-                const check=await checkDraftContext();
-                if(activeDialog!==dialog||!activeDialog.open||!details.isConnected)return false;
-                if(check.reason){showDraftContextProblem(check.reason);return false;}
-                return true;
-            };
             if(preview.before===null)details.append(node("p",tr("existing_unknown")));
-            else{
-                const onEngineReview=review=>{
-                    const warnings=findEnginePreservationGaps(review).map(({index,count})=>
-                        node("p",tr("existing_rule")+" "+index+" · "+
-                            tr("native_engine_row_count")+": "+count+" · "+tr("motor_preserve_ready")));
-                    const changes=review.changes.map(({index,status})=>{
-                        const key={SAME:"native_engine_since_first_same",CHANGED:"native_engine_since_first_changed",
-                            UNKNOWN:"native_engine_since_first_unknown"}[status];
-                        const line=node("p",tr("existing_rule")+" "+index+" · "+tr(key));
-                        if(status==="SAME")line.style.cssText="color:#475569;font-weight:400;";
-                        return line;
-                    });
-                    engineGaps.replaceChildren(...changes,...warnings);
-                    renderPlanStatus(autoEngineChecksForSegment(current.segment,targetIndex));
-                };
-                details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));
-            }
+            else details.append(renderExistingRestrictionList(current.segment,false,{allowGuidedActions:false}));
             details.append(node("h4",tr("before_after_after")));
             const retained=preview.after.retained;
             if(targetIndex!==null){
@@ -3650,8 +3635,7 @@
             else{
                 const names=keptList.map(index=>tr("existing_rule")+" "+index);
                 details.append(node("p",tr("before_after_retained")+" · "+names.join(", ")),
-                    node("p",tr(conversion.preservation.status==="UNKNOWN"?"preservation_unknown":"preservation_roundtrip")),
-                    engineGaps);
+                    node("p",tr(conversion.preservation.status==="UNKNOWN"?"preservation_unknown":"preservation_roundtrip")));
             }
             const additions=node("ol");
             const design=[conversion.restrictionIntent,conversion.directionDesign,
@@ -4016,10 +4000,18 @@
                     });
                     enableLabel.append(enable,document.createTextNode(tr("motorcycle_enable")));
                     dialog.append(enableLabel);
+                    const preserved=activeReplacementMotorSpec();
                     if(!motorDraft.enabled){
-                        const note=node("p",tr("motor_ban_all"));
-                        note.style.cssText="padding:10px;background:#fee2e2;color:#7f1d1d;border-radius:7px;";
-                        dialog.append(note);
+                        if(preserved){
+                            const note=node("p",tr("native_engine_row_count")+": "+preserved.count+" · "+tr("motor_edit_preserve_note"));
+                            note.dataset.guidedMotorEditPreserve="true";
+                            note.style.cssText="padding:10px;border-left:3px solid #2563eb;background:#eff6ff;color:#1e3a8a;border-radius:7px;font-weight:600;";
+                            dialog.append(note);
+                        }else{
+                            const note=node("p",tr("motor_ban_all"));
+                            note.style.cssText="padding:10px;background:#fee2e2;color:#7f1d1d;border-radius:7px;";
+                            dialog.append(note);
+                        }
                     }else{
                         for(const engine of MOTOR_ENGINE_TYPES){
                             const match=motorDraft.conditions.find(c=>c.engineType===engine);
@@ -4337,7 +4329,13 @@
                             node("p",tr("blocked_only_selected")));
                     }
                     if(checked.vehicleTypes.includes("MOTORCYCLE")){
-                        if(motor.mode==="ALL_MOTORCYCLES"){
+                        const preserved=activeReplacementMotorSpec();
+                        if(motor.mode==="ALL_MOTORCYCLES"&&preserved){
+                            const note=node("p",tr("native_engine_row_count")+": "+preserved.count+" · "+tr("motor_edit_preserve_note"));
+                            note.dataset.guidedMotorEditPreserve="true";
+                            note.style.cssText="padding:8px 10px;border-left:3px solid #2563eb;background:#eff6ff;color:#1e3a8a;border-radius:6px;font-size:12px;font-weight:600;";
+                            dialog.append(note);
+                        }else if(motor.mode==="ALL_MOTORCYCLES"){
                             dialog.append(node("p",tr("motor_ban_all")));
                         }else{
                             dialog.append(node("p",tr("motor_ban_conditional")));

@@ -746,8 +746,7 @@ assert.ok(src.includes('const baselineSnapshot=restrictionSnapshot(current.segme
  'The wizard must capture initial SDK restrictions');
 assert.ok(src.includes('if(baselineSnapshot!==latestSnapshot)'),
  'Next must abort if observed SDK restrictions or direction changed');
-assert.ok(src.includes('showDraftContextProblem(check.reason)') &&
- src.includes('showDraftContextProblem(reason)') && src.includes('node("p",tr(reason))'),
+assert.ok(src.includes('showDraftContextProblem(reason)') && src.includes('node("p",tr(reason))'),
  'Stale drafts must show a clear message');
 assert.ok(!src.includes('node("summary",tr("inspection_title"))'),
  'Redundant technical inspection box must stay removed from the cleaned-up sidebar');
@@ -1449,7 +1448,7 @@ assert.ok(src.includes('function renderExistingRestrictionList(') &&
  'Existing restrictions must be visible immediately in the guided sidebar');
 assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,true));'),
  'Existing restrictions must be visible before filling in a new draft');
-assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));') &&
+assert.ok(src.includes('else details.append(renderExistingRestrictionList(current.segment,false,{allowGuidedActions:false}));') &&
  src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
  'Existing restrictions remain accessible in the final review');
 assert.ok(src.includes('feedback.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));'),
@@ -1789,13 +1788,13 @@ assert.equal(diagExisting.rows.find(row=>row.vehicleType==='EV').relation,'SAME'
 assert.equal(diagExisting.rows.find(row=>row.vehicleType==='PRIVATE').existingEffect,
  'CONDITIONAL');
 assert.ok(src.includes('const diagnostics=inspectNativeVehicleRules(') &&
- src.includes('item.append(nativeDetails);'),
- 'Existing restrictions should display native condition diagnostics');
+ !src.includes('item.append(nativeDetails);') &&
+ !src.includes('tr("native_engine_check")') &&
+ !src.includes('tr("edit_native_hint")'),
+ 'Existing restrictions must show concise vehicle/motor summaries without obsolete debug boxes or outdated read-only hints');
 assert.ok(src.includes('const nativeData=inspectNativeVehicleRules(') &&
  src.includes('tr("native_conditions_title")'),
  'Conflict review must expose condition diagnostics where interpretation is incomplete');
-assert.ok(src.includes('tr("native_conditions_intro")'),
- 'Diagnostic UI must warn about AND/OR/precedence and conceal private values');
 assertSingleGatedWriteEntry();
 // Alpha 40: read-only segment permissions, drivability and toll-state preflight.
 const headerVersion=/^\/\/ @version\s+(\S+)/m.exec(src)?.[1];
@@ -2327,10 +2326,10 @@ assert.equal(f1UnknownSegPlan.status,'BLOCKED');
 assert.equal(f1UnknownSegPlan.existingStatus,'UNKNOWN');
 assert.ok(f1UnknownSegPlan.blockers.includes('preservation_unknown'));
 // UI integration & read-only invariants for Fase 1 + Fase 4A automatic motor checks.
-assert.ok(src.includes('const renderPlanStatus=(engineChecks=initialEngineChecks)=>{') &&
- src.includes('planBox.dataset.guidedPlanStatus="true";') &&
- src.includes('renderPlanStatus(autoEngineChecksForSegment(current.segment,targetIndex));'),
- 'Before/After preview must render plan status and refresh with internal motor preservation checks');
+assert.ok(src.includes('const initialEngineChecks=autoEngineChecksForSegment(current.segment,targetIndex);') &&
+ src.includes('const renderPlanStatus=(engineChecks=initialEngineChecks)=>{') &&
+ src.includes('planBox.dataset.guidedPlanStatus="true";'),
+ 'Before/After preview must render plan status with automatic internal motor preservation checks');
 // Alpha 45 (Fase 2): read-only guided edit preload, delete eligibility and DELETE / REPLACE action plans.
 assert.equal(a.canDeleteExistingRestrictionInWizard({editable:true}),true);
 assert.equal(a.canDeleteExistingRestrictionInWizard({editable:false}),false);
@@ -3064,6 +3063,224 @@ assert.equal(a.labels.launch_existing.length,6);
  assert.equal(f4FailRes.undone,true);
  assert.equal(f4UndoCount,1);
  assert.ok(f4FailRes.mismatches.includes('motor_preservation_mismatch'));
+
+ // Alpha 50: Guided Edit directly on existing editable motorcycle restrictions
+ // with engine conditions + cleaned-up UI (amber alert, restriction cards, Step 7).
+ const makeInternalMotoRowV2=(direction,laneScope,timeFrames,engineCaps)=>{
+  const rawJson={
+   defaultType:'FREE',description:null,direction,laneScope,laneType:null,
+   timeFrames:JSON.parse(JSON.stringify(timeFrames)),
+   driveProfiles:{BLOCKED:[{vehicleTypes:['MOTORCYCLE'],subscriptions:[],minPassengers:0,
+    licensePlateRule:null,engineCapacities:engineCaps.map(c=>({...c}))}]}
+  };
+  return {
+   getDriveProfileList(group){
+    if(group!=='BLOCKED')return {getDriveProfiles:()=>[]};
+    return {getDriveProfiles:()=>[{getEngineCapacities:()=>engineCaps.map(c=>({attributes:{...c}}))}]};
+   },
+   toJSON(){return JSON.parse(JSON.stringify(rawJson));},
+   with(patch){
+    const nextCaps=(patch.driveProfiles?.BLOCKED?.[0]?.engineCapacities)||[];
+    return makeInternalMotoRowV2(
+     patch.direction??direction,
+     patch.laneScope??laneScope,
+     patch.timeFrames??timeFrames,
+     nextCaps
+    );
+   }
+  };
+ };
+ const a50Caps=[{vehicleType:'MOTORCYCLE',engineType:'FUEL',operator:'LT',capacityThreshold:125}];
+ const a50BaseFrames=[makeLiveSdkFrame({
+  startDate:null,endDate:null,fromTime:'14:00',toTime:'19:00',
+  weekdays:[...a.WEEKDAYS],timeZone:'Europe/Rome'
+ })];
+ const a50SdkRow=makeLiveSdkRestriction({
+  defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',
+  timeFrames:a50BaseFrames,
+  vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['MOTORCYCLE']})]}
+ });
+ let a50Raw=[makeInternalMotoRowV2('FWD','WHOLE_SEGMENT',a50BaseFrames,a50Caps)];
+ let a50Seg={id:960,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[a50SdkRow]};
+ const a50Actions=[];
+ const a50Mgr={
+  getActions:()=>a50Actions,
+  add(action){
+   a50Actions.push(action);
+   const target=action.subActions.find(s=>s.object.getID()===960);
+   if(target)a50Raw=target.newAttributes.restrictions;
+  }
+ };
+ const a50Page={W:{model:{actionManager:a50Mgr,segments:{getObjectById:id=>id===960?{attributes:{restrictions:a50Raw}}:null}}}};
+ const a50Captured=a.captureInternalMotorPreservation(a50Page,a50Seg);
+ const a50Check1=a50Captured.get(1);
+ assert.equal(a50Check1.status,'MATCH');
+ assert.equal(a50Check1.count,1);
+ // Preload without opt-in still fails closed; with preserveMotorsWithInternal:true unlocks Guided Edit!
+ assert.equal(
+  a.preloadExistingRestrictionToWizard(a50SdkRow,a50Seg,f2Permits,{engineCheck:a50Check1}).editableInWizard,
+  false
+ );
+ const a50Pre=a.preloadExistingRestrictionToWizard(
+  a50SdkRow,a50Seg,f2Permits,{engineCheck:a50Check1,preserveMotorsWithInternal:true}
+ );
+ assert.equal(a50Pre.editableInWizard,true);
+ assert.deepEqual(a50Pre.preloaded.draft,{
+  direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']
+ });
+ assert.equal(a50Pre.preloaded.preservedMotorSpec.count,1);
+ assert.equal(a50Pre.preloaded.preservedMotorSpec.motorStamp,a50Check1.motorStamp);
+ assert.deepEqual(a50Pre.preloaded.preservedVehicleTypes,['MOTORCYCLE']);
+ // buildExistingActionPlan REPLACE editing direction + laneScope + hours preserves replacementMotorSpec.
+ const a50EditDraft={
+  draft:{direction:'REV',scope:'right',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']},
+  schedule:{startDate:'',endDate:'',weekdays:[...a.WEEKDAYS],allDay:false,slots:[{fromTime:'08:00',toTime:'20:00'}]},
+  vehicleRules:{},permits:f2Permits,motorDraft:{enabled:false,conditions:[]}
+ };
+ const a50EditPlan=a.buildExistingActionPlan('REPLACE',1,a50Seg,a50EditDraft,{
+  mode:'EDIT',access:f3AccessOk,preserveMotorsWithInternal:true,
+  replacementMotorSpec:a50Pre.preloaded.preservedMotorSpec
+ });
+ assert.equal(a50EditPlan.status,'CANDIDATE_COMPLETE');
+ assert.equal(a50EditPlan.usesInternalMotorPreservation,true);
+ assert.equal(a50EditPlan.internalMotorSpecs.length,1);
+ assert.equal(a50EditPlan.internalMotorSpecs[0].motorStamp,a50Check1.motorStamp);
+ assert.equal(a50EditPlan.candidateRestrictions[0].direction,'REV');
+ assert.equal(a50EditPlan.candidateRestrictions[0].laneScope,'RIGHT_LANE');
+ assert.equal(a50EditPlan.candidateRestrictions[0].timeFrames[0].fromTime,'08:00');
+ // Defensive check: if user removed MOTORCYCLE from draft, replacementMotorSpec is ignored.
+ const a50ChangedVehPlan=a.buildExistingActionPlan('REPLACE',1,a50Seg,{
+  ...a50EditDraft,
+  draft:{...a50EditDraft.draft,vehicleTypes:['TAXI']}
+ },{
+  mode:'EDIT',access:f3AccessOk,preserveMotorsWithInternal:true,
+  replacementMotorSpec:a50Pre.preloaded.preservedMotorSpec
+ });
+ assert.equal(a50ChangedVehPlan.status,'CANDIDATE_COMPLETE');
+ assert.equal(a50ChangedVehPlan.usesInternalMotorPreservation,false);
+ assert.deepEqual(a50ChangedVehPlan.internalMotorSpecs,[null]);
+ // Execute controlled write for Guided Edit changing direction, laneScope & hours while preserving 125cc rule!
+ const a50BaseSnap=a.restrictionSnapshot(a50Seg,true);
+ const a50OrigAdd=a50Mgr.add;
+ const a50Sdk={
+  Editing:{undo:async()=>{throw Error('Undo must not run on successful Alpha 50 Guided Edit');}},
+  DataModel:{Segments:{
+   getById:async()=>a50Seg,
+   updateSegment:async({restrictions})=>{
+    const stripped=restrictions.map(r=>makeInternalMotoRowV2(r.direction,r.laneScope,r.timeFrames,[]));
+    const action=new UpdateSegmentsRestrictions(960);
+    action.subActions[0].newAttributes={restrictions:stripped};
+    a50Mgr.add(action);
+    a50Seg={...a50Seg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+   }
+  }}
+ };
+ const a50WriteRes=await a.executeControlledSegmentWrite(
+  a50Sdk,a50Page,960,a50EditPlan.candidateRestrictions,a50BaseSnap,
+  {plan:a50EditPlan,access:f3AccessOk,internalMotorSpecs:a50EditPlan.internalMotorSpecs}
+ );
+ assert.equal(a50WriteRes.status,'APPLIED_PENDING');
+ assert.equal(a50WriteRes.verified,true);
+ assert.equal(a50WriteRes.preservedInternalMotors,true);
+ assert.equal(a50Mgr.add,a50OrigAdd);
+ assert.equal(a50Raw[0].toJSON().direction,'REV');
+ assert.equal(a50Raw[0].toJSON().laneScope,'RIGHT_LANE');
+ assert.equal(a50Raw[0].toJSON().timeFrames[0].fromTime,'08:00');
+ assert.equal(a.extractNormalizedMotorStamp(a50Raw[0]),a50Check1.motorStamp,
+  'Guided Edit on motorcycle restriction must preserve real engine condition alongside updated direction/lane/hours');
+ // Fake-DOM end-to-end test reproducing the user screenshot: segment with 1 editable
+ // motorcycle restriction + 1 engine condition in W.model.
+ let vmMotoRaw=[makeInternalMotoRowV2('FWD','WHOLE_SEGMENT',a50BaseFrames,a50Caps)];
+ const vmMotoActions=[];
+ const vmMotoMgr={
+  getActions:()=>vmMotoActions,
+  add(action){
+   vmMotoActions.push(action);
+   const target=action.subActions.find(s=>String(s.object.getID())==='106');
+   if(target)vmMotoRaw=target.newAttributes.restrictions;
+  }
+ };
+ fakeWin.W={model:{
+  actionManager:vmMotoMgr,
+  segments:{getObjectById:id=>String(id)==='106'?{attributes:{restrictions:vmMotoRaw}}:null}
+ }};
+ vmUpdates.length=0;
+ fakeSdk.DataModel.Segments.updateSegment=async({segmentId,restrictions})=>{
+  vmUpdates.push({segmentId,restrictions});
+  const stripped=restrictions.map(r=>makeInternalMotoRowV2(r.direction,r.laneScope,r.timeFrames,[]));
+  const action=new UpdateSegmentsRestrictions(segmentId);
+  action.subActions[0].newAttributes={restrictions:stripped};
+  vmMotoMgr.add(action);
+  activeSeg={...activeSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+ };
+ activeSeg={id:106,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[a50SdkRow]};
+ nativeAnchor.textContent='Modifica restrizioni';
+ await refreshCb();
+ // Verify cleaned-up sidebar UI on motorcycle restriction segment.
+ const alertBox=rootEl.querySelectorAll('div').find(d=>d.attrs?.role==='alert');
+ assert.ok(alertBox,'Amber existing-restriction alert must still warn the editor');
+ assert.equal(
+  alertBox.querySelectorAll('button').filter(b=>b.textContent===a.labels.edit_or_delete_native[0]).length,
+  0,
+  'Amber alert must NOT duplicate the native WME panel button when restrictions are readable'
+ );
+ assert.ok(!rootEl.textContent.includes(a.labels.native_conditions_title[0]),
+  'Cleaned-up restriction card must not render obsolete native diagnostic accordion');
+ assert.ok(!rootEl.textContent.includes(a.labels.native_engine_check[0]),
+  'Cleaned-up restriction card must not render obsolete manual engine count button');
+ assert.ok(!rootEl.textContent.includes(a.labels.edit_native_hint[0]),
+  'Cleaned-up restriction list must not display outdated read-only hint');
+ assert.ok(rootEl.querySelectorAll('p').some(p=>p.dataset?.guidedMotorSummary==='true'),
+  'Motorcycle restriction card must show concise auto-preserved engine summary');
+ const motoEditBtn=rootEl.querySelectorAll('button').find(b=>b.textContent===a.labels.edit_guided_btn[0]);
+ assert.ok(motoEditBtn,'Guided edit button must appear directly on editable motorcycle restriction with engine conditions');
+ motoEditBtn.click();
+ await new Promise(r=>setTimeout(r,20));
+ const motoDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(motoDialog&&motoDialog.open,'Clicking Guided Edit on motorcycle restriction must open EDIT dialog');
+ // Jump to Step 5 (Conditions) and verify blue preserved-motor notice replaces motor_ban_all.
+ const jumpCond=motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='5');
+ assert.ok(jumpCond,'Quick-nav must include Conditions step for motorcycle restriction');
+ jumpCond.click();
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(motoDialog.querySelectorAll('p').some(p=>p.dataset?.guidedMotorEditPreserve==='true'),
+  'Step 5 must explain that existing motorcycle engine conditions will be preserved automatically');
+ assert.ok(!motoDialog.textContent.includes(a.labels.motor_ban_all[0]),
+  'Step 5 must not falsely tell editor that all motorcycles will be banned when preserving engine conditions');
+ // Jump to Step 7 (Dates & times) and verify compact green conflict status without 4-line red disclaimer.
+ const jumpSchedMoto=motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='7');
+ jumpSchedMoto.click();
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(motoDialog.textContent.includes(a.labels.conflict_absent[0]),
+  'Step 7 must display compact green no-conflict confirmation');
+ assert.ok(!motoDialog.textContent.includes(a.labels.conflict_uncertain[0]),
+  'Step 7 must not display the verbose red read-only disclaimer when there are no conflicts');
+ // Jump to Step 0, switch direction FWD -> REV, jump to Step 6, confirm and apply pending edit!
+ motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='0').click();
+ await new Promise(r=>setTimeout(r,20));
+ const motoRevRadio=motoDialog.querySelectorAll('input').find(i=>i.type==='radio'&&i.value==='REV');
+ motoRevRadio.checked=true;
+ for(const fn of (motoRevRadio.listeners.change||[]))fn({});
+ motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='6').click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.ok(motoDialog.querySelectorAll('p').some(p=>p.dataset?.guidedMotorEditPreserve==='true'),
+  'Step 6 summary must confirm existing motorcycle engine conditions are preserved');
+ assert.ok(motoDialog.querySelectorAll('p').some(p=>p.dataset?.guidedMotorPreserveNotice==='true'),
+  'Controlled apply box must display internal motor preservation notice');
+ const motoConfirm=motoDialog.querySelectorAll('input').find(i=>i.dataset?.guidedWriteConfirm==='true');
+ const motoApplyBtn=motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedApplyBtn==='true');
+ motoConfirm.checked=true;
+ for(const fn of (motoConfirm.listeners.change||[]))fn({});
+ motoApplyBtn.click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(vmUpdates.length,1);
+ assert.equal(vmUpdates[0].segmentId,106);
+ assert.equal(vmUpdates[0].restrictions[0].direction,'REV');
+ assert.ok(motoDialog.querySelectorAll('div').some(d=>d.dataset?.guidedWriteOutcome==='APPLIED_PENDING'),
+  'Guided Edit on motorcycle restriction must verify and report APPLIED_PENDING');
+ assert.equal(a.extractNormalizedMotorStamp(vmMotoRaw[0]),a50Check1.motorStamp,
+  'Live-simulated Guided Edit must keep the 125cc motorcycle engine condition intact in W.model');
+ assert.equal(warnings.length,0,'No warnings allowed during Alpha 50 motorcycle guided edit flow');
 
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;
