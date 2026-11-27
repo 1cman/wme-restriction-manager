@@ -7,6 +7,20 @@ const file=path.join(__dirname,'../alpha/Restriction_Manager_Guided_Alpha.user.j
 const src=fs.readFileSync(file,'utf8');
 new vm.Script(src,{filename:file});
 const a=require(file);
+function assertSingleGatedWriteEntry(){
+ const matches=src.match(/\bupdateSegment\s*\(/g)||[];
+ assert.equal(matches.length,1,'Phase 3 allows exactly one gated updateSegment call site');
+ const fnStart=src.indexOf('async function executeControlledSegmentWrite(');
+ const fnEnd=src.indexOf('async function readPermits(',fnStart);
+ assert.ok(fnStart>0&&fnEnd>fnStart,'executeControlledSegmentWrite must exist before readPermits');
+ const body=src.slice(fnStart,fnEnd);
+ assert.equal((body.match(/\bupdateSegment\s*\(/g)||[]).length,1,
+  'The sole updateSegment call must live inside executeControlledSegmentWrite');
+ assert.ok(!/\bEditing\s*\.\s*save\s*\(/.test(src),'WME Save must remain strictly manual');
+ assert.ok(!/\b(savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),
+  'Phase 3 Alpha must not persist presets or make network requests');
+}
+assertSingleGatedWriteEntry();
 assert.deepEqual(a.normalizeAdvanced({minPassengers:null,permitIds:[]},null),{minPassengers:null,permitIds:[],verified:false});
 assert.deepEqual(a.normalizeAdvanced({minPassengers:3,permitIds:['pass1','pass1']},[{id:'pass1',name:'Example'}]),{minPassengers:3,permitIds:['pass1'],verified:false});
 for(const bad of [0,1,-1,1.5,NaN,Infinity,'2']) {
@@ -320,8 +334,7 @@ assert.ok(src.includes('node("h4",tr("toll_auto_flag"))'),
 assert.ok(src.includes('const scheduleTitle=draft.restrictionType==="ALLOWED"?"green_schedule"') &&
  src.includes('draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule"'),
  'Scheduling must display green, blue or red localized headings');
-assert.ok(!/\bupdateSegment\s*\(/.test(src),
- 'No segment write is allowed in the read-only Alpha');
+assertSingleGatedWriteEntry();
 const redSchedule={
  startDate:'2026-12-01',endDate:'2027-01-15',
  weekdays:['MONDAY','FRIDAY'],allDay:false,
@@ -923,8 +936,7 @@ assert.ok(src.includes('const laneReport=inspectLaneDraft(draft,current.segment.
  'Show lane scope candidate in all final summaries');
 assert.ok(src.includes('tr("lane_special_pending")') && src.includes('tr("lane_caution")'),
  'Warning must distinguish unverified special lane mappings from observed values');
-assert.ok(!/\bupdateSegment\s*\(/.test(src),
- 'Proposed scope values must not be submitted to SDK');
+assertSingleGatedWriteEntry();
 // Alpha 17: WME changes the native panel action when restrictions exist.
 const nativeActions={
   add:['Aggiungi restrizioni','Aggiungi restrizione','Add restrictions','Add restriction',
@@ -1077,8 +1089,7 @@ assert.ok(src.includes('node("summary",tr("conversion_title"))'),
  'The conversion review must have a collapsible accessible heading');
 assert.ok(src.includes('node("p",tr("conversion_blocked"))'),
  'The conversion review must always warn that saving is unavailable');
-assert.ok(!/\.updateSegment\s*\(/.test(src),
- 'The read-only SDK conversion review must not call updateSegment');
+assertSingleGatedWriteEntry();
 // Alpha 19: preserve ALL existing native restrictions; never serialize read model
 // as SegmentRestrictionData, and never interpret unknown vehicle rules as writable.
 const noRestrictionAudit=a.auditRestrictionPreservation({id:10,isAtoB:true,restrictions:[]});
@@ -1320,8 +1331,7 @@ assert.ok(src.includes('node("h4",tr("preservation_title"))') &&
  'Audit heading and status must be localized');
 assert.ok(src.includes('node("p",tr("preservation_warning"))'),
  'The audit must warn that it never creates a writable SDK payload');
-assert.ok(!/\.updateSegment\s*\(/.test(src),
- 'Preservation audit must not invoke SDK writes');
+assertSingleGatedWriteEntry();
 // Alpha 20: show all existing restrictions and catch only defensible overlaps.
 const existingBase={id:77,isAtoB:true,isBtoA:true,isTwoWay:true,restrictions:[{
  defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
@@ -1473,8 +1483,7 @@ assert.ok(src.includes('restrictionSnapshot(context?.segment,true)'),
  'Sidebar must refresh after a restriction change even if count stays unchanged');
 assert.ok(src.includes('conflict_uncertain'),
  'Collision analysis must warn about unknown SDK rules and recurring calendars');
-assert.ok(!/\.updateSegment\s*\(/.test(src),
- 'Conflict detection must never edit WME via SDK');
+assertSingleGatedWriteEntry();
 // Alpha 21: safe vehicle-by-vehicle effects, without assuming distinct SDK
 // classes are exclusive and without treating nested conditions as unconditional.
 const simpleMotoNative={defaultType:'FREE',vehicleRules:{
@@ -1808,9 +1817,7 @@ assert.ok(src.includes('const nativeData=inspectNativeVehicleRules(') &&
  'Conflict review must expose condition diagnostics where interpretation is incomplete');
 assert.ok(src.includes('tr("native_conditions_intro")'),
  'Diagnostic UI must warn about AND/OR/precedence and conceal private values');
-assert.ok(!/\.updateSegment\s*\(/.test(src),
- 'No SDK mutations in the read-only diagnostics');
-assert.ok(!/\b(updateSegment|savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),'Read-only alpha must not write or export map data');
+assertSingleGatedWriteEntry();
 // Alpha 40: read-only segment permissions, drivability and toll-state preflight.
 const headerVersion=/^\/\/ @version\s+(\S+)/m.exec(src)?.[1];
 assert.ok(headerVersion && src.includes(`const VERSION = "${headerVersion}";`),
@@ -2690,8 +2697,209 @@ assert.equal(a.labels.launch_existing.length,6);
  nativeAnchor.textContent='Aggiungi restrizioni';
  await refreshCb();
  assert.equal(fakeDoc.getElementById('rm-guided-alpha-native').textContent,'Crea restrizione guidata');
- assert.ok(rootEl.querySelectorAll('button').some(b=>b.textContent==='Crea restrizione guidata'));
- assert.equal(warnings.length,0,'No warnings allowed during guided edit/delete preview interactions');
+ // Phase 3 fake-DOM end-to-end check: on segment with single editable restriction,
+ // open Delete modal, check explicit confirmation, click Apply, verify updateSegment + UI refresh.
+ const vmUpdates=[];
+ fakeSdk.DataModel.Segments.updateSegment=async({segmentId,restrictions})=>{
+  vmUpdates.push({segmentId,restrictions});
+  activeSeg={...activeSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+  if(!restrictions.length)nativeAnchor.textContent='Aggiungi restrizioni';
+ };
+ fakeSdk.Editing.undo=async()=>{throw Error('Undo must not run on successful apply');};
+ activeSeg={id:104,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[f2RedAllRes]};
+ nativeAnchor.textContent='Modifica restrizioni';
+ await refreshCb();
+ const delBtnSingle=rootEl.querySelectorAll('button').find(b=>b.textContent===a.labels.delete_preview_btn[0]);
+ assert.ok(delBtnSingle,'Delete button must appear on single editable restriction');
+ delBtnSingle.click();
+ await new Promise(r=>setTimeout(r,20));
+ const delApplyDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ const confirmBox=delApplyDialog.querySelectorAll('input').find(i=>i.dataset?.guidedWriteConfirm==='true');
+ const applyDeleteBtn=delApplyDialog.querySelectorAll('button').find(b=>b.dataset?.guidedApplyBtn==='true');
+ assert.ok(confirmBox&&applyDeleteBtn,'Delete dialog must include explicit confirmation checkbox and apply button');
+ assert.equal(applyDeleteBtn.disabled,true,'Apply button must stay disabled until editor checks confirmation');
+ confirmBox.checked=true;
+ for(const fn of (confirmBox.listeners.change||[]))fn({});
+ assert.equal(applyDeleteBtn.disabled,false,'Apply button enables only after explicit confirmation');
+ applyDeleteBtn.click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(vmUpdates.length,1,'Clicking Apply must invoke updateSegment exactly once');
+ assert.deepEqual(JSON.parse(JSON.stringify(vmUpdates[0])),{segmentId:104,restrictions:[]});
+ assert.ok(delApplyDialog.querySelectorAll('div').some(d=>d.dataset?.guidedWriteOutcome==='APPLIED_PENDING'),
+  'Delete dialog must report APPLIED_PENDING after post-write verification');
+ assert.equal(fakeDoc.getElementById('rm-guided-alpha-native').textContent,'Crea restrizione guidata',
+  'After deleting the last restriction, refresh must switch the launch button back to Crea restrizione guidata');
+ assert.equal(warnings.length,0,'No warnings allowed during Phase 3 guided delete apply flow');
+
+ // Alpha 47 (Fase 3): evaluateControlledWriteGate, verifyAppliedSegmentRestrictions,
+ // and executeControlledSegmentWrite (success, abort, surgical rollback, manual-undo fallback).
+ const f3AccessOk={hasPermissions:true,isRoadTypeDrivable:true};
+ const f3PlanCreate=a.buildStructuredBeforeAfterPlan(
+  {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+  {...f2SegTwoWay,restrictions:[]},
+  {startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'18:00'}]},
+  {},f2Permits,{enabled:false,conditions:[]},{access:f3AccessOk}
+ );
+ const f3GateOk=a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,restrictions:[]},f3AccessOk);
+ assert.equal(f3GateOk.allowed,true);
+ assert.deepEqual(f3GateOk.blockers,[]);
+ assert.equal(f3GateOk.restrictionCount,1);
+ assert.equal(f3GateOk.frameCount,1);
+ // Gate must fail closed if permissions or drivability are false OR unverified (null).
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,restrictions:[]},{hasPermissions:false,isRoadTypeDrivable:true}).blockers.includes('conversion_no_permission'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,restrictions:[]},{hasPermissions:null,isRoadTypeDrivable:true}).blockers.includes('write_permission_unverified'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,isDrivable:false,restrictions:[]},{hasPermissions:true,isRoadTypeDrivable:false}).blockers.includes('conversion_non_drivable'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,isDrivable:undefined,restrictions:[]},{hasPermissions:true,isRoadTypeDrivable:null}).blockers.includes('write_drivable_unverified'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,isDrivable:true,restrictions:[]},{hasPermissions:true,isRoadTypeDrivable:false}).blockers.includes('write_drivable_unverified'));
+ // Gate allows deleting the last restriction (0 remaining rows) and blocks special lanes/TOLL/overnight/conflicts.
+ assert.equal(a.evaluateControlledWriteGate(f2DelOnly,{...f2SegTwoWay,restrictions:[f2RedAllRes]},f3AccessOk).allowed,true);
+ assert.equal(a.evaluateControlledWriteGate(f2DelBlockedByLockedSibling,{...f2SegTwoWay,restrictions:[f2RedAllRes,makeLiveSdkRestriction({editable:false,direction:'REV'})]},f3AccessOk).allowed,false);
+ assert.equal(a.evaluateControlledWriteGate(f2EditOk,f2TwoSeg,f3AccessOk).allowed,true);
+ assert.equal(a.evaluateControlledWriteGate(f2EditConflictsSibling,f2TwoSeg,f3AccessOk).allowed,false);
+ const f3TamperedSpecialLane={...f3PlanCreate,candidateRestrictions:[{...f3PlanCreate.candidateRestrictions[0],laneType:'HOV'}]};
+ assert.ok(a.evaluateControlledWriteGate(f3TamperedSpecialLane,{...f2SegTwoWay,restrictions:[]},f3AccessOk).blockers.includes('serializer_special_lane'));
+ const f3TamperedToll={...f3PlanCreate,candidateRestrictions:[{...f3PlanCreate.candidateRestrictions[0],defaultType:'TOLL'}]};
+ assert.ok(a.evaluateControlledWriteGate(f3TamperedToll,{...f2SegTwoWay,restrictions:[]},f3AccessOk).blockers.includes('serializer_toll_pending'));
+ const f3TamperedNight={...f3PlanCreate,candidateRestrictions:[{...f3PlanCreate.candidateRestrictions[0],timeFrames:[{...f3PlanCreate.candidateRestrictions[0].timeFrames[0],fromTime:'22:00',toTime:'06:00'}]}]};
+ assert.ok(a.evaluateControlledWriteGate(f3TamperedNight,{...f2SegTwoWay,restrictions:[]},f3AccessOk).blockers.includes('serializer_overnight_unverified'));
+ // verifyAppliedSegmentRestrictions: tolerates WME canonical normalizations (empty rule groups,
+ // description '' vs null, repeatYearly false vs null, auto-populated timeZone, reordered arrays)
+ // while catching any genuine mismatch.
+ const f3ExpectedGreen=a.serializeDraftForSdk(
+  {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']},
+  f2SegTwoWay,
+  {startDate:'2026-06-01',endDate:'2026-06-30',weekdays:['MONDAY','WEDNESDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'12:00'}]},
+  {PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['sub-secret-1'],minPassengers:3},
+   EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}},
+  f2Permits,{enabled:false,conditions:[]}
+ ).candidateRestrictions;
+ const f3WmeNormalizedActual={
+  id:50,restrictions:[{
+   defaultType:'BLOCKED',description:'',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+   editable:true,isExpired:false,
+   timeFrames:[{
+    startDate:'2026-06-01',endDate:'2026-06-30',fromTime:'08:00',toTime:'12:00',
+    weekdays:['WEDNESDAY','MONDAY'],repeatYearly:false,dayAlternation:null,timeZone:'Europe/Rome'
+   }],
+   vehicleRules:{
+    BLOCKED:[],
+    FREE:[
+     {vehicleTypes:['EV'],subscriptions:[],minPassengers:0,licensePlateRule:''},
+     {vehicleTypes:['PRIVATE'],subscriptions:['sub-secret-1'],minPassengers:3,licensePlateRule:null}
+    ]
+   }
+  }]
+ };
+ assert.deepEqual(a.verifyAppliedSegmentRestrictions(f3ExpectedGreen,f3WmeNormalizedActual),{ok:true,mismatches:[]});
+ assert.deepEqual(a.verifyAppliedSegmentRestrictions([],{id:50,restrictions:[]}),{ok:true,mismatches:[]});
+ const f3MismatchTime=a.verifyAppliedSegmentRestrictions(f3ExpectedGreen,{
+  ...f3WmeNormalizedActual,
+  restrictions:[{...f3WmeNormalizedActual.restrictions[0],timeFrames:[{...f3WmeNormalizedActual.restrictions[0].timeFrames[0],toTime:'13:00'}]}]
+ });
+ assert.equal(f3MismatchTime.ok,false);
+ assert.ok(f3MismatchTime.mismatches.some(m=>m.includes('toTime')));
+ const f3MismatchRules=a.verifyAppliedSegmentRestrictions(f3ExpectedGreen,{
+  ...f3WmeNormalizedActual,
+  restrictions:[{...f3WmeNormalizedActual.restrictions[0],vehicleRules:{FREE:[{vehicleTypes:['EV'],subscriptions:[],minPassengers:0,licensePlateRule:null}]}}]
+ });
+ assert.equal(f3MismatchRules.ok,false);
+ assert.ok(f3MismatchRules.mismatches.some(m=>m.includes('vehicleRules')));
+ // executeControlledSegmentWrite: APPLIED_PENDING (never calls Editing.save).
+ let f3SegState={id:901,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3BaseSnap=a.restrictionSnapshot(f3SegState,true);
+ let saveCalled=false,undoCalled=0;
+ const f3MockSdk={
+  Editing:{undo:async()=>{undoCalled++;},save:async()=>{saveCalled=true;}},
+  DataModel:{Segments:{
+   getById:async()=>f3SegState,
+   updateSegment:async({restrictions})=>{f3SegState={...f3SegState,restrictions};}
+  }}
+ };
+ const f3OkRes=await a.executeControlledSegmentWrite(
+  f3MockSdk,{},901,f3PlanCreate.candidateRestrictions,f3BaseSnap,
+  {plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3OkRes.status,'APPLIED_PENDING');
+ assert.equal(f3OkRes.verified,true);
+ assert.equal(f3OkRes.undone,false);
+ assert.equal(saveCalled,false,'WME Save must NEVER be invoked automatically');
+ assert.equal(undoCalled,0);
+ // executeControlledSegmentWrite: ABORTED when segment changes before write.
+ const f3StaleRes=await a.executeControlledSegmentWrite(
+  f3MockSdk,{},901,f3PlanCreate.candidateRestrictions,f3BaseSnap,
+  {plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3StaleRes.status,'ABORTED');
+ assert.equal(f3StaleRes.reason,'inspection_changed');
+ // executeControlledSegmentWrite: ABORTED when updateSegment is missing.
+ const f3NoSdk=await a.executeControlledSegmentWrite(
+  {DataModel:{Segments:{getById:async()=>f3SegState}}},{},901,f3PlanCreate.candidateRestrictions,a.restrictionSnapshot(f3SegState,true)
+ );
+ assert.equal(f3NoSdk.status,'ABORTED');
+ assert.equal(f3NoSdk.reason,'write_sdk_unavailable');
+ // executeControlledSegmentWrite: ROLLED_BACK via surgical W.model.actionManager check on post-write mismatch.
+ function UpdateSegmentsRestrictions(segId){this.subActions=[{object:{getID:()=>segId}}];}
+ let f3CorruptSeg={id:902,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3CorruptBase=a.restrictionSnapshot(f3CorruptSeg,true);
+ const f3Actions=[{constructor:{name:'OtherAction'}}];
+ let f3UndoCount=0;
+ const f3CorruptSdk={
+  Editing:{undo:async()=>{f3UndoCount++;f3Actions.pop();f3CorruptSeg={...f3CorruptSeg,restrictions:[]};}},
+  DataModel:{Segments:{
+   getById:async()=>f3CorruptSeg,
+   updateSegment:async({restrictions})=>{
+    f3Actions.push(new UpdateSegmentsRestrictions(902));
+    // Simulate WME writing a corrupted time frame so post-write verification fails.
+    f3CorruptSeg={...f3CorruptSeg,restrictions:[{...restrictions[0],direction:'REV'}]};
+   }
+  }}
+ };
+ const f3RollbackRes=await a.executeControlledSegmentWrite(
+  f3CorruptSdk,{W:{model:{actionManager:{getActions:()=>f3Actions}}}},
+  902,f3PlanCreate.candidateRestrictions,f3CorruptBase,{plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3RollbackRes.status,'ROLLED_BACK');
+ assert.equal(f3RollbackRes.undone,true);
+ assert.equal(f3UndoCount,1);
+ // Surgical rollback must NOT call undo if actionManager shows a foreign action (protect user's own history!).
+ let f3ForeignUndo=0;
+ let f3ForeignSeg={id:903,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3ForeignBase=a.restrictionSnapshot(f3ForeignSeg,true);
+ const f3ForeignActions=[];
+ const f3ForeignSdk={
+  Editing:{undo:async()=>{f3ForeignUndo++;}},
+  DataModel:{Segments:{
+   getById:async()=>f3ForeignSeg,
+   updateSegment:async({restrictions})=>{
+    f3ForeignActions.push({constructor:{name:'UnrelatedAction'},subActions:[]});
+    f3ForeignSeg={...f3ForeignSeg,restrictions:[{...restrictions[0],direction:'REV'}]};
+   }
+  }}
+ };
+ const f3ForeignRes=await a.executeControlledSegmentWrite(
+  f3ForeignSdk,{W:{model:{actionManager:{getActions:()=>f3ForeignActions}}}},
+  903,f3PlanCreate.candidateRestrictions,f3ForeignBase,{plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3ForeignRes.status,'MISMATCH_MANUAL_UNDO');
+ assert.equal(f3ForeignRes.undone,false);
+ assert.equal(f3ForeignUndo,0,'Rollback must never undo an unrelated action');
+ // Pure SDK fallback rollback (when W.model.actionManager is unavailable) works when snapshot mutated.
+ let f3PureSeg={id:904,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3PureBase=a.restrictionSnapshot(f3PureSeg,true);
+ let f3PureUndo=0;
+ const f3PureSdk={
+  Editing:{undo:async()=>{f3PureUndo++;f3PureSeg={...f3PureSeg,restrictions:[]};}},
+  DataModel:{Segments:{
+   getById:async()=>f3PureSeg,
+   updateSegment:async({restrictions})=>{f3PureSeg={...f3PureSeg,restrictions:[{...restrictions[0],direction:'REV'}]};}
+  }}
+ };
+ const f3PureRes=await a.executeControlledSegmentWrite(
+  f3PureSdk,{},904,f3PlanCreate.candidateRestrictions,f3PureBase,{plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3PureRes.status,'ROLLED_BACK');
+ assert.equal(f3PureRes.undone,true);
+ assert.equal(f3PureUndo,1);
 
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.46
-// @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
+// @version      4.0.0-alpha.47
+// @description  Guided segment and lane restrictions (Phase 3: controlled pending WME edits for verified SDK cases, manual Save). Separate from stable 3.2.0.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
 // @match        https://beta.waze.com/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.46";
+    const VERSION = "4.0.0-alpha.47";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -71,7 +71,7 @@
     const labels = {
         launch:["Crea restrizione guidata","Create guided restriction","Créer une restriction guidée","Crear restricción guiada","Beschränkung geführt erstellen","Criar restrição guiada"],
         launch_existing:["Modifica restrizione guidata","Edit guided restriction","Modifier une restriction guidée","Editar restricción guiada","Beschränkung geführt bearbeiten","Editar restrição guiada"],
-        test:["Alpha di sola lettura: nessuna modifica alla mappa o ai preset.","Read-only alpha: no map or preset changes.","Alpha en lecture seule : aucune modification de la carte ou des préréglages.","Alfa de solo lectura: sin cambios en el mapa ni en los preajustes.","Schreibgeschützte Alpha: keine Karten- oder Vorlagenänderungen.","Alfa só de leitura: sem alterações no mapa ou nas predefinições."],
+        test:["Alpha Fase 3: applica solo modifiche in sospeso verificate su singolo segmento (Salva WME manuale, nessuna modifica ai preset).","Phase 3 Alpha: applies only verified pending edits on a single segment (manual WME Save, no preset changes).","Alpha Phase 3 : applique uniquement des modifications en attente vérifiées sur un segment (Enregistrement WME manuel, sans toucher aux préréglages).","Alfa Fase 3: aplica solo cambios pendientes verificados en un segmento (Guardado WME manual, sin cambiar preajustes).","Alpha Phase 3: wendet nur geprüfte ausstehende Änderungen auf ein Segment an (manuelles WME-Speichern, keine Vorlagenänderungen).","Alfa Fase 3: aplica apenas alterações pendentes verificadas num segmento (Gravação WME manual, sem alterar predefinições)."],
         select:["Seleziona un solo segmento.","Select exactly one segment.","Sélectionnez un seul segment.","Selecciona un solo segmento.","Wähle genau ein Segment.","Seleciona apenas um segmento."],
         country:["Paese del segmento","Segment country","Pays du segment","País del segmento","Land des Segments","País do segmento"],
         unknown:["Non rilevato","Not detected","Non détecté","No detectado","Nicht erkannt","Não detetado"],
@@ -292,12 +292,12 @@
         before_after_retained:["Restrizioni da conservare nella bozza","Restrictions to retain in the draft","Restrictions à conserver dans le brouillon","Restricciones que se conservarían en el borrador","Im Entwurf zu erhaltende Beschränkungen","Restrições a conservar no rascunho"],
         before_after_unknown:["Elenco delle restrizioni da conservare non disponibile.","List of restrictions to retain unavailable.","Liste des restrictions à conserver indisponible.","Lista de restricciones que se conservarían no disponible.","Liste der zu erhaltenden Beschränkungen nicht verfügbar.","Lista de restrições a conservar indisponível."],
         before_after_addition:["Aggiunta prevista","Proposed addition","Ajout prévu","Adición prevista","Geplanter Zusatz","Adição prevista"],
-        plan_title:["Preparazione formato SDK (sola lettura)","SDK format preparation (read-only)","Préparation au format SDK (lecture seule)","Preparación en formato SDK (solo lectura)","SDK-Formatvorbereitung (nur lesbar)","Preparação no formato SDK (só leitura)"],
-        plan_complete:["Tutte le restrizioni (esistenti e nuova) sono pronte nel formato SDK come anteprima. Nessuna modifica viene ancora applicata.","All restrictions (existing and new) are ready in SDK format as a preview. No edits are applied yet.","Toutes les restrictions (existantes et nouvelle) sont prêtes au format SDK en aperçu. Aucune modification n'est appliquée.","Todas las restricciones (existentes y nueva) están listas en formato SDK como vista previa. Todavía no se aplica ningún cambio.","Alle Beschränkungen (bestehende und neue) sind im SDK-Format als Vorschau bereit. Es werden noch keine Änderungen angewendet.","Todas as restrições (existentes e nova) estão prontas no formato SDK como pré-visualização. Ainda não é aplicada nenhuma alteração."],
-        plan_blocked:["Anteprima bloccata: uno o più elementi richiedono verifiche o restano fuori dal formato SDK.","Preview blocked: one or more items require checks or fall outside the SDK format.","Aperçu bloqué : un ou plusieurs éléments nécessitent une vérification ou sortent du format SDK.","Vista previa bloqueada: uno o más elementos requieren comprobaciones o quedan fuera del formato SDK.","Vorschau gesperrt: ein oder mehrere Elemente erfordern Prüfungen oder liegen außerhalb des SDK-Formats.","Pré-visualização bloqueada: um ou mais elementos exigem verificação ou estão fora do formato SDK."],
-        plan_row_ready:["Conservabile in formato SDK (anteprima pronta)","Preservable in SDK format (preview ready)","Conservable au format SDK (aperçu prêt)","Conservable en formato SDK (vista previa lista)","Im SDK-Format erhaltbar (Vorschau bereit)","Conservável no formato SDK (pré-visualização pronta)"],
+        plan_title:["Preparazione formato SDK","SDK format preparation","Préparation au format SDK","Preparación en formato SDK","SDK-Formatvorbereitung","Preparação no formato SDK"],
+        plan_complete:["Tutte le restrizioni (esistenti e nuova) sono pronte nel formato SDK.","All restrictions (existing and new) are ready in SDK format.","Toutes les restrictions (existantes et nouvelle) sont prêtes au format SDK.","Todas las restricciones (existentes y nueva) están listas en formato SDK.","Alle Beschränkungen (bestehende und neue) sind im SDK-Format bereit.","Todas as restrições (existentes e nova) estão prontas no formato SDK."],
+        plan_blocked:["Applicazione bloccata: uno o più elementi richiedono verifiche o restano fuori dal formato SDK.","Apply blocked: one or more items require checks or fall outside the SDK format.","Application bloquée : un ou plusieurs éléments nécessitent une vérification ou sortent du format SDK.","Aplicación bloqueada: uno o más elementos requieren comprobaciones o quedan fuera del formato SDK.","Anwendung gesperrt: ein oder mehrere Elemente erfordern Prüfungen oder liegen außerhalb des SDK-Formats.","Aplicação bloqueada: um ou mais elementos exigem verificação ou estão fora do formato SDK."],
+        plan_row_ready:["Conservabile in formato SDK (pronta)","Preservable in SDK format (ready)","Conservable au format SDK (prête)","Conservable en formato SDK (lista)","Im SDK-Format erhaltbar (bereit)","Conservável no formato SDK (pronta)"],
         plan_row_blocked:["Non convertibile automaticamente","Not automatically convertible","Non convertible automatiquement","No convertible automáticamente","Nicht automatisch konvertierbar","Não convertível automaticamente"],
-        plan_add_ready:["Nuova restrizione pronta nel formato SDK (solo anteprima, nessuna modifica)","New restriction ready in SDK format (preview only, no edits)","Nouvelle restriction prête au format SDK (aperçu uniquement, aucune modification)","Nueva restricción lista en formato SDK (solo vista previa, sin cambios)","Neue Beschränkung im SDK-Format bereit (nur Vorschau, keine Änderungen)","Nova restrição pronta no formato SDK (apenas pré-visualização, sem alterações)"],
+        plan_add_ready:["Nuova restrizione pronta nel formato SDK","New restriction ready in SDK format","Nouvelle restriction prête au format SDK","Nueva restricción lista en formato SDK","Neue Beschränkung im SDK-Format bereit","Nova restrição pronta no formato SDK"],
         plan_add_blocked:["Nuova restrizione non ancora pronta per il formato SDK","New restriction not yet ready for SDK format","Nouvelle restriction pas encore prête pour le format SDK","Nueva restricción aún no lista para el formato SDK","Neue Beschränkung noch nicht bereit für das SDK-Format","Nova restrição ainda não pronta para o formato SDK"],
         serializer_special_lane:["Tipo di corsia speciale non ancora abilitato per la conversione SDK","Special lane type not yet enabled for SDK conversion","Type de voie spécial pas encore pris en charge pour la conversion SDK","Tipo de carril especial aún no habilitado para la conversión SDK","Besonderer Fahrstreifentyp noch nicht für die SDK-Konvertierung freigegeben","Tipo de via especial ainda não ativado para conversão SDK"],
         serializer_toll_pending:["Esenzione pedaggio con strada a pedaggio (hasToll) rimandata a una verifica dedicata","Toll exemption with toll-road flag (hasToll) deferred to a dedicated verification","Exemption de péage avec attribut péage (hasToll) reportée à une vérification dédiée","Exención de peaje con vía de peaje (hasToll) aplazada a una verificación dedicada","Mautbefreiung mit Mautstraßen-Flag (hasToll) einer eigenen Prüfung vorbehalten","Isenção de portagem com estrada com portagem (hasToll) adiada para verificação dedicada"],
@@ -306,25 +306,40 @@
         serializer_occupancy_out_of_range:["Il numero minimo di occupanti supportato dallo SDK è compreso tra 2 e 4","Minimum occupancy supported by the SDK is between 2 and 4","Le nombre minimal d'occupants pris en charge par le SDK est compris entre 2 et 4","El número mínimo de ocupantes compatible con el SDK está entre 2 y 4","Die vom SDK unterstützte Mindestinsassenzahl liegt zwischen 2 und 4","O número mínimo de ocupantes suportado pelo SDK é entre 2 e 4"],
         serializer_timezone_invalid:["Fuso orario non valido","Invalid time zone","Fuseau horaire non valide","Zona horaria no válida","Ungültige Zeitzone","Fuso horário inválido"],
         serializer_timezone_unset:["Fuso orario non impostato nella bozza (null, come nel modulo nativo WME)","Time zone unset in draft (null, matching the native WME form)","Fuseau horaire non défini dans le brouillon (null, comme le formulaire natif WME)","Zona horaria sin definir en el borrador (null, como el formulario nativo de WME)","Zeitzone im Entwurf nicht gesetzt (null, wie im nativen WME-Formular)","Fuso horário por definir no rascunho (null, como no formulário nativo do WME)"],
-        edit_guided_btn:["Modifica guidata (anteprima)","Guided edit (preview)","Modification guidée (aperçu)","Edición guiada (vista previa)","Geführte Bearbeitung (Vorschau)","Edição guiada (pré-visualização)"],
-        delete_recreate_btn:["Elimina e ricrea (anteprima)","Delete and recreate (preview)","Supprimer et recréer (aperçu)","Eliminar y recrear (vista previa)","Löschen und neu erstellen (Vorschau)","Eliminar e recriar (pré-visualização)"],
-        delete_preview_btn:["Elimina (anteprima)","Delete (preview)","Supprimer (aperçu)","Eliminar (vista previa)","Löschen (Vorschau)","Eliminar (pré-visualização)"],
+        edit_guided_btn:["Modifica guidata","Guided edit","Modification guidée","Edición guiada","Geführte Bearbeitung","Edição guiada"],
+        delete_recreate_btn:["Elimina e ricrea","Delete and recreate","Supprimer et recréer","Eliminar y recrear","Löschen und neu erstellen","Eliminar e recriar"],
+        delete_preview_btn:["Elimina","Delete","Supprimer","Eliminar","Löschen","Eliminar"],
         edit_guided_unavailable:["Modifica guidata non disponibile","Guided edit unavailable","Modification guidée indisponible","Edición guiada no disponible","Geführte Bearbeitung nicht verfügbar","Edição guiada indisponível"],
         edit_locked_note:["Protetta da WME (non modificabile): non verrà toccata.","Protected by WME (non-editable): will not be touched.","Protégée par WME (non modifiable) : ne sera pas modifiée.","Protegida por WME (no editable): no se modificará.","Von WME geschützt (nicht bearbeitbar): wird nicht verändert.","Protegida pelo WME (não editável): não será alterada."],
         mode_edit_banner:["Modalità: Modifica guidata di","Mode: Guided edit of","Mode : Modification guidée de","Modo: Edición guiada de","Modus: Geführte Bearbeitung von","Modo: Edição guiada de"],
         mode_recreate_banner:["Modalità: Elimina e ricrea","Mode: Delete and recreate","Mode : Supprimer et recréer","Modo: Eliminar y recrear","Modus: Löschen und neu erstellen","Modo: Eliminar e recriar"],
-        mode_readonly_note:["Anteprima in sola lettura: nessuna modifica viene ancora applicata a WME.","Read-only preview: no edits are applied to WME yet.","Aperçu en lecture seule : aucune modification n'est encore appliquée à WME.","Vista previa de solo lectura: todavía no se aplica ningún cambio a WME.","Schreibgeschützte Vorschau: es werden noch keine Änderungen auf WME angewendet.","Pré-visualização só de leitura: ainda não é aplicada nenhuma alteração no WME."],
-        delete_preview_title:["Anteprima eliminazione (sola lettura)","Deletion preview (read-only)","Aperçu de suppression (lecture seule)","Vista previa de eliminación (solo lectura)","Löschvorschau (nur lesbar)","Pré-visualização de eliminação (só leitura)"],
+        mode_readonly_note:["Nulla viene applicato finché non confermi esplicitamente al riepilogo finale. Il salvataggio WME resta sempre manuale.","Nothing is applied until you explicitly confirm at the final summary. WME Save always remains manual.","Rien n'est appliqué tant que vous ne confirmez pas explicitement au résumé final. L'enregistrement WME reste manuel.","Nada se aplica hasta que confirmes explícitamente en el resumen final. El guardado en WME sigue siendo manual.","Nichts wird angewendet, bevor du in der Zusammenfassung ausdrücklich bestätigst. Das Speichern in WME bleibt manuell.","Nada é aplicado até confirmares explicitamente no resumo final. A gravação no WME continua sempre manual."],
+        delete_preview_title:["Elimina restrizione (Prima/Dopo)","Delete restriction (Before/After)","Supprimer la restriction (Avant/Après)","Eliminar restricción (Antes/Después)","Beschränkung löschen (Vorher/Nachher)","Eliminar restrição (Antes/Depois)"],
         delete_preview_removing:["Restrizione da rimuovere","Restriction to remove","Restriction à supprimer","Restricción a eliminar","Zu entfernende Beschränkung","Restrição a remover"],
         delete_preview_remaining:["Restrizioni che restano sul segmento","Restrictions remaining on segment","Restrictions restant sur le segment","Restricciones que permanecen en el segmento","Auf dem Segment verbleibende Beschränkungen","Restrições que permanecem no segmento"],
-        delete_preview_none_left:["Nessuna restrizione rimarrebbe sul segmento.","No restrictions would remain on the segment.","Aucune restriction ne resterait sur le segment.","No quedaría ninguna restricción en el segmento.","Auf dem Segment würden keine Beschränkungen verbleiben.","Não ficaria nenhuma restrição no segmento."],
-        delete_plan_complete:["Eliminazione pronta nel formato SDK come anteprima (le altre restrizioni restano integre). Nessuna modifica viene ancora applicata.","Deletion is ready in SDK format as a preview (other restrictions remain intact). No edits are applied yet.","Suppression prête au format SDK en aperçu (les autres restrictions restent intactes). Aucune modification n'est appliquée.","Eliminación lista en formato SDK como vista previa (las demás restricciones quedan intactas). Todavía no se aplica ningún cambio.","Löschung im SDK-Format als Vorschau bereit (andere Beschränkungen bleiben erhalten). Es werden noch keine Änderungen angewendet.","Eliminação pronta no formato SDK como pré-visualização (as outras restrições mantêm-se intactas). Ainda não é aplicada nenhuma alteração."],
+        delete_preview_none_left:["Nessuna restrizione rimarrà sul segmento.","No restrictions will remain on the segment.","Aucune restriction ne restera sur le segment.","No quedará ninguna restricción en el segmento.","Auf dem Segment verbleiben keine Beschränkungen.","Não ficará nenhuma restrição no segmento."],
+        delete_plan_complete:["Eliminazione pronta nel formato SDK (le altre restrizioni restano integre).","Deletion is ready in SDK format (other restrictions remain intact).","Suppression prête au format SDK (les autres restrictions restent intactes).","Eliminación lista en formato SDK (las demás restricciones quedan intactas).","Löschung im SDK-Format bereit (andere Beschränkungen bleiben erhalten).","Eliminação pronta no formato SDK (as outras restrições mantêm-se intactas)."],
         edit_preload_direction:["Direzione della restrizione non disponibile su questo segmento","Restriction direction unavailable on this segment","Direction de la restriction indisponible sur ce segment","Dirección de la restricción no disponible en este segmento","Richtung der Beschränkung auf diesem Segment nicht verfügbar","Direção da restrição indisponível neste segmento"],
         edit_preload_description:["La restrizione contiene una nota testuale personalizzata non modificabile nel wizard","Restriction contains a custom text description not editable in the wizard","La restriction contient une description personnalisée non modifiable dans l'assistant","La restricción contiene una descripción de texto personalizada no editable en el asistente","Die Beschränkung enthält eine benutzerdefinierte Beschreibung, die im Assistenten nicht bearbeitbar ist","A restrição contém uma descrição personalizada não editável no assistente"],
         edit_preload_vehicle_rules:["Regole veicoli fuori dalle categorie o combinazioni gestite dal wizard","Vehicle rules outside the categories or combinations supported by the wizard","Règles de véhicules hors des catégories ou combinaisons gérées par l'assistant","Reglas de vehículos fuera de las categorías o combinaciones compatibles con el asistente","Fahrzeugregeln liegen außerhalb der vom Assistenten unterstützten Kategorien oder Kombinationen","Regras de veículos fora das categorias ou combinações suportadas pelo assistente"],
         edit_preload_unknown_permit:["Pass associato non presente nell'elenco del Paese","Associated permit not found in the country list","Permis associé introuvable dans la liste du pays","Permiso asociado no encontrado en la lista del país","Zugehörige Berechtigung nicht in der Länderliste gefunden","Autorização associada não encontrada na lista do país"],
         edit_preload_schedule:["Calendario avanzato (ricorrenza annuale, giorni alterni o fasce eterogenee) non modificabile nel wizard","Advanced schedule (annual repeat, alternating days or mixed frames) not editable in the wizard","Calendrier avancé (répétition annuelle, jours alternés ou plages hétérogènes) non modifiable dans l'assistant","Calendario avanzado (repetición anual, días alternos o franjas mixtas) no editable en el asistente","Erweiterter Zeitplan (jährliche Wiederholung, wechselnde Tage oder gemischte Zeitfenster) im Assistenten nicht bearbeitbar","Calendário avançado (repetição anual, dias alternados ou horários mistos) não editável no assistente"],
         edit_target_not_editable:["La restrizione selezionata non è modificabile (protetta da WME)","Selected restriction is not editable (protected by WME)","La restriction sélectionnée n'est pas modifiable (protégée par WME)","La restricción seleccionada no es editable (protegida por WME)","Die ausgewählte Beschränkung ist nicht bearbeitbar (von WME geschützt)","A restrição selecionada não é editável (protegida pelo WME)"],
+        write_box_title:["Applicazione controllata su WME (in sospeso)","Controlled WME apply (pending edit)","Application contrôlée dans WME (en attente)","Aplicación controlada en WME (pendiente)","Kontrollierte WME-Anwendung (ausstehend)","Aplicação controlada no WME (pendente)"],
+        write_ready_intro:["Tutti i controlli di sicurezza sono verdi. La modifica verrà applicata solo in sospeso su WME: potrai controllarla, annullarla (Ctrl+Z) o salvarla manualmente con il tasto Salva di WME.","All safety checks passed. The edit will be applied as a pending WME change only: you can review it, undo it (Ctrl+Z), or save manually with WME Save.","Tous les contrôles de sécurité sont validés. La modification sera appliquée en attente dans WME : vous pourrez la vérifier, l'annuler (Ctrl+Z) ou enregistrer manuellement.","Todos los controles de seguridad han pasado. El cambio se aplicará solo como pendiente en WME: podrás revisarlo, deshacerlo (Ctrl+Z) o guardarlo manualmente.","Alle Sicherheitsprüfungen bestanden. Die Änderung wird nur als ausstehende WME-Änderung angewendet: du kannst sie prüfen, rückgängig machen (Strg+Z) oder manuell speichern.","Todos os controlos de segurança passaram. A alteração será aplicada apenas como pendente no WME: podes revê-la, anulá-la (Ctrl+Z) ou guardar manualmente."],
+        write_confirm_label:["Ho controllato l'anteprima Prima/Dopo e voglio applicare questa modifica in sospeso su WME.","I reviewed the Before/After preview and want to apply this pending edit in WME.","J'ai vérifié l'aperçu Avant/Après et je souhaite appliquer cette modification en attente dans WME.","He revisado la vista previa Antes/Después y quiero aplicar este cambio pendiente en WME.","Ich habe die Vorher/Nachher-Vorschau geprüft und möchte diese ausstehende Änderung in WME anwenden.","Revisei a pré-visualização Antes/Depois e quero aplicar esta alteração pendente no WME."],
+        write_apply_btn:["Applica in sospeso su WME","Apply pending edit in WME","Appliquer en attente dans WME","Aplicar cambio pendiente en WME","Ausstehende Änderung in WME anwenden","Aplicar alteração pendente no WME"],
+        write_apply_delete_btn:["Applica eliminazione in sospeso su WME","Apply pending deletion in WME","Appliquer la suppression en attente dans WME","Aplicar eliminación pendiente en WME","Ausstehende Löschung in WME anwenden","Aplicar eliminação pendente no WME"],
+        write_applying:["Applicazione e verifica post-scrittura in corso…","Applying and verifying post-write state…","Application et vérification post-écriture en cours…","Aplicando y verificando el estado posterior…","Wird angewendet und nach dem Schreiben geprüft…","A aplicar e verificar o estado após escrita…"],
+        write_blocked_intro:["Applicazione non disponibile per questa configurazione:","Apply is unavailable for this configuration:","Application indisponible pour cette configuration :","La aplicación no está disponible para esta configuración:","Anwendung für diese Konfiguration nicht verfügbar:","Aplicação indisponível para esta configuração:"],
+        write_permission_unverified:["Permessi di modifica sul segmento non confermati dallo SDK.","Segment editing permissions not confirmed by the SDK.","Autorisations de modification du segment non confirmées par le SDK.","Permisos de edición del segmento no confirmados por el SDK.","Segment-Bearbeitungsrechte vom SDK nicht bestätigt.","Permissões de edição do segmento não confirmadas pelo SDK."],
+        write_drivable_unverified:["Percorribilità del tipo di strada non confermata dallo SDK.","Road type drivability not confirmed by the SDK.","Carrossabilité du type de route non confirmée par le SDK.","Transitabilidad del tipo de vía no confirmada por el SDK.","Befahrbarkeit des Straßentyps vom SDK nicht bestätigt.","Transitabilidade do tipo de via não confirmada pelo SDK."],
+        write_sdk_unavailable:["Funzione SDK di aggiornamento segmento non disponibile.","SDK segment update function is unavailable.","Fonction SDK de mise à jour du segment indisponible.","Función SDK de actualización del segmento no disponible.","SDK-Funktion zum Aktualisieren des Segments nicht verfügbar.","Função SDK de atualização do segmento indisponível."],
+        write_success_title:["Modifica applicata in sospeso su WME e verificata","Pending edit applied in WME and verified","Modification en attente appliquée dans WME et vérifiée","Cambio pendiente aplicado en WME y verificado","Ausstehende Änderung in WME angewendet und geprüft","Alteração pendente aplicada no WME e verificada"],
+        write_success_body:["Il segmento letto dallo SDK coincide con l'anteprima. La modifica NON è stata salvata su Waze: controllala nel pannello WME e clicca Salva manualmente (oppure Annulla / Ctrl+Z).","The segment read back from the SDK matches the preview. Nothing was saved to Waze servers: inspect it in WME and click Save manually (or Undo / Ctrl+Z).","Le segment relu via le SDK correspond à l'aperçu. Rien n'a été enregistré sur Waze : vérifiez dans WME puis cliquez sur Enregistrer (ou Annuler / Ctrl+Z).","El segmento leído desde el SDK coincide con la vista previa. Nada se ha guardado en Waze: revísalo en WME y pulsa Guardar manualmente (o Deshacer / Ctrl+Z).","Das vom SDK gelesene Segment stimmt mit der Vorschau überein. Nichts wurde auf Waze gespeichert: prüfe es in WME und klicke manuell auf Speichern (oder Rückgängig / Strg+Z).","O segmento lido do SDK corresponde à pré-visualização. Nada foi guardado no Waze: verifica no WME e clica em Guardar manualmente (ou Anular / Ctrl+Z)."],
+        write_rolled_back:["Discrepanza o errore dopo l'applicazione: la modifica è stata annullata automaticamente in WME.","Mismatch or error after apply: the edit was automatically undone in WME.","Différence ou erreur après application : la modification a été annulée automatiquement dans WME.","Discrepancia o error tras aplicar: el cambio se deshizo automáticamente en WME.","Abweichung oder Fehler nach dem Anwenden: die Änderung wurde in WME automatisch rückgängig gemacht.","Discrepância ou erro após aplicação: a alteração foi anulada automaticamente no WME."],
+        write_manual_undo:["Discrepanza o errore dopo l'applicazione e annullamento automatico non confermato: controlla subito il segmento e premi Annulla (Ctrl+Z) in WME prima di salvare.","Mismatch or error after apply and automatic undo could not be confirmed: inspect the segment immediately and press Undo (Ctrl+Z) in WME before saving.","Différence ou erreur après application et annulation automatique non confirmée : vérifiez immédiatement le segment et faites Annuler (Ctrl+Z) dans WME avant d'enregistrer.","Discrepancia o error tras aplicar y no se pudo confirmar la reversión automática: revisa de inmediato el segmento y pulsa Deshacer (Ctrl+Z) en WME antes de guardar.","Abweichung oder Fehler nach dem Anwenden; automatisches Rückgängigmachen nicht bestätigt: prüfe das Segment sofort und drücke Strg+Z in WME vor dem Speichern.","Discrepância ou erro após aplicação e anulação automática não confirmada: verifica de imediato o segmento e prime Anular (Ctrl+Z) no WME antes de guardar."],
+        write_aborted:["Operazione interrotta prima di modificare il segmento","Operation stopped before editing the segment","Opération interrompue avant de modifier le segment","Operación detenida antes de modificar el segmento","Vorgang vor dem Bearbeiten des Segments abgebrochen","Operação interrompida antes de modificar o segmento"],
         calendar_read_check:["Confronta calendario SDK e modello interno","Compare SDK and internal calendars","Comparer les calendriers SDK et interne","Comparar los calendarios del SDK y del modelo interno","SDK-Kalender mit internem Modell vergleichen","Comparar os calendários do SDK e do modelo interno"],
         calendar_read_match:["I campi del calendario coincidono","Calendar fields match","Les champs du calendrier concordent","Los campos del calendario coinciden","Kalenderfelder stimmen überein","Os campos do calendário coincidem"],
         calendar_read_different:["Differenze nei campi del calendario","Calendar fields differ","Les champs du calendrier diffèrent","Los campos del calendario difieren","Kalenderfelder unterscheiden sich","Os campos do calendário diferem"],
@@ -2261,6 +2276,270 @@
             blockers:uniqueBlockers,saveAllowed:false,verified:false
         };
     }
+    // Fase 3: strict fail-closed gate before allowing a controlled pending SDK
+    // write on a single segment. Only 100%-SDK-covered cases pass (laneType:null,
+    // BLOCKED/FREE defaults, confirmed permissions + drivability, zero conflicts,
+    // verified lossless round-trip of retained rows, and SAFE12 <= 12).
+    function evaluateControlledWriteGate(plan,segment,access) {
+        const eligibility=inspectSegmentEligibility(segment,access);
+        const blockers=[];
+        if(eligibility.hasAnyPermission===false)blockers.push("conversion_no_permission");
+        else if(eligibility.hasAnyPermission!==true)blockers.push("write_permission_unverified");
+        if(eligibility.drivable===false)blockers.push("conversion_non_drivable");
+        else if(eligibility.drivable!==true)blockers.push("write_drivable_unverified");
+        if(!plan||typeof plan!=="object"){
+            blockers.push("preservation_unknown");
+            return {allowed:false,blockers:[...new Set(blockers)],eligibility,safe12:null,
+                restrictionCount:null,frameCount:null};
+        }
+        if(Array.isArray(plan.blockers))blockers.push(...plan.blockers);
+        if(plan.conflictGate?.blocked)blockers.push("conversion_conflict_blocked");
+        if(plan.status!=="CANDIDATE_COMPLETE"||!Array.isArray(plan.candidateRestrictions)){
+            blockers.push("preservation_unknown");
+        }
+        const rows=Array.isArray(plan.candidateRestrictions)?plan.candidateRestrictions:null;
+        let safe12=null;
+        if(rows!==null){
+            safe12=rows.length?countSafe12Operation([rows]):
+                {restrictions:0,timeFrames:0,overLimit:false};
+            if(!safe12||safe12.overLimit){
+                blockers.push(safe12?.overLimit?"conversion_overbudget":"budget_unknown");
+            }
+            const allowedDirs=availableDirections(segment);
+            const allowedScopes=Object.values(LANE_SCOPE_CANDIDATES);
+            for(const row of rows){
+                if(!row||typeof row!=="object"||Array.isArray(row)){
+                    blockers.push("preservation_field_shape");continue;
+                }
+                if(row.laneType!==null)blockers.push("serializer_special_lane");
+                if(row.defaultType==="TOLL")blockers.push("serializer_toll_pending");
+                else if(row.defaultType!=="BLOCKED"&&row.defaultType!=="FREE")
+                    blockers.push("preservation_field_shape");
+                if(!allowedScopes.includes(row.laneScope))blockers.push("conversion_lane");
+                if(!allowedDirs.includes(row.direction))blockers.push("edit_preload_direction");
+                if(!Array.isArray(row.timeFrames)||!row.timeFrames.length){
+                    blockers.push("preservation_field_shape");
+                }else if(row.timeFrames.some(crossesMidnight)){
+                    blockers.push("serializer_overnight_unverified");
+                }
+                const vr=row.vehicleRules;
+                if(!vr||typeof vr!=="object"||Array.isArray(vr)){
+                    blockers.push("preservation_field_shape");
+                }else{
+                    for(const [group,list] of Object.entries(vr)){
+                        if(group!=="FREE"&&group!=="BLOCKED"){
+                            blockers.push("preservation_field_shape");continue;
+                        }
+                        if(!Array.isArray(list)){
+                            blockers.push("preservation_field_shape");continue;
+                        }
+                        for(const rule of list){
+                            const mp=rule?.minPassengers??0;
+                            if(!SDK_MIN_PASSENGERS.includes(mp))
+                                blockers.push("serializer_occupancy_out_of_range");
+                        }
+                    }
+                }
+            }
+        }
+        const uniqueBlockers=[...new Set(blockers)];
+        return {
+            allowed:uniqueBlockers.length===0&&rows!==null,
+            blockers:uniqueBlockers,
+            eligibility,
+            safe12,
+            restrictionCount:rows?rows.length:null,
+            frameCount:safe12?.timeFrames??null
+        };
+    }
+    // Fase 3: canonical post-write verification comparing the re-read SDK segment
+    // against the exact expected SegmentRestrictionData[] payload.
+    function verifyAppliedSegmentRestrictions(expectedRestrictions,actualSegment) {
+        const mismatches=[];
+        if(!Array.isArray(expectedRestrictions)){
+            return {ok:false,mismatches:["expected_invalid"]};
+        }
+        if(!actualSegment||!Array.isArray(actualSegment.restrictions)){
+            return {ok:false,mismatches:["actual_unavailable"]};
+        }
+        const actual=actualSegment.restrictions;
+        if(actual.length){
+            const budget=countSafe12Operation([actual]);
+            if(!budget||budget.overLimit)mismatches.push("safe12_exceeded");
+        }
+        if(actual.length!==expectedRestrictions.length){
+            mismatches.push("count_mismatch:"+actual.length+"!="+expectedRestrictions.length);
+            return {ok:false,mismatches};
+        }
+        const canonRules=source=>{
+            const raw=source?.vehicleRules??source?.driveProfiles??{};
+            if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
+            const groups={};
+            for(const key of Object.keys(raw).sort()){
+                const list=raw[key];
+                if(!Array.isArray(list))return null;
+                if(!list.length)continue;
+                groups[key]=list.map(rule=>JSON.stringify({
+                    licensePlateRule:((rule?.licensePlateRule??rule?.licensePlateNumber??"")||null),
+                    minPassengers:rule?.minPassengers??rule?.numPassengers??0,
+                    subscriptions:[...new Set(Array.isArray(rule?.subscriptions)?rule.subscriptions:[])].sort(),
+                    vehicleTypes:[...new Set(Array.isArray(rule?.vehicleTypes)?rule.vehicleTypes:[])].sort()
+                })).sort();
+            }
+            return JSON.stringify(groups);
+        };
+        for(let i=0;i<expectedRestrictions.length;i++){
+            const exp=expectedRestrictions[i];
+            const act=actual[i];
+            const tag="row["+(i+1)+"]";
+            if(!act||typeof act!=="object"){mismatches.push(tag+":missing");continue;}
+            if(act.defaultType!==exp.defaultType)mismatches.push(tag+":defaultType");
+            if(act.direction!==exp.direction)mismatches.push(tag+":direction");
+            if((act.laneScope??act.disposition)!==exp.laneScope)mismatches.push(tag+":laneScope");
+            if((act.laneType??null)!==(exp.laneType??null))mismatches.push(tag+":laneType");
+            if((act.description??"")!==(exp.description??""))mismatches.push(tag+":description");
+            if(canonRules(act)!==canonRules(exp))mismatches.push(tag+":vehicleRules");
+            const expFrames=Array.isArray(exp.timeFrames)?exp.timeFrames:[];
+            const actFrames=Array.isArray(act.timeFrames)?act.timeFrames:[];
+            if(actFrames.length!==expFrames.length){
+                mismatches.push(tag+":timeFrames_count");
+                continue;
+            }
+            for(let j=0;j<expFrames.length;j++){
+                const ef=expFrames[j],af=actFrames[j];
+                const ftag=tag+".frame["+(j+1)+"]";
+                if((af?.startDate??null)!==(ef?.startDate??null))mismatches.push(ftag+":startDate");
+                if((af?.endDate??null)!==(ef?.endDate??null))mismatches.push(ftag+":endDate");
+                if((af?.fromTime??null)!==(ef?.fromTime??null))mismatches.push(ftag+":fromTime");
+                if((af?.toTime??null)!==(ef?.toTime??null))mismatches.push(ftag+":toTime");
+                if(Boolean(af?.repeatYearly)!==Boolean(ef?.repeatYearly))mismatches.push(ftag+":repeatYearly");
+                if((af?.dayAlternation??af?.daysOfMonth??null)!==(ef?.dayAlternation??null))
+                    mismatches.push(ftag+":dayAlternation");
+                const ew=Array.isArray(ef?.weekdays)?[...ef.weekdays].sort().join(","):null;
+                const aw=Array.isArray(af?.weekdays)?[...af.weekdays].sort().join(","):null;
+                if(aw!==ew)mismatches.push(ftag+":weekdays");
+                const ez=ef?.timeZone??null;
+                const az=af?.timeZone??null;
+                if(ez!==null){
+                    if(az!==ez)mismatches.push(ftag+":timeZone");
+                }else if(az!==null&&!isRecordedTimeZone(az)){
+                    mismatches.push(ftag+":timeZone");
+                }
+            }
+        }
+        return {ok:mismatches.length===0,mismatches};
+    }
+    // Fase 3: THE ONLY authorized entry point for sdk.DataModel.Segments.updateSegment.
+    // Performs pre-write freshness recheck, gate re-evaluation, pending SDK write
+    // (NEVER auto-Save), post-write verification, and surgical undo rollback on mismatch.
+    async function executeControlledSegmentWrite(sdk,pageWindow,segmentId,expectedRestrictions,baselineSnapshot,options={}) {
+        if(typeof sdk?.DataModel?.Segments?.getById!=="function"||
+           typeof sdk?.DataModel?.Segments?.updateSegment!=="function"){
+            return {status:"ABORTED",reason:"write_sdk_unavailable",verified:false,undone:false,mismatches:[]};
+        }
+        if(!Array.isArray(expectedRestrictions)){
+            return {status:"ABORTED",reason:"preservation_unknown",verified:false,undone:false,mismatches:[]};
+        }
+        if(expectedRestrictions.length){
+            const budget=countSafe12Operation([expectedRestrictions]);
+            if(!budget||budget.overLimit){
+                return {status:"ABORTED",reason:budget?.overLimit?"conversion_overbudget":"budget_unknown",
+                    verified:false,undone:false,mismatches:[]};
+            }
+        }
+        let fresh;
+        try{fresh=await sdk.DataModel.Segments.getById({segmentId});}catch(_){fresh=null;}
+        const freshSnapshot=restrictionSnapshot(fresh,true);
+        if(!fresh||baselineSnapshot===null||freshSnapshot!==baselineSnapshot){
+            return {status:"ABORTED",reason:"inspection_changed",verified:false,undone:false,mismatches:[]};
+        }
+        if(typeof options.checkFresh==="function"){
+            const check=await options.checkFresh(fresh);
+            if(check?.reason){
+                return {status:"ABORTED",reason:check.reason,verified:false,undone:false,mismatches:[]};
+            }
+        }
+        if(options.plan){
+            const gate=evaluateControlledWriteGate(options.plan,fresh,options.access);
+            if(!gate.allowed){
+                return {status:"ABORTED",reason:gate.blockers[0]||"plan_blocked",
+                    verified:false,undone:false,mismatches:[]};
+            }
+        }
+        const cleanPayload=expectedRestrictions.map(row=>({
+            defaultType:row.defaultType,
+            description:row.description??null,
+            direction:row.direction,
+            laneScope:row.laneScope,
+            laneType:null,
+            timeFrames:(row.timeFrames||[]).map(f=>({
+                dayAlternation:f.dayAlternation??null,
+                endDate:f.endDate??null,
+                fromTime:f.fromTime??null,
+                repeatYearly:f.repeatYearly??null,
+                startDate:f.startDate??null,
+                timeZone:f.timeZone??null,
+                toTime:f.toTime??null,
+                weekdays:Array.isArray(f.weekdays)?[...f.weekdays]:null
+            })),
+            vehicleRules:Object.fromEntries(
+                Object.entries(row.vehicleRules||{}).map(([group,list])=>[
+                    group,
+                    (list||[]).map(rule=>({
+                        licensePlateRule:rule.licensePlateRule??null,
+                        minPassengers:rule.minPassengers??0,
+                        subscriptions:Array.isArray(rule.subscriptions)?[...rule.subscriptions]:[],
+                        vehicleTypes:Array.isArray(rule.vehicleTypes)?[...rule.vehicleTypes]:[]
+                    }))
+                ])
+            )
+        }));
+        const manager=pageWindow?.W?.model?.actionManager;
+        const beforeActions=typeof manager?.getActions==="function"?manager.getActions().slice():null;
+        const rollbackOwnAction=async()=>{
+            if(typeof sdk?.Editing?.undo!=="function")return false;
+            try{
+                if(beforeActions!==null){
+                    const now=manager.getActions()||[];
+                    if(now.length!==beforeActions.length+1)return false;
+                    const last=now[now.length-1];
+                    if(last?.constructor?.name!=="UpdateSegmentsRestrictions")return false;
+                    const subs=last.subActions||[];
+                    if(!subs.some(s=>String(s?.object?.getID?.()??s?.object?.attributes?.id)===String(segmentId))){
+                        return false;
+                    }
+                    await sdk.Editing.undo();
+                }else{
+                    const currentSeg=await sdk.DataModel.Segments.getById({segmentId});
+                    if(restrictionSnapshot(currentSeg,true)===baselineSnapshot)return false;
+                    await sdk.Editing.undo();
+                }
+                const afterUndo=await sdk.DataModel.Segments.getById({segmentId});
+                return restrictionSnapshot(afterUndo,true)===baselineSnapshot;
+            }catch(_){return false;}
+        };
+        try{
+            await sdk.DataModel.Segments.updateSegment({segmentId,restrictions:cleanPayload});
+        }catch(_){
+            const undone=await rollbackOwnAction();
+            return {status:undone?"ROLLED_BACK":"MISMATCH_MANUAL_UNDO",
+                verified:false,undone,mismatches:["update_failed"]};
+        }
+        let after=null;
+        try{after=await sdk.DataModel.Segments.getById({segmentId});}catch(_){after=null;}
+        const verification=verifyAppliedSegmentRestrictions(cleanPayload,after);
+        if(verification.ok){
+            return {
+                status:"APPLIED_PENDING",verified:true,undone:false,
+                restrictionCount:after.restrictions.length,mismatches:[]
+            };
+        }
+        const undone=await rollbackOwnAction();
+        return {
+            status:undone?"ROLLED_BACK":"MISMATCH_MANUAL_UNDO",
+            verified:false,undone,mismatches:verification.mismatches
+        };
+    }
     async function readPermits(sdk,country) {
         if(!country||typeof sdk?.DataModel?.Countries?.getById!=="function")return null;
         const countryId=Number(country.id);
@@ -2340,7 +2619,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,launchButtonLabelKey,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,launchButtonLabelKey,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,evaluateControlledWriteGate,verifyAppliedSegmentRestrictions,executeControlledSegmentWrite,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -2782,6 +3061,84 @@
         }
         finally { refreshing=false; }
     }
+    function renderControlledApplyBox(container,{plan,segment,access,baselineSnapshot,buttonLabelKey,checkFresh}) {
+        container.replaceChildren();
+        container.dataset.guidedApplyBox="true";
+        const gate=evaluateControlledWriteGate(plan,segment,access);
+        const heading=node("h4",tr("write_box_title"));
+        heading.style.cssText="margin:0 0 8px;";
+        container.append(heading);
+        if(!gate.allowed){
+            container.style.cssText="margin-top:12px;padding:10px 12px;border:1px solid #d97706;"+
+                "border-radius:8px;background:#fffbeb;color:#78350f;";
+            container.append(node("p",tr("write_blocked_intro")));
+            const list=node("ul");
+            list.style.cssText="padding-left:20px;margin:6px 0;";
+            for(const reason of gate.blockers)list.append(node("li",tr(reason)));
+            container.append(list);
+            return;
+        }
+        container.style.cssText="margin-top:12px;padding:12px;border:2px solid #16a34a;"+
+            "border-radius:8px;background:#f0fdf4;color:#14532d;";
+        container.append(node("p",tr("write_ready_intro")));
+        const confirmLabel=node("label");
+        confirmLabel.style.cssText="display:flex;align-items:start;gap:8px;margin:10px 0;font-weight:600;cursor:pointer;";
+        const confirm=node("input");
+        confirm.type="checkbox";
+        confirm.dataset.guidedWriteConfirm="true";
+        confirmLabel.append(confirm,document.createTextNode(tr("write_confirm_label")));
+        const statusBox=node("div");
+        statusBox.dataset.guidedWriteResult="true";
+        statusBox.setAttribute("role","status");
+        statusBox.style.marginTop="10px";
+        let applied=false;
+        const applyBtn=button(tr(buttonLabelKey||"write_apply_btn"),async()=>{
+            if(!confirm.checked||applied)return;
+            applyBtn.disabled=true;
+            confirm.disabled=true;
+            statusBox.replaceChildren(node("p",tr("write_applying")));
+            const outcome=await executeControlledSegmentWrite(
+                sdk,page,segment.id,plan.candidateRestrictions,baselineSnapshot,
+                {plan,access,checkFresh}
+            );
+            if(outcome.status==="APPLIED_PENDING"){
+                applied=true;
+                const okBox=node("div");
+                okBox.dataset.guidedWriteOutcome="APPLIED_PENDING";
+                okBox.style.cssText="padding:10px;border:2px solid #15803d;border-radius:6px;background:#dcfce7;color:#14532d;";
+                const okTitle=node("strong",tr("write_success_title"));
+                okTitle.style.display="block";
+                okBox.append(okTitle,node("p",tr("write_success_body")));
+                statusBox.replaceChildren(okBox);
+                refresh().catch(()=>{});
+                return;
+            }
+            if(outcome.status==="ABORTED"){
+                const warnBox=node("div");
+                warnBox.dataset.guidedWriteOutcome="ABORTED";
+                warnBox.setAttribute("role","alert");
+                warnBox.style.cssText="padding:10px;border:2px solid #d97706;border-radius:6px;background:#fffbeb;color:#78350f;font-weight:600;";
+                warnBox.append(node("p",tr("write_aborted")+": "+tr(outcome.reason)));
+                statusBox.replaceChildren(warnBox);
+                refresh().catch(()=>{});
+                return;
+            }
+            const errBox=node("div");
+            errBox.dataset.guidedWriteOutcome=outcome.status;
+            errBox.setAttribute("role","alert");
+            errBox.style.cssText="padding:10px;border:2px solid #dc2626;border-radius:6px;background:#fef2f2;color:#991b1b;font-weight:600;";
+            errBox.append(node("p",tr(outcome.status==="ROLLED_BACK"?"write_rolled_back":"write_manual_undo")));
+            statusBox.replaceChildren(errBox);
+            refresh().catch(()=>{});
+        });
+        applyBtn.dataset.guidedApplyBtn="true";
+        applyBtn.disabled=true;
+        applyBtn.style.cssText="padding:9px 14px;border:1px solid #15803d;border-radius:6px;background:#16a34a;color:#fff;cursor:pointer;font-weight:700;";
+        confirm.addEventListener("change",()=>{
+            if(!applied)applyBtn.disabled=!confirm.checked;
+        });
+        container.append(confirmLabel,applyBtn,statusBox);
+    }
     async function openDeletePreview(targetIndex) {
         let current;
         try { current=await readContext(sdk); } catch (_) {return;}
@@ -2796,14 +3153,21 @@
         document.body.append(dialog);
         const baselineSnapshot=restrictionSnapshot(current.segment,true);
         const activeDialog=dialog;
-        const beforeRead=async()=>{
+        const checkDeleteContext=async()=>{
             let fresh;
             try{fresh=await readContext(sdk);}catch(_){}
-            if(activeDialog!==dialog||!activeDialog.open)return false;
             if(!fresh||fresh.segment.id!==current.segment.id||
                JSON.stringify(fresh.access)!==JSON.stringify(current.access)||
                restrictionSnapshot(fresh.segment,true)!==baselineSnapshot){
-                dialog.replaceChildren(node("p",tr("inspection_changed")),button(tr("close"),()=>dialog.close()));
+                return {reason:"inspection_changed"};
+            }
+            return {fresh};
+        };
+        const beforeRead=async()=>{
+            const check=await checkDeleteContext();
+            if(activeDialog!==dialog||!activeDialog.open)return false;
+            if(check.reason){
+                dialog.replaceChildren(node("p",tr(check.reason)),button(tr("close"),()=>dialog.close()));
                 return false;
             }
             return true;
@@ -2821,6 +3185,7 @@
         const planBox=node("div");
         planBox.dataset.guidedDeletePlan="true";
         planBox.style.cssText="margin-top:10px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;";
+        const applyBox=node("section");
         const renderDeletePlan=(engineChecks=null)=>{
             planBox.replaceChildren(node("h5",tr("plan_title")));
             const plan=buildExistingActionPlan("DELETE",targetIndex,current.segment,null,{
@@ -2850,6 +3215,10 @@
                 planBox.append(node("p",tr("budget_total")+": "+
                     plan.safe12.restrictions+" / "+plan.safe12.timeFrames+" (max "+MAX_DRAFT_TIME_FRAMES+")"));
             }
+            renderControlledApplyBox(applyBox,{
+                plan,segment:current.segment,access:current.access,baselineSnapshot,
+                buttonLabelKey:"write_apply_delete_btn",checkFresh:checkDeleteContext
+            });
         };
         const removing=node("p",tr("delete_preview_removing")+": "+tr("existing_rule")+" "+targetIndex);
         removing.style.cssText="padding:8px 10px;border:2px solid #dc2626;border-radius:8px;background:#fef2f2;color:#991b1b;font-weight:700;";
@@ -2876,7 +3245,7 @@
             node("h4",tr("before_after_before")),
             renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}),
             node("h4",tr("before_after_after")),
-            removing,remainingNote,planBox,footer
+            removing,remainingNote,planBox,applyBox,footer
         );
         dialog.showModal();
     }
@@ -2997,9 +3366,11 @@
             for(const frame of schedule.timeFrames)dialog.append(node("p",formatScheduleFrame(frame)));
             dialog.append(node("p",tr(intro)));
         }
+        let step6ApplyBox=null;
         function renderBeforeAfterPreview(schedule,conversion){
             const preview=previewDraftBeforeAfter(current.segment,schedule);
             const details=node("details");
+            details.open=true;
             details.style.cssText="border:1px solid #cbd5e1;border-radius:8px;padding:10px;"+
                 "margin-top:12px;background:#f8fafc;";
             const heading=node("summary",tr("before_after_title"));
@@ -3017,7 +3388,7 @@
                 "border-radius:6px;background:#fff;";
             const renderPlanStatus=(engineChecks=null)=>{
                 planBox.replaceChildren(node("h5",tr("plan_title")));
-                let plan;
+                let plan=null;
                 try{
                     plan=targetIndex!==null?
                         buildExistingActionPlan(
@@ -3031,6 +3402,12 @@
                         );
                 }catch(_){
                     planBox.append(node("p",tr("plan_blocked")));
+                    if(step6ApplyBox){
+                        renderControlledApplyBox(step6ApplyBox,{
+                            plan:null,segment:current.segment,access:current.access,baselineSnapshot,
+                            buttonLabelKey:"write_apply_btn",checkFresh:checkDraftContext
+                        });
+                    }
                     return;
                 }
                 const summaryLine=node("p",tr(plan.status==="CANDIDATE_COMPLETE"?"plan_complete":"plan_blocked"));
@@ -3062,6 +3439,12 @@
                     const note=node("p",tr(warning));
                     note.style.cssText="font-size:12px;color:#475569;margin:4px 0;";
                     planBox.append(note);
+                }
+                if(step6ApplyBox){
+                    renderControlledApplyBox(step6ApplyBox,{
+                        plan,segment:current.segment,access:current.access,baselineSnapshot,
+                        buttonLabelKey:"write_apply_btn",checkFresh:checkDraftContext
+                    });
                 }
             };
             const activeDialog=dialog;
@@ -3799,7 +4182,9 @@
                     renderScheduleSummary(schedule,"toll_schedule_intro");
                     dialog.append(node("p",tr("vehicles_unknown")));
                 }
+                step6ApplyBox=node("section");
                 dialog.append(renderBeforeAfterPreview(schedule,conversion));
+                dialog.append(step6ApplyBox);
                 // Conservative budget only: not an SDK write plan and NOT
                 // a pass from the stable v3.2 SAFE12 full-operation validator.
                 const estimate=conversion.budget;
