@@ -2083,6 +2083,269 @@ assert.ok(!src.includes('const advanced={minPassengers:null,permitIds:[]};') &&
  !src.includes('else normalizeAdvanced(advanced,current.permits);') &&
  !src.includes('ID+"-permit-suggestion-"'),
  'Superseded unreachable Step 5 else UI branch must remain removed');
+// Alpha 44 (Fase 1): pure read-only SDK serializer, lossless round-trip and structured Before/After plan.
+const makeLiveSdkFrame=(overrides={})=>{
+ const frame={
+  startDate:null,endDate:null,fromTime:'08:00',toTime:'18:00',
+  weekdays:['MONDAY','TUESDAY'],timeZone:'Europe/Rome',
+  repeatYearly:null,dayAlternation:null,...overrides
+ };
+ Object.defineProperty(frame,'daysOfMonth',{enumerable:true,configurable:true,get(){return frame.dayAlternation;}});
+ return frame;
+};
+const makeLiveSdkRule=(overrides={})=>{
+ const rule={
+  vehicleTypes:['PRIVATE'],subscriptions:[],minPassengers:0,licensePlateRule:null,...overrides
+ };
+ Object.defineProperty(rule,'numPassengers',{enumerable:true,configurable:true,get(){return rule.minPassengers;}});
+ Object.defineProperty(rule,'licensePlateNumber',{enumerable:true,configurable:true,get(){return rule.licensePlateRule;}});
+ return rule;
+};
+const makeLiveSdkRestriction=(overrides={})=>{
+ const base={
+  editable:true,isExpired:false,defaultType:'BLOCKED',description:null,direction:'FWD',
+  laneScope:'WHOLE_SEGMENT',laneType:null,
+  timeFrames:[makeLiveSdkFrame()],
+  vehicleRules:{FREE:[makeLiveSdkRule({subscriptions:['sub-secret-1'],minPassengers:2})]},
+  ...overrides
+ };
+ Object.defineProperty(base,'disposition',{enumerable:true,configurable:true,get(){return base.laneScope;}});
+ Object.defineProperty(base,'driveProfiles',{enumerable:true,configurable:true,get(){return base.vehicleRules;}});
+ return base;
+};
+const liveExisting=makeLiveSdkRestriction();
+const rtOk=a.serializeExistingRestrictionForSdk(liveExisting);
+assert.equal(rtOk.status,'CANDIDATE_READY');
+assert.equal(rtOk.editable,true);
+assert.equal(rtOk.saveAllowed,false);
+assert.equal(rtOk.verified,false);
+assert.equal(rtOk.hasSensitiveValues,true);
+assert.deepEqual(rtOk.blockers,[]);
+assert.deepEqual(rtOk.candidateData,{
+ defaultType:'BLOCKED',description:null,direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ timeFrames:[{
+  dayAlternation:null,endDate:null,fromTime:'08:00',repeatYearly:null,
+  startDate:null,timeZone:'Europe/Rome',toTime:'18:00',weekdays:['MONDAY','TUESDAY']
+ }],
+ vehicleRules:{FREE:[{licensePlateRule:null,minPassengers:2,subscriptions:['sub-secret-1'],vehicleTypes:['PRIVATE']}]}
+});
+assert.ok(!('editable' in rtOk.candidateData) && !('isExpired' in rtOk.candidateData) &&
+ !('disposition' in rtOk.candidateData) && !('driveProfiles' in rtOk.candidateData),
+ 'Serialized SDK data must omit read-only flags and deprecated aliases');
+// Mutating candidateData must not mutate the input SDK object.
+rtOk.candidateData.timeFrames[0].weekdays.push('SUNDAY');
+assert.deepEqual(liveExisting.timeFrames[0].weekdays,['MONDAY','TUESDAY']);
+// Non-editable and unknown-editability existing restrictions must fail closed.
+const rtLocked=a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({editable:false}));
+assert.equal(rtLocked.status,'BLOCKED');
+assert.equal(rtLocked.editable,false);
+assert.equal(rtLocked.candidateData,null);
+assert.ok(rtLocked.blockers.includes('preservation_field_permission'));
+const rtEditUnknown=a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({editable:undefined}));
+assert.equal(rtEditUnknown.status,'BLOCKED');
+assert.equal(rtEditUnknown.candidateData,null);
+// Motorcycle existing restriction requires opt-in verified 0 engine conditions to pass.
+const motoExisting=makeLiveSdkRestriction({
+ defaultType:'FREE',
+ vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['MOTORCYCLE']})]}
+});
+const rtMotoUnchecked=a.serializeExistingRestrictionForSdk(motoExisting);
+assert.equal(rtMotoUnchecked.status,'BLOCKED');
+assert.ok(rtMotoUnchecked.blockers.includes('native_engine_review'));
+const rtMotoZero=a.serializeExistingRestrictionForSdk(motoExisting,{engineCheck:{status:'MATCH',count:0}});
+assert.equal(rtMotoZero.status,'CANDIDATE_READY');
+assert.deepEqual(rtMotoZero.candidateData.vehicleRules.BLOCKED[0].vehicleTypes,['MOTORCYCLE']);
+const rtMotoGap=a.serializeExistingRestrictionForSdk(motoExisting,{engineCheck:{status:'MATCH',count:2}});
+assert.equal(rtMotoGap.status,'BLOCKED');
+assert.ok(rtMotoGap.blockers.includes('serializer_engine_gap'));
+const rtMotoDiff=a.serializeExistingRestrictionForSdk(motoExisting,{engineCheck:{status:'DIFFERENT',count:0}});
+assert.equal(rtMotoDiff.status,'BLOCKED');
+assert.ok(rtMotoDiff.blockers.includes('native_engine_review'));
+// Special lane types, extra unknown fields, invalid occupancy, empty frames/types, bad dates/zones fail closed.
+assert.ok(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({laneType:'HOV'})).blockers.includes('serializer_special_lane'));
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({unexpectedField:1})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({minPassengers:5})]}
+})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:[]})]}
+})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({timeFrames:[]})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({startDate:'2026-06-10',endDate:'2026-06-01'})]
+})).status,'BLOCKED');
+assert.ok(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({timeZone:'Mars/Olympus'})]
+})).blockers.includes('serializer_timezone_invalid'));
+assert.equal(a.serializeExistingRestrictionForSdk(null).status,'BLOCKED');
+// Draft serializer: red all-blocked, red selected vehicles, green per-vehicle rules, blockers.
+const f1Segment={id:44,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[]};
+const f1Permits=[{id:'ztl-a',name:'ZTL A'},{id:'ztl-b',name:'ZTL B'}];
+const f1DaySchedule={startDate:'2026-05-01',endDate:'2026-05-31',weekdays:['MONDAY','WEDNESDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'12:00'},{fromTime:'14:00',toTime:'18:00'}]};
+const f1RedAll=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,f1DaySchedule,{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1RedAll.status,'CANDIDATE_READY');
+assert.equal(f1RedAll.saveAllowed,false);
+assert.equal(f1RedAll.verified,false);
+assert.equal(f1RedAll.timeZoneMode,'UNSET_NULL');
+assert.ok(f1RedAll.warnings.includes('serializer_timezone_unset'));
+assert.equal(f1RedAll.candidateRestrictions.length,2);
+assert.deepEqual(f1RedAll.candidateRestrictions[0],{
+ defaultType:'BLOCKED',description:null,direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ timeFrames:[{dayAlternation:null,endDate:'2026-05-31',fromTime:'08:00',repeatYearly:null,startDate:'2026-05-01',timeZone:null,toTime:'12:00',weekdays:['MONDAY','WEDNESDAY']}],
+ vehicleRules:{}
+});
+assert.equal(f1RedAll.candidateRestrictions[1].timeFrames[0].fromTime,'14:00');
+const f1RedSelected=a.serializeDraftForSdk(
+ {direction:'REV',scope:'right',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['PRIVATE','TAXI']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['FRIDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1RedSelected.status,'CANDIDATE_READY');
+assert.equal(f1RedSelected.candidateRestrictions[0].defaultType,'FREE');
+assert.equal(f1RedSelected.candidateRestrictions[0].laneScope,'RIGHT_LANE');
+assert.deepEqual(f1RedSelected.candidateRestrictions[0].vehicleRules,{
+ BLOCKED:[{licensePlateRule:null,minPassengers:0,subscriptions:[],vehicleTypes:['PRIVATE','TAXI']}]
+});
+const f1RedMotorFiltered=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,
+ {enabled:true,conditions:[{engineType:'FUEL',operator:'LTE',capacityThreshold:125}]}
+);
+assert.equal(f1RedMotorFiltered.status,'BLOCKED');
+assert.equal(f1RedMotorFiltered.candidateRestrictions,null);
+assert.ok(f1RedMotorFiltered.blockers.includes('serializer_engine_gap'));
+const f1Green=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV','TAXI']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},
+ {
+  PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['ztl-a'],minPassengers:3},
+  EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null},
+  TAXI:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:2}
+ },
+ f1Permits,{enabled:false,conditions:[]},{timeZone:'Europe/Rome'}
+);
+assert.equal(f1Green.status,'CANDIDATE_READY');
+assert.equal(f1Green.timeZoneMode,'EXPLICIT');
+assert.equal(f1Green.summary.hasSensitiveValues,true);
+assert.ok(f1Green.warnings.includes('conversion_conditions'));
+assert.deepEqual(f1Green.candidateRestrictions[0].vehicleRules,{
+ FREE:[
+  {licensePlateRule:null,minPassengers:3,subscriptions:['ztl-a'],vehicleTypes:['PRIVATE']},
+  {licensePlateRule:null,minPassengers:0,subscriptions:[],vehicleTypes:['EV']},
+  {licensePlateRule:null,minPassengers:2,subscriptions:[],vehicleTypes:['TAXI']}
+ ]
+});
+assert.equal(f1Green.candidateRestrictions[0].timeFrames[0].timeZone,'Europe/Rome');
+// Occupancy > 4 is outside SDK AddableVehicleRule.minPassengers (0|2|3|4) and must block.
+const f1GreenOcc5=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},
+ {PRIVATE:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:5}},
+ f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1GreenOcc5.status,'BLOCKED');
+assert.ok(f1GreenOcc5.blockers.includes('serializer_occupancy_out_of_range'));
+// Overnight, blue TOLL, and special lanes must block in Fase 1 serializer.
+const f1Night=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'22:00',toTime:'06:00'}]},
+ {},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1Night.status,'BLOCKED');
+assert.ok(f1Night.blockers.includes('serializer_overnight_unverified'));
+const f1Toll=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'TOLL',vehicleTypes:['EV']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1Toll.status,'BLOCKED');
+assert.ok(f1Toll.blockers.includes('serializer_toll_pending'));
+const f1SpecialLane=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'left',lane:'hov',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1SpecialLane.status,'BLOCKED');
+assert.ok(f1SpecialLane.blockers.includes('serializer_special_lane'));
+// Structured Before/After plan combines existing round-trip, new draft, conflict gate, eligibility and SAFE12.
+const f1TwoWaySeg={id:45,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[makeLiveSdkRestriction({direction:'FWD'})]};
+const f1PlanSeparate=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['TAXI']},
+ f1TwoWaySeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {access:{hasPermissions:true,isRoadTypeDrivable:true}}
+);
+assert.equal(f1PlanSeparate.status,'CANDIDATE_COMPLETE');
+assert.equal(f1PlanSeparate.existingStatus,'ALL_READY');
+assert.equal(f1PlanSeparate.saveAllowed,false);
+assert.equal(f1PlanSeparate.verified,false);
+assert.equal(f1PlanSeparate.candidateRestrictions.length,2);
+assert.deepEqual(f1PlanSeparate.safe12,{restrictions:2,timeFrames:2,overLimit:false});
+const f1PlanConflict=a.buildStructuredBeforeAfterPlan(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['TAXI']},
+ f1TwoWaySeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {access:{hasPermissions:true,isRoadTypeDrivable:true}}
+);
+assert.equal(f1PlanConflict.status,'BLOCKED');
+assert.equal(f1PlanConflict.candidateRestrictions,null);
+assert.ok(f1PlanConflict.blockers.includes('conversion_conflict_blocked'));
+const f1PlanLockedExisting=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {...f1TwoWaySeg,restrictions:[makeLiveSdkRestriction({direction:'FWD',editable:false})]},
+ {startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1PlanLockedExisting.status,'BLOCKED');
+assert.equal(f1PlanLockedExisting.existingStatus,'BLOCKED');
+assert.ok(f1PlanLockedExisting.blockers.includes('preservation_field_permission'));
+const f1MotoSeg={id:46,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[motoExisting]};
+const f1MotoPlanDefault=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1MotoSeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1MotoPlanDefault.status,'BLOCKED');
+assert.ok(f1MotoPlanDefault.blockers.includes('native_engine_review'));
+const f1MotoPlanZero=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1MotoSeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {engineChecks:new Map([[1,{status:'MATCH',count:0}]])}
+);
+assert.equal(f1MotoPlanZero.status,'CANDIDATE_COMPLETE');
+const f1MotoPlanTwo=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1MotoSeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {engineChecks:new Map([[1,{status:'MATCH',count:2}]])}
+);
+assert.equal(f1MotoPlanTwo.status,'BLOCKED');
+assert.ok(f1MotoPlanTwo.blockers.includes('serializer_engine_gap'));
+const f1OverSafe12Seg={
+ id:47,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,
+ restrictions:Array.from({length:11},()=>makeLiveSdkRestriction({direction:'FWD'}))
+};
+const f1OverPlan=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1OverSafe12Seg,f1DaySchedule,{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1OverPlan.status,'BLOCKED');
+assert.equal(f1OverPlan.candidateRestrictions,null);
+assert.ok(f1OverPlan.blockers.includes('conversion_overbudget'));
+const f1NoPermPlan=a.buildStructuredBeforeAfterPlan(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {access:{hasPermissions:false,isRoadTypeDrivable:true}}
+);
+assert.equal(f1NoPermPlan.status,'BLOCKED');
+assert.ok(f1NoPermPlan.blockers.includes('conversion_no_permission'));
+const f1UnknownSegPlan=a.buildStructuredBeforeAfterPlan(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {id:48,isAtoB:true,restrictions:null},{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1UnknownSegPlan.status,'BLOCKED');
+assert.equal(f1UnknownSegPlan.existingStatus,'UNKNOWN');
+assert.ok(f1UnknownSegPlan.blockers.includes('preservation_unknown'));
+// UI integration & read-only invariants for Fase 1.
+assert.ok(src.includes('const renderPlanStatus=(engineChecks=null)=>{') &&
+ src.includes('planBox.dataset.guidedPlanStatus="true";') &&
+ src.includes('renderPlanStatus(new Map(review.rows.map(row=>[row.index,row])));'),
+ 'Before/After preview must render redacted Fase 1 plan status and refresh on opt-in engine review');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;
