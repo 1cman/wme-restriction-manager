@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.44
+// @version      4.0.0-alpha.45
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.44";
+    const VERSION = "4.0.0-alpha.45";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -305,6 +305,25 @@
         serializer_occupancy_out_of_range:["Il numero minimo di occupanti supportato dallo SDK è compreso tra 2 e 4","Minimum occupancy supported by the SDK is between 2 and 4","Le nombre minimal d'occupants pris en charge par le SDK est compris entre 2 et 4","El número mínimo de ocupantes compatible con el SDK está entre 2 y 4","Die vom SDK unterstützte Mindestinsassenzahl liegt zwischen 2 und 4","O número mínimo de ocupantes suportado pelo SDK é entre 2 e 4"],
         serializer_timezone_invalid:["Fuso orario non valido","Invalid time zone","Fuseau horaire non valide","Zona horaria no válida","Ungültige Zeitzone","Fuso horário inválido"],
         serializer_timezone_unset:["Fuso orario non impostato nella bozza (null, come nel modulo nativo WME)","Time zone unset in draft (null, matching the native WME form)","Fuseau horaire non défini dans le brouillon (null, comme le formulaire natif WME)","Zona horaria sin definir en el borrador (null, como el formulario nativo de WME)","Zeitzone im Entwurf nicht gesetzt (null, wie im nativen WME-Formular)","Fuso horário por definir no rascunho (null, como no formulário nativo do WME)"],
+        edit_guided_btn:["Modifica guidata (anteprima)","Guided edit (preview)","Modification guidée (aperçu)","Edición guiada (vista previa)","Geführte Bearbeitung (Vorschau)","Edição guiada (pré-visualização)"],
+        delete_recreate_btn:["Elimina e ricrea (anteprima)","Delete and recreate (preview)","Supprimer et recréer (aperçu)","Eliminar y recrear (vista previa)","Löschen und neu erstellen (Vorschau)","Eliminar e recriar (pré-visualização)"],
+        delete_preview_btn:["Elimina (anteprima)","Delete (preview)","Supprimer (aperçu)","Eliminar (vista previa)","Löschen (Vorschau)","Eliminar (pré-visualização)"],
+        edit_guided_unavailable:["Modifica guidata non disponibile","Guided edit unavailable","Modification guidée indisponible","Edición guiada no disponible","Geführte Bearbeitung nicht verfügbar","Edição guiada indisponível"],
+        edit_locked_note:["Protetta da WME (non modificabile): non verrà toccata.","Protected by WME (non-editable): will not be touched.","Protégée par WME (non modifiable) : ne sera pas modifiée.","Protegida por WME (no editable): no se modificará.","Von WME geschützt (nicht bearbeitbar): wird nicht verändert.","Protegida pelo WME (não editável): não será alterada."],
+        mode_edit_banner:["Modalità: Modifica guidata di","Mode: Guided edit of","Mode : Modification guidée de","Modo: Edición guiada de","Modus: Geführte Bearbeitung von","Modo: Edição guiada de"],
+        mode_recreate_banner:["Modalità: Elimina e ricrea","Mode: Delete and recreate","Mode : Supprimer et recréer","Modo: Eliminar y recrear","Modus: Löschen und neu erstellen","Modo: Eliminar e recriar"],
+        mode_readonly_note:["Anteprima in sola lettura: nessuna modifica viene ancora applicata a WME.","Read-only preview: no edits are applied to WME yet.","Aperçu en lecture seule : aucune modification n'est encore appliquée à WME.","Vista previa de solo lectura: todavía no se aplica ningún cambio a WME.","Schreibgeschützte Vorschau: es werden noch keine Änderungen auf WME angewendet.","Pré-visualização só de leitura: ainda não é aplicada nenhuma alteração no WME."],
+        delete_preview_title:["Anteprima eliminazione (sola lettura)","Deletion preview (read-only)","Aperçu de suppression (lecture seule)","Vista previa de eliminación (solo lectura)","Löschvorschau (nur lesbar)","Pré-visualização de eliminação (só leitura)"],
+        delete_preview_removing:["Restrizione da rimuovere","Restriction to remove","Restriction à supprimer","Restricción a eliminar","Zu entfernende Beschränkung","Restrição a remover"],
+        delete_preview_remaining:["Restrizioni che restano sul segmento","Restrictions remaining on segment","Restrictions restant sur le segment","Restricciones que permanecen en el segmento","Auf dem Segment verbleibende Beschränkungen","Restrições que permanecem no segmento"],
+        delete_preview_none_left:["Nessuna restrizione rimarrebbe sul segmento.","No restrictions would remain on the segment.","Aucune restriction ne resterait sur le segment.","No quedaría ninguna restricción en el segmento.","Auf dem Segment würden keine Beschränkungen verbleiben.","Não ficaria nenhuma restrição no segmento."],
+        delete_plan_complete:["Eliminazione pronta nel formato SDK come anteprima (le altre restrizioni restano integre). Nessuna modifica viene ancora applicata.","Deletion is ready in SDK format as a preview (other restrictions remain intact). No edits are applied yet.","Suppression prête au format SDK en aperçu (les autres restrictions restent intactes). Aucune modification n'est appliquée.","Eliminación lista en formato SDK como vista previa (las demás restricciones quedan intactas). Todavía no se aplica ningún cambio.","Löschung im SDK-Format als Vorschau bereit (andere Beschränkungen bleiben erhalten). Es werden noch keine Änderungen angewendet.","Eliminação pronta no formato SDK como pré-visualização (as outras restrições mantêm-se intactas). Ainda não é aplicada nenhuma alteração."],
+        edit_preload_direction:["Direzione della restrizione non disponibile su questo segmento","Restriction direction unavailable on this segment","Direction de la restriction indisponible sur ce segment","Dirección de la restricción no disponible en este segmento","Richtung der Beschränkung auf diesem Segment nicht verfügbar","Direção da restrição indisponível neste segmento"],
+        edit_preload_description:["La restrizione contiene una nota testuale personalizzata non modificabile nel wizard","Restriction contains a custom text description not editable in the wizard","La restriction contient une description personnalisée non modifiable dans l'assistant","La restricción contiene una descripción de texto personalizada no editable en el asistente","Die Beschränkung enthält eine benutzerdefinierte Beschreibung, die im Assistenten nicht bearbeitbar ist","A restrição contém uma descrição personalizada não editável no assistente"],
+        edit_preload_vehicle_rules:["Regole veicoli fuori dalle categorie o combinazioni gestite dal wizard","Vehicle rules outside the categories or combinations supported by the wizard","Règles de véhicules hors des catégories ou combinaisons gérées par l'assistant","Reglas de vehículos fuera de las categorías o combinaciones compatibles con el asistente","Fahrzeugregeln liegen außerhalb der vom Assistenten unterstützten Kategorien oder Kombinationen","Regras de veículos fora das categorias ou combinações suportadas pelo assistente"],
+        edit_preload_unknown_permit:["Pass associato non presente nell'elenco del Paese","Associated permit not found in the country list","Permis associé introuvable dans la liste du pays","Permiso asociado no encontrado en la lista del país","Zugehörige Berechtigung nicht in der Länderliste gefunden","Autorização associada não encontrada na lista do país"],
+        edit_preload_schedule:["Calendario avanzato (ricorrenza annuale, giorni alterni o fasce eterogenee) non modificabile nel wizard","Advanced schedule (annual repeat, alternating days or mixed frames) not editable in the wizard","Calendrier avancé (répétition annuelle, jours alternés ou plages hétérogènes) non modifiable dans l'assistant","Calendario avanzado (repetición anual, días alternos o franjas mixtas) no editable en el asistente","Erweiterter Zeitplan (jährliche Wiederholung, wechselnde Tage oder gemischte Zeitfenster) im Assistenten nicht bearbeitbar","Calendário avançado (repetição anual, dias alternados ou horários mistos) não editável no assistente"],
+        edit_target_not_editable:["La restrizione selezionata non è modificabile (protetta da WME)","Selected restriction is not editable (protected by WME)","La restriction sélectionnée n'est pas modifiable (protégée par WME)","La restricción seleccionada no es editable (protegida por WME)","Die ausgewählte Beschränkung ist nicht bearbeitbar (von WME geschützt)","A restrição selecionada não é editável (protegida pelo WME)"],
         calendar_read_check:["Confronta calendario SDK e modello interno","Compare SDK and internal calendars","Comparer les calendriers SDK et interne","Comparar los calendarios del SDK y del modelo interno","SDK-Kalender mit internem Modell vergleichen","Comparar os calendários do SDK e do modelo interno"],
         calendar_read_match:["I campi del calendario coincidono","Calendar fields match","Les champs du calendrier concordent","Los campos del calendario coinciden","Kalenderfelder stimmen überein","Os campos do calendário coincidem"],
         calendar_read_different:["Differenze nei campi del calendario","Calendar fields differ","Les champs du calendrier diffèrent","Los campos del calendario difieren","Kalenderfelder unterscheiden sich","Os campos do calendário diferem"],
@@ -1969,6 +1988,274 @@
             saveAllowed:false,verified:false
         };
     }
+    // Fase 2 (read-only): determine whether a single existing SDK restriction
+    // can be targeted for guided deletion / delete-and-recreate. Never allows
+    // touching editable:false or unknown-editability rows.
+    function canDeleteExistingRestrictionInWizard(restriction) {
+        if(!restriction||typeof restriction!=="object"||Array.isArray(restriction))return false;
+        try{return restriction.editable===true;}catch(_){return false;}
+    }
+    // Fase 2 (read-only): losslessly preload a single editable SDK restriction
+    // into Guided Creator wizard state. Fails closed if any field, category,
+    // pass, schedule feature, description, or motorcycle engine detail cannot
+    // be represented without data loss.
+    function preloadExistingRestrictionToWizard(restriction,segment,permits,options={}) {
+        const roundTrip=serializeExistingRestrictionForSdk(restriction,options);
+        if(roundTrip.status!=="CANDIDATE_READY"||!roundTrip.candidateData){
+            return {
+                editableInWizard:false,
+                blockers:roundTrip.blockers.length?[...roundTrip.blockers]:["preservation_unknown"],
+                preloaded:null,saveAllowed:false,verified:false
+            };
+        }
+        const data=roundTrip.candidateData;
+        const blockers=[];
+        const dirs=availableDirections(segment);
+        if(!dirs.includes(data.direction))blockers.push("edit_preload_direction");
+        const scopeEntry=Object.entries(LANE_SCOPE_CANDIDATES)
+            .find(([,sdkScope])=>sdkScope===data.laneScope);
+        const scope=scopeEntry?.[0]??null;
+        if(!scope)blockers.push("conversion_lane");
+        if(typeof data.description==="string"&&data.description.trim().length>0)
+            blockers.push("edit_preload_description");
+        let restrictionType=null;
+        let vehicleTypes=[];
+        const vehicleRules=Object.create(null);
+        if(data.defaultType==="TOLL"){
+            blockers.push("serializer_toll_pending");
+        }else if(data.defaultType==="BLOCKED"){
+            const freeRules=data.vehicleRules?.FREE;
+            if(!freeRules||!freeRules.length){
+                restrictionType="BLOCKED";
+                vehicleTypes=[];
+            }else{
+                restrictionType="ALLOWED";
+                const permitSet=Array.isArray(permits)?new Set(permits.map(p=>p.id)):null;
+                const seen=new Set();
+                for(const rule of freeRules){
+                    if(rule.licensePlateRule!==null){
+                        blockers.push("edit_preload_vehicle_rules");continue;
+                    }
+                    if(!rule.vehicleTypes.every(type=>VEHICLE_TYPES.includes(type))){
+                        blockers.push("edit_preload_vehicle_rules");continue;
+                    }
+                    if(rule.subscriptions.length&&(!permitSet||
+                       rule.subscriptions.some(id=>!permitSet.has(id)))){
+                        blockers.push("edit_preload_unknown_permit");continue;
+                    }
+                    for(const type of rule.vehicleTypes){
+                        if(seen.has(type)){
+                            blockers.push("edit_preload_vehicle_rules");continue;
+                        }
+                        seen.add(type);
+                        vehicleRules[type]={
+                            requiresPass:rule.subscriptions.length>0,
+                            requiresOccupancy:rule.minPassengers>=2,
+                            permitIds:[...rule.subscriptions],
+                            minPassengers:rule.minPassengers>=2?rule.minPassengers:null
+                        };
+                    }
+                }
+                vehicleTypes=VEHICLE_TYPES.filter(type=>seen.has(type));
+                if(!vehicleTypes.length)blockers.push("edit_preload_vehicle_rules");
+            }
+        }else if(data.defaultType==="FREE"){
+            const blockedRules=data.vehicleRules?.BLOCKED;
+            if(!Array.isArray(blockedRules)||!blockedRules.length){
+                blockers.push("edit_preload_vehicle_rules");
+            }else{
+                restrictionType="BLOCKED";
+                const seen=new Set();
+                for(const rule of blockedRules){
+                    if(rule.licensePlateRule!==null||rule.minPassengers!==0||
+                       rule.subscriptions.length>0||
+                       !rule.vehicleTypes.every(type=>VEHICLE_TYPES.includes(type))){
+                        blockers.push("edit_preload_vehicle_rules");continue;
+                    }
+                    for(const type of rule.vehicleTypes)seen.add(type);
+                }
+                vehicleTypes=VEHICLE_TYPES.filter(type=>seen.has(type));
+                if(!vehicleTypes.length)blockers.push("edit_preload_vehicle_rules");
+            }
+        }else{
+            blockers.push("edit_preload_vehicle_rules");
+        }
+        const frames=data.timeFrames;
+        let redSchedule=null;
+        let recordedTimeZone=null;
+        if(!Array.isArray(frames)||!frames.length||frames.length>MAX_DRAFT_TIME_FRAMES){
+            blockers.push("edit_preload_schedule");
+        }else{
+            const first=frames[0];
+            const sortDays=days=>Array.isArray(days)?WEEKDAYS.filter(d=>days.includes(d)):null;
+            const baseDays=sortDays(first.weekdays);
+            const allSameMeta=Boolean(baseDays&&baseDays.length)&&frames.every(frame=>{
+                const days=sortDays(frame.weekdays);
+                return (frame.repeatYearly===null||frame.repeatYearly===false)&&
+                    frame.dayAlternation===null&&
+                    frame.startDate===first.startDate&&
+                    frame.endDate===first.endDate&&
+                    days!==null&&days.length===baseDays.length&&
+                    days.every((d,i)=>d===baseDays[i]);
+            });
+            if(!allSameMeta){
+                blockers.push("edit_preload_schedule");
+            }else{
+                const allDayFrames=frames.every(f=>f.fromTime===null&&f.toTime===null);
+                const timedFrames=frames.every(f=>f.fromTime!==null&&f.toTime!==null);
+                if(allDayFrames&&frames.length===1){
+                    redSchedule={
+                        startDate:first.startDate||"",
+                        endDate:first.endDate||"",
+                        weekdays:[...baseDays],
+                        allDay:true,
+                        slots:[{fromTime:"08:00",toTime:"18:00"}]
+                    };
+                }else if(timedFrames){
+                    if(frames.some(crossesMidnight)){
+                        blockers.push("serializer_overnight_unverified");
+                    }else{
+                        redSchedule={
+                            startDate:first.startDate||"",
+                            endDate:first.endDate||"",
+                            weekdays:[...baseDays],
+                            allDay:false,
+                            slots:frames.map(f=>({fromTime:f.fromTime,toTime:f.toTime}))
+                        };
+                    }
+                }else{
+                    blockers.push("edit_preload_schedule");
+                }
+                const zones=[...new Set(frames.map(f=>f.timeZone))];
+                if(zones.length===1)recordedTimeZone=zones[0];
+            }
+        }
+        const uniqueBlockers=[...new Set(blockers)];
+        if(uniqueBlockers.length||!redSchedule||!restrictionType){
+            return {
+                editableInWizard:false,
+                blockers:uniqueBlockers.length?uniqueBlockers:["preservation_unknown"],
+                preloaded:null,saveAllowed:false,verified:false
+            };
+        }
+        return {
+            editableInWizard:true,
+            blockers:[],
+            preloaded:{
+                draft:{direction:data.direction,scope,lane:"lane_none",restrictionType,vehicleTypes},
+                vehicleRules,
+                motorDraft:{enabled:false,conditions:[]},
+                redSchedule,
+                recordedTimeZone
+            },
+            saveAllowed:false,verified:false
+        };
+    }
+    // Fase 2 (read-only): structured Before/After planner for DELETE and
+    // REPLACE (Guided Edit / Delete & Recreate) of a single editable existing
+    // restriction. Verifies lossless retention of EVERY other restriction on
+    // the segment and excludes only the targeted row from conflict screening.
+    function buildExistingActionPlan(action,targetIndex,segment,draftState=null,options={}) {
+        if(action!=="DELETE"&&action!=="REPLACE")throw Error("Invalid existing restriction action");
+        const rows=segment?.restrictions;
+        const eligibility=inspectSegmentEligibility(segment,options?.access);
+        const blockers=[];
+        if(eligibility.hasAnyPermission===false)blockers.push("conversion_no_permission");
+        if(eligibility.drivable===false)blockers.push("conversion_non_drivable");
+        if(!Array.isArray(rows)){
+            blockers.push("preservation_unknown");
+            return {
+                action,mode:action==="REPLACE"?(options?.mode==="DELETE_AND_RECREATE"?"DELETE_AND_RECREATE":"EDIT"):"DELETE",
+                targetIndex,status:"BLOCKED",removed:[],retained:null,addition:null,
+                conflictGate:null,eligibility,safe12:null,candidateRestrictions:null,
+                blockers:[...new Set(blockers)],saveAllowed:false,verified:false
+            };
+        }
+        if(!Number.isSafeInteger(targetIndex)||targetIndex<1||targetIndex>rows.length){
+            blockers.push("preservation_unknown");
+            return {
+                action,mode:action==="REPLACE"?(options?.mode==="DELETE_AND_RECREATE"?"DELETE_AND_RECREATE":"EDIT"):"DELETE",
+                targetIndex,status:"BLOCKED",removed:[],retained:null,addition:null,
+                conflictGate:null,eligibility,safe12:null,candidateRestrictions:null,
+                blockers:[...new Set(blockers)],saveAllowed:false,verified:false
+            };
+        }
+        const targetPos=targetIndex-1;
+        const targetDesc=Object.getOwnPropertyDescriptor(rows,targetPos);
+        const targetRow=targetDesc&&"value" in targetDesc?targetDesc.value:undefined;
+        const targetEditable=canDeleteExistingRestrictionInWizard(targetRow);
+        if(!targetEditable)blockers.push("edit_target_not_editable");
+        const lookupEngine=index=>{
+            const map=options?.engineChecks;
+            if(!map)return null;
+            if(typeof map.get==="function")return map.get(index)??null;
+            return map[index]??null;
+        };
+        const retained=[];
+        const remainingRaw=[];
+        for(let index=0;index<rows.length;index++){
+            if(index===targetPos)continue;
+            const desc=Object.getOwnPropertyDescriptor(rows,index);
+            const native=desc&&"value" in desc?desc.value:undefined;
+            remainingRaw.push(native);
+            const roundTrip=serializeExistingRestrictionForSdk(native,{
+                engineCheck:lookupEngine(index+1)
+            });
+            retained.push({index:index+1,action:"RETAIN",...roundTrip});
+            if(roundTrip.status!=="CANDIDATE_READY")blockers.push(...roundTrip.blockers);
+        }
+        const removed=[{index:targetIndex,action:"REMOVE",editable:targetEditable}];
+        const allRetainedReady=retained.every(row=>row.status==="CANDIDATE_READY");
+        if(action==="DELETE"){
+            const combined=targetEditable&&allRetainedReady?
+                retained.map(row=>row.candidateData):null;
+            const safe12=combined?(combined.length?countSafe12Operation([combined]):
+                {restrictions:0,timeFrames:0,overLimit:false}):null;
+            if(combined&&(!safe12||safe12.overLimit))
+                blockers.push(safe12?.overLimit?"conversion_overbudget":"budget_unknown");
+            const uniqueBlockers=[...new Set(blockers)];
+            const complete=uniqueBlockers.length===0&&combined!==null;
+            return {
+                action:"DELETE",mode:"DELETE",targetIndex,
+                status:complete?"CANDIDATE_COMPLETE":"BLOCKED",
+                removed,retained,addition:null,conflictGate:null,eligibility,safe12,
+                candidateRestrictions:complete?combined:null,
+                blockers:uniqueBlockers,saveAllowed:false,verified:false
+            };
+        }
+        if(!draftState||typeof draftState!=="object")throw Error("Replacement draft required");
+        const remainingSegment={...segment,restrictions:remainingRaw};
+        const {draft,schedule,vehicleRules,permits,motorDraft}=draftState;
+        const addition=serializeDraftForSdk(
+            draft,remainingSegment,schedule,vehicleRules,permits,motorDraft,options
+        );
+        blockers.push(...addition.blockers);
+        const conflicts=previewRestrictionConflicts(
+            draft,remainingSegment,schedule,{vehicleRules,motorDraft}
+        );
+        const conflictGate=evaluateConflictGate(conflicts);
+        if(conflictGate.blocked)blockers.push("conversion_conflict_blocked");
+        let combined=null;
+        if(targetEditable&&allRetainedReady&&addition.status==="CANDIDATE_READY"){
+            const beforeTarget=retained.filter(row=>row.index<targetIndex).map(row=>row.candidateData);
+            const afterTarget=retained.filter(row=>row.index>targetIndex).map(row=>row.candidateData);
+            combined=[...beforeTarget,...addition.candidateRestrictions,...afterTarget];
+        }
+        const safe12=combined?countSafe12Operation([combined]):null;
+        if(combined&&(!safe12||safe12.overLimit))
+            blockers.push(safe12?.overLimit?"conversion_overbudget":"budget_unknown");
+        const uniqueBlockers=[...new Set(blockers)];
+        const complete=uniqueBlockers.length===0&&combined!==null;
+        return {
+            action:"REPLACE",
+            mode:options?.mode==="DELETE_AND_RECREATE"?"DELETE_AND_RECREATE":"EDIT",
+            targetIndex,
+            status:complete?"CANDIDATE_COMPLETE":"BLOCKED",
+            removed,retained,addition,conflictGate,eligibility,safe12,
+            candidateRestrictions:complete?combined:null,
+            blockers:uniqueBlockers,saveAllowed:false,verified:false
+        };
+    }
     async function readPermits(sdk,country) {
         if(!country||typeof sdk?.DataModel?.Countries?.getById!=="function")return null;
         const countryId=Number(country.id);
@@ -2048,7 +2335,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -2264,6 +2551,40 @@
                     item.append(p);
                 }
             }
+            if(options.allowGuidedActions??showHeader){
+                const nativeRow=segment?.restrictions?.[entry.index-1];
+                const actionsBox=node("div");
+                actionsBox.dataset.guidedExistingActions="true";
+                actionsBox.style.cssText="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;";
+                if(!canDeleteExistingRestrictionInWizard(nativeRow)){
+                    const locked=node("p",tr("edit_locked_note"));
+                    locked.style.cssText="margin:0;font-size:12px;color:#92400e;font-weight:600;";
+                    actionsBox.append(locked);
+                }else{
+                    const preload=preloadExistingRestrictionToWizard(
+                        nativeRow,segment,options.permits??context?.permits??null
+                    );
+                    const rowBtns=node("div");
+                    rowBtns.style.cssText="display:flex;gap:6px;flex-wrap:wrap;";
+                    if(preload.editableInWizard){
+                        const editBtn=button(tr("edit_guided_btn"),()=>openWizard({mode:"EDIT",targetIndex:entry.index}));
+                        editBtn.style.cssText="padding:5px 9px;border:1px solid #2563eb;border-radius:6px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-size:12px;font-weight:600;";
+                        rowBtns.append(editBtn);
+                    }
+                    const recreateBtn=button(tr("delete_recreate_btn"),()=>openWizard({mode:"DELETE_AND_RECREATE",targetIndex:entry.index}));
+                    recreateBtn.style.cssText="padding:5px 9px;border:1px solid #d97706;border-radius:6px;background:#fffbeb;color:#92400e;cursor:pointer;font-size:12px;font-weight:600;";
+                    const delBtn=button(tr("delete_preview_btn"),()=>openDeletePreview(entry.index));
+                    delBtn.style.cssText="padding:5px 9px;border:1px solid #dc2626;border-radius:6px;background:#fef2f2;color:#991b1b;cursor:pointer;font-size:12px;font-weight:600;";
+                    rowBtns.append(recreateBtn,delBtn);
+                    actionsBox.append(rowBtns);
+                    if(!preload.editableInWizard){
+                        const why=node("p",tr("edit_guided_unavailable")+": "+preload.blockers.map(tr).join("; "));
+                        why.style.cssText="margin:5px 0 0;font-size:11px;color:#475569;";
+                        actionsBox.append(why);
+                    }
+                }
+                item.append(actionsBox);
+            }
             wrap.append(item);
         }
         if(nativeEditActionAvailable()){
@@ -2445,7 +2766,108 @@
         } catch (_) { context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();} }
         finally { refreshing=false; }
     }
-    async function openWizard() {
+    async function openDeletePreview(targetIndex) {
+        let current;
+        try { current=await readContext(sdk); } catch (_) {return;}
+        if (!current) return;
+        if (dialog?.open) dialog.close();
+        dialog?.remove();
+        dialog=node("dialog"); dialog.id=ID+"-dialog";
+        dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
+        for(const eventType of ["keydown","keyup","keypress"]){
+            dialog.addEventListener(eventType,event=>event.stopPropagation());
+        }
+        document.body.append(dialog);
+        const baselineSnapshot=restrictionSnapshot(current.segment,true);
+        const activeDialog=dialog;
+        const beforeRead=async()=>{
+            let fresh;
+            try{fresh=await readContext(sdk);}catch(_){}
+            if(activeDialog!==dialog||!activeDialog.open)return false;
+            if(!fresh||fresh.segment.id!==current.segment.id||
+               JSON.stringify(fresh.access)!==JSON.stringify(current.access)||
+               restrictionSnapshot(fresh.segment,true)!==baselineSnapshot){
+                dialog.replaceChildren(node("p",tr("inspection_changed")),button(tr("close"),()=>dialog.close()));
+                return false;
+            }
+            return true;
+        };
+        const targetRow=current.segment?.restrictions?.[targetIndex-1];
+        if(!canDeleteExistingRestrictionInWizard(targetRow)){
+            dialog.replaceChildren(
+                node("h2",tr("delete_preview_title")),
+                node("p",tr("edit_target_not_editable")),
+                button(tr("close"),()=>dialog.close())
+            );
+            dialog.showModal();
+            return;
+        }
+        const planBox=node("div");
+        planBox.dataset.guidedDeletePlan="true";
+        planBox.style.cssText="margin-top:10px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;";
+        const renderDeletePlan=(engineChecks=null)=>{
+            planBox.replaceChildren(node("h5",tr("plan_title")));
+            const plan=buildExistingActionPlan("DELETE",targetIndex,current.segment,null,{
+                access:current.access,engineChecks
+            });
+            const summaryLine=node("p",tr(plan.status==="CANDIDATE_COMPLETE"?"delete_plan_complete":"plan_blocked"));
+            summaryLine.style.cssText="font-weight:600;color:"+
+                (plan.status==="CANDIDATE_COMPLETE"?"#17603c":"#991b1b")+";";
+            planBox.append(summaryLine);
+            if(Array.isArray(plan.retained)&&plan.retained.length){
+                const list=node("ul");
+                list.style.cssText="padding-left:20px;margin:6px 0;";
+                for(const row of plan.retained){
+                    const state=row.status==="CANDIDATE_READY"?tr("plan_row_ready"):
+                        tr("plan_row_blocked")+": "+row.blockers.map(tr).join("; ");
+                    list.append(node("li",tr("existing_rule")+" "+row.index+" · "+state));
+                }
+                planBox.append(list);
+            }
+            if(plan.status!=="CANDIDATE_COMPLETE"&&plan.blockers.length){
+                const reasons=node("ul");
+                reasons.style.cssText="padding-left:20px;margin:6px 0;color:#991b1b;";
+                for(const reason of plan.blockers)reasons.append(node("li",tr(reason)));
+                planBox.append(reasons);
+            }
+            if(plan.safe12){
+                planBox.append(node("p",tr("budget_total")+": "+
+                    plan.safe12.restrictions+" / "+plan.safe12.timeFrames+" (max "+MAX_DRAFT_TIME_FRAMES+")"));
+            }
+        };
+        const removing=node("p",tr("delete_preview_removing")+": "+tr("existing_rule")+" "+targetIndex);
+        removing.style.cssText="padding:8px 10px;border:2px solid #dc2626;border-radius:8px;background:#fef2f2;color:#991b1b;font-weight:700;";
+        const otherIndices=(current.segment.restrictions||[]).map((_,i)=>i+1).filter(i=>i!==targetIndex);
+        const remainingNote=node("p",otherIndices.length?
+            tr("delete_preview_remaining")+": "+otherIndices.map(i=>tr("existing_rule")+" "+i).join(", "):
+            tr("delete_preview_none_left"));
+        const onEngineReview=review=>renderDeletePlan(new Map(review.rows.map(row=>[row.index,row])));
+        const footer=node("div");
+        footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
+        footer.append(button(tr("close"),()=>dialog.close()));
+        if(nativeEditActionAvailable()){
+            footer.append(button(tr("edit_or_delete_native"),openNativeEditRestrictions));
+        }else{
+            const hint=node("p",tr("edit_native_switch_tab"));
+            hint.style.cssText="font-size:12px;color:#475569;margin:8px 0 0;";
+            footer.append(hint);
+        }
+        renderDeletePlan();
+        dialog.replaceChildren(
+            node("h2",tr("delete_preview_title")),
+            node("p",tr("country")+": "+(current.country?.name||tr("unknown"))),
+            node("p",tr("mode_readonly_note")),
+            node("h4",tr("before_after_before")),
+            renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}),
+            node("h4",tr("before_after_after")),
+            removing,remainingNote,planBox,footer
+        );
+        dialog.showModal();
+    }
+    async function openWizard(wizardOptions=null) {
+        const opts=wizardOptions&&typeof wizardOptions==="object"&&!("isTrusted" in wizardOptions)?wizardOptions:{};
+        const actionMode=opts.mode==="EDIT"||opts.mode==="DELETE_AND_RECREATE"?opts.mode:"CREATE";
+        const targetIndex=actionMode!=="CREATE"&&Number.isSafeInteger(opts.targetIndex)?opts.targetIndex:null;
         let current;
         try { current=await readContext(sdk); } catch (_) {return;}
         if (!current || !availableDirections(current.segment).length) return;
@@ -2467,6 +2889,43 @@
         const redSchedule={
             startDate:"",endDate:"",weekdays:[...WEEKDAYS],allDay:true,
             slots:[{fromTime:"08:00",toTime:"18:00"}]
+        };
+        if(targetIndex!==null){
+            const targetRow=current.segment?.restrictions?.[targetIndex-1];
+            if(!canDeleteExistingRestrictionInWizard(targetRow)){
+                dialog.replaceChildren(
+                    node("p",tr("edit_target_not_editable")),
+                    button(tr("close"),()=>dialog.close())
+                );
+                dialog.showModal();
+                return;
+            }
+            if(actionMode==="EDIT"){
+                const pre=preloadExistingRestrictionToWizard(targetRow,current.segment,current.permits);
+                if(!pre.editableInWizard||!pre.preloaded){
+                    dialog.replaceChildren(
+                        node("p",tr("edit_guided_unavailable")+": "+pre.blockers.map(tr).join("; ")),
+                        button(tr("close"),()=>dialog.close())
+                    );
+                    dialog.showModal();
+                    return;
+                }
+                Object.assign(draft,pre.preloaded.draft);
+                for(const [k,v] of Object.entries(pre.preloaded.vehicleRules)){
+                    vehicleRules[k]={...v,permitIds:[...v.permitIds]};
+                }
+                motorDraft.enabled=pre.preloaded.motorDraft.enabled;
+                motorDraft.conditions=[...pre.preloaded.motorDraft.conditions];
+                redSchedule.startDate=pre.preloaded.redSchedule.startDate;
+                redSchedule.endDate=pre.preloaded.redSchedule.endDate;
+                redSchedule.weekdays=[...pre.preloaded.redSchedule.weekdays];
+                redSchedule.allDay=pre.preloaded.redSchedule.allDay;
+                redSchedule.slots=pre.preloaded.redSchedule.slots.map(s=>({...s}));
+            }
+        }
+        const remainingSegmentFor=seg=>{
+            if(targetIndex===null||!Array.isArray(seg?.restrictions))return seg;
+            return {...seg,restrictions:seg.restrictions.filter((_,idx)=>idx!==targetIndex-1)};
         };
         const emptyRule=()=>({
             requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
@@ -2544,10 +3003,16 @@
                 planBox.replaceChildren(node("h5",tr("plan_title")));
                 let plan;
                 try{
-                    plan=buildStructuredBeforeAfterPlan(
-                        draft,current.segment,redSchedule,vehicleRules,current.permits,motorDraft,
-                        {access:current.access,engineChecks}
-                    );
+                    plan=targetIndex!==null?
+                        buildExistingActionPlan(
+                            "REPLACE",targetIndex,current.segment,
+                            {draft,schedule:redSchedule,vehicleRules,permits:current.permits,motorDraft},
+                            {mode:actionMode,access:current.access,engineChecks}
+                        ):
+                        buildStructuredBeforeAfterPlan(
+                            draft,current.segment,redSchedule,vehicleRules,current.permits,motorDraft,
+                            {access:current.access,engineChecks}
+                        );
                 }catch(_){
                     planBox.append(node("p",tr("plan_blocked")));
                     return;
@@ -2556,6 +3021,11 @@
                 summaryLine.style.cssText="font-weight:600;color:"+
                     (plan.status==="CANDIDATE_COMPLETE"?"#17603c":"#991b1b")+";";
                 planBox.append(summaryLine);
+                if(targetIndex!==null){
+                    const removedLine=node("p",tr("delete_preview_removing")+": "+tr("existing_rule")+" "+targetIndex);
+                    removedLine.style.cssText="margin:5px 0;color:#991b1b;font-weight:600;";
+                    planBox.append(removedLine);
+                }
                 if(Array.isArray(plan.retained)&&plan.retained.length){
                     const list=node("ul");
                     list.style.cssText="padding-left:20px;margin:6px 0;";
@@ -2626,10 +3096,17 @@
             }
             details.append(node("h4",tr("before_after_after")));
             const retained=preview.after.retained;
-            if(retained===null)details.append(node("p",tr("before_after_unknown")));
-            else if(!retained.length)details.append(node("p",tr("preservation_none")));
+            if(targetIndex!==null){
+                const rm=node("p",tr("delete_preview_removing")+": "+tr("existing_rule")+" "+targetIndex);
+                rm.style.cssText="color:#991b1b;font-weight:600;";
+                details.append(rm);
+            }
+            const keptList=Array.isArray(retained)&&targetIndex!==null?
+                retained.filter(index=>index!==targetIndex):retained;
+            if(keptList===null)details.append(node("p",tr("before_after_unknown")));
+            else if(!keptList.length)details.append(node("p",tr(targetIndex!==null?"delete_preview_none_left":"preservation_none")));
             else{
-                const names=retained.map(index=>tr("existing_rule")+" "+index);
+                const names=keptList.map(index=>tr("existing_rule")+" "+index);
                 details.append(node("p",tr("before_after_retained")+" · "+names.join(", ")),
                     node("p",tr(conversion.preservation.status==="UNKNOWN"?"preservation_unknown":"preservation_roundtrip")),
                     engineGaps);
@@ -2791,7 +3268,7 @@
         function currentConflictGate(targetSegment=current.segment){
             try{
                 return evaluateConflictGate(previewRestrictionConflicts(
-                    draft,targetSegment,redSchedule,{vehicleRules,motorDraft}
+                    draft,remainingSegmentFor(targetSegment),redSchedule,{vehicleRules,motorDraft}
                 ));
             }catch(_){
                 return evaluateConflictGate(null);
@@ -2831,6 +3308,19 @@
         }
         function render(){
             dialog.replaceChildren(node("h2",tr("launch")),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
+            if(targetIndex!==null){
+                const banner=node("div");
+                banner.dataset.guidedActionBanner=actionMode;
+                banner.style.cssText="margin:8px 0;padding:8px 10px;border:2px solid "+
+                    (actionMode==="EDIT"?"#2563eb":"#d97706")+";border-radius:8px;background:"+
+                    (actionMode==="EDIT"?"#eff6ff":"#fffbeb")+";color:"+
+                    (actionMode==="EDIT"?"#1e3a8a":"#78350f")+";font-size:13px;";
+                const label=node("strong",tr(actionMode==="EDIT"?"mode_edit_banner":"mode_recreate_banner")+
+                    " "+tr("existing_rule")+" "+targetIndex);
+                label.style.display="block";
+                banner.append(label,node("span",tr("mode_readonly_note")));
+                dialog.append(banner);
+            }
             if(step===0) {
                 const existingAlert=renderExistingAlert(current.segment);
                 if(existingAlert)dialog.append(existingAlert);
@@ -3095,7 +3585,7 @@
                     if(!redSchedule.allDay&&redSchedule.slots.some(crossesMidnight))
                         feedback.append(node("p",tr("schedule_overnight")));
                     if(isScheduleValid()){
-                        feedback.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
+                        feedback.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));
                         const gate=currentConflictGate();
                         if(gate.blocked){
                             const blockBox=node("div");
@@ -3338,7 +3828,7 @@
                         tr("lane_special_pending"):tr("lane_none_requested")),
                     node("p",tr("lane_caution")));
                 dialog.append(laneBox);
-                dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
+                dialog.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));
                 const details=node("details");
                 details.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
                     "padding:10px;margin-top:12px;background:#f8fafc;";

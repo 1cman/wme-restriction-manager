@@ -1463,7 +1463,7 @@ assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segm
 assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));') &&
  src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
  'Existing restrictions remain accessible in the final review');
-assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));'),
+assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));'),
  'Conflict review must be visible before and in the final summary');
 assert.ok(src.includes('nativeRestrictionAction(') &&
  src.includes('anchor.click();') &&
@@ -2346,6 +2346,167 @@ assert.ok(src.includes('const renderPlanStatus=(engineChecks=null)=>{') &&
  src.includes('planBox.dataset.guidedPlanStatus="true";') &&
  src.includes('renderPlanStatus(new Map(review.rows.map(row=>[row.index,row])));'),
  'Before/After preview must render redacted Fase 1 plan status and refresh on opt-in engine review');
+// Alpha 45 (Fase 2): read-only guided edit preload, delete eligibility and DELETE / REPLACE action plans.
+assert.equal(a.canDeleteExistingRestrictionInWizard({editable:true}),true);
+assert.equal(a.canDeleteExistingRestrictionInWizard({editable:false}),false);
+assert.equal(a.canDeleteExistingRestrictionInWizard({}),false);
+assert.equal(a.canDeleteExistingRestrictionInWizard(null),false);
+const throwingEditable={};
+Object.defineProperty(throwingEditable,'editable',{get(){throw Error('boom');}});
+assert.equal(a.canDeleteExistingRestrictionInWizard(throwingEditable),false);
+const f2SegTwoWay={id:50,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[]};
+const f2SegOneWay={id:51,isAtoB:true,isBtoA:false,isTwoWay:false,isDrivable:true,restrictions:[]};
+const f2Permits=[{id:'sub-secret-1',name:'ZTL Residenti'},{id:'ztl-a',name:'ZTL A'}];
+// Preload Red all-blocked all-day.
+const f2RedAllRes=makeLiveSdkRestriction({
+ defaultType:'BLOCKED',vehicleRules:{},
+ timeFrames:[makeLiveSdkFrame({fromTime:null,toTime:null,weekdays:['MONDAY','FRIDAY']})]
+});
+const f2PreRedAll=a.preloadExistingRestrictionToWizard(f2RedAllRes,f2SegTwoWay,f2Permits);
+assert.equal(f2PreRedAll.editableInWizard,true);
+assert.equal(f2PreRedAll.saveAllowed,false);
+assert.equal(f2PreRedAll.verified,false);
+assert.deepEqual(f2PreRedAll.preloaded.draft,{
+ direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]
+});
+assert.equal(f2PreRedAll.preloaded.redSchedule.allDay,true);
+assert.deepEqual(f2PreRedAll.preloaded.redSchedule.weekdays,['MONDAY','FRIDAY']);
+assert.equal(f2PreRedAll.preloaded.recordedTimeZone,'Europe/Rome');
+// Preload Red selected vehicles with two daytime slots.
+const f2RedSelRes=makeLiveSdkRestriction({
+ defaultType:'FREE',direction:'REV',laneScope:'RIGHT_LANE',
+ vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['TAXI','PRIVATE']})]},
+ timeFrames:[
+  makeLiveSdkFrame({startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'08:00',toTime:'12:00',weekdays:['MONDAY','WEDNESDAY']}),
+  makeLiveSdkFrame({startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'14:00',toTime:'18:00',weekdays:['WEDNESDAY','MONDAY']})
+ ]
+});
+const f2PreRedSel=a.preloadExistingRestrictionToWizard(f2RedSelRes,f2SegTwoWay,f2Permits);
+assert.equal(f2PreRedSel.editableInWizard,true);
+assert.deepEqual(f2PreRedSel.preloaded.draft,{
+ direction:'REV',scope:'right',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['PRIVATE','TAXI']
+});
+assert.equal(f2PreRedSel.preloaded.redSchedule.allDay,false);
+assert.deepEqual(f2PreRedSel.preloaded.redSchedule.slots,[{fromTime:'08:00',toTime:'12:00'},{fromTime:'14:00',toTime:'18:00'}]);
+// Preload Green allowed with independent per-vehicle pass/occupancy (PRIVATE pass does NOT leak to EV).
+const f2GreenRes=makeLiveSdkRestriction({
+ defaultType:'BLOCKED',
+ vehicleRules:{
+  FREE:[
+   makeLiveSdkRule({vehicleTypes:['PRIVATE'],subscriptions:['sub-secret-1'],minPassengers:3}),
+   makeLiveSdkRule({vehicleTypes:['EV'],subscriptions:[],minPassengers:0})
+  ]
+ }
+});
+const f2PreGreen=a.preloadExistingRestrictionToWizard(f2GreenRes,f2SegTwoWay,f2Permits);
+assert.equal(f2PreGreen.editableInWizard,true);
+assert.equal(f2PreGreen.preloaded.draft.restrictionType,'ALLOWED');
+assert.deepEqual(f2PreGreen.preloaded.draft.vehicleTypes,['PRIVATE','EV']);
+assert.deepEqual(f2PreGreen.preloaded.vehicleRules.PRIVATE,{
+ requiresPass:true,requiresOccupancy:true,permitIds:['sub-secret-1'],minPassengers:3
+});
+assert.deepEqual(f2PreGreen.preloaded.vehicleRules.EV,{
+ requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
+});
+// Preload fail-closed checks: editable:false, motorcycle, description, PUBLIC_TRANSPORTATION, unknown pass, TOLL, special lane, advanced schedule, overnight, unavailable direction.
+assert.equal(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({editable:false}),f2SegTwoWay,f2Permits).editableInWizard,false);
+assert.ok(a.preloadExistingRestrictionToWizard(motoExisting,f2SegTwoWay,f2Permits).blockers.includes('native_engine_review'));
+assert.equal(a.preloadExistingRestrictionToWizard(motoExisting,f2SegTwoWay,f2Permits,{engineCheck:{status:'MATCH',count:0}}).editableInWizard,true);
+assert.ok(a.preloadExistingRestrictionToWizard(motoExisting,f2SegTwoWay,f2Permits,{engineCheck:{status:'MATCH',count:2}}).blockers.includes('serializer_engine_gap'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({description:'Custom note'}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_description'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:['PUBLIC_TRANSPORTATION']})]}
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_vehicle_rules'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:['PRIVATE'],subscriptions:['missing-pass']})]}
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_unknown_permit'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({defaultType:'TOLL'}),f2SegTwoWay,f2Permits).blockers.includes('serializer_toll_pending'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({laneType:'HOV'}),f2SegTwoWay,f2Permits).blockers.includes('serializer_special_lane'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({repeatYearly:true})]
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_schedule'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({dayAlternation:'EVEN_DAYS'})]
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_schedule'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({fromTime:'22:00',toTime:'06:00'})]
+}),f2SegTwoWay,f2Permits).blockers.includes('serializer_overnight_unverified'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({direction:'REV'}),f2SegOneWay,f2Permits).blockers.includes('edit_preload_direction'));
+// buildExistingActionPlan — DELETE single restriction, DELETE keeping clean sibling, DELETE blocked by locked/moto sibling or locked target.
+const f2DelOnly=a.buildExistingActionPlan('DELETE',1,{...f2SegTwoWay,restrictions:[f2RedAllRes]},null,{access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2DelOnly.status,'CANDIDATE_COMPLETE');
+assert.equal(f2DelOnly.saveAllowed,false);
+assert.equal(f2DelOnly.verified,false);
+assert.deepEqual(f2DelOnly.candidateRestrictions,[]);
+assert.deepEqual(f2DelOnly.safe12,{restrictions:0,timeFrames:0,overLimit:false});
+assert.deepEqual(f2DelOnly.removed,[{index:1,action:'REMOVE',editable:true}]);
+const f2TwoSeg={...f2SegTwoWay,restrictions:[f2RedAllRes,f2RedSelRes]};
+const f2DelFirst=a.buildExistingActionPlan('DELETE',1,f2TwoSeg,null,{access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2DelFirst.status,'CANDIDATE_COMPLETE');
+assert.equal(f2DelFirst.retained.length,1);
+assert.equal(f2DelFirst.retained[0].index,2);
+assert.equal(f2DelFirst.candidateRestrictions.length,1);
+assert.equal(f2DelFirst.candidateRestrictions[0].direction,'REV');
+const f2DelBlockedByLockedSibling=a.buildExistingActionPlan('DELETE',1,{
+ ...f2SegTwoWay,restrictions:[f2RedAllRes,makeLiveSdkRestriction({editable:false,direction:'REV'})]
+});
+assert.equal(f2DelBlockedByLockedSibling.status,'BLOCKED');
+assert.equal(f2DelBlockedByLockedSibling.candidateRestrictions,null);
+assert.ok(f2DelBlockedByLockedSibling.blockers.includes('preservation_field_permission'));
+const f2DelLockedTarget=a.buildExistingActionPlan('DELETE',1,{
+ ...f2SegTwoWay,restrictions:[makeLiveSdkRestriction({editable:false})]
+});
+assert.equal(f2DelLockedTarget.status,'BLOCKED');
+assert.ok(f2DelLockedTarget.blockers.includes('edit_target_not_editable'));
+// buildExistingActionPlan — REPLACE (EDIT): modifying FWD row does NOT self-conflict, while colliding with REV sibling DOES block!
+const f2EditDraftState={
+ draft:{direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['PRIVATE']},
+ schedule:{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'09:00',toTime:'17:00'}]},
+ vehicleRules:{},permits:f2Permits,motorDraft:{enabled:false,conditions:[]}
+};
+const f2EditOk=a.buildExistingActionPlan('REPLACE',1,f2TwoSeg,f2EditDraftState,{mode:'EDIT',access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2EditOk.status,'CANDIDATE_COMPLETE');
+assert.equal(f2EditOk.mode,'EDIT');
+assert.equal(f2EditOk.saveAllowed,false);
+assert.equal(f2EditOk.verified,false);
+assert.equal(f2EditOk.conflictGate.blocked,false);
+assert.equal(f2EditOk.candidateRestrictions.length,2);
+assert.equal(f2EditOk.candidateRestrictions[0].direction,'FWD');
+assert.equal(f2EditOk.candidateRestrictions[1].direction,'REV');
+const f2EditConflictsSibling=a.buildExistingActionPlan('REPLACE',1,f2TwoSeg,{
+ ...f2EditDraftState,
+ draft:{...f2EditDraftState.draft,direction:'REV'},
+ schedule:{startDate:'2026-05-01',endDate:'2026-05-31',weekdays:['MONDAY'],allDay:true,slots:[]}
+},{mode:'EDIT',access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2EditConflictsSibling.status,'BLOCKED');
+assert.equal(f2EditConflictsSibling.candidateRestrictions,null);
+assert.ok(f2EditConflictsSibling.blockers.includes('conversion_conflict_blocked'));
+// DELETE_AND_RECREATE can replace an editable restriction that cannot be preloaded in-place (e.g. PUBLIC_TRANSPORTATION).
+const f2ComplexEditable=makeLiveSdkRestriction({
+ editable:true,vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:['PUBLIC_TRANSPORTATION']})]}
+});
+const f2RecreateOk=a.buildExistingActionPlan('REPLACE',1,{...f2SegTwoWay,restrictions:[f2ComplexEditable]},f2EditDraftState,{mode:'DELETE_AND_RECREATE'});
+assert.equal(f2RecreateOk.status,'CANDIDATE_COMPLETE');
+assert.equal(f2RecreateOk.mode,'DELETE_AND_RECREATE');
+assert.equal(f2RecreateOk.candidateRestrictions.length,1);
+// REPLACE targeting locked editable:false or exceeding SAFE12 must block.
+assert.ok(a.buildExistingActionPlan('REPLACE',1,{
+ ...f2SegTwoWay,restrictions:[makeLiveSdkRestriction({editable:false})]
+},f2EditDraftState).blockers.includes('edit_target_not_editable'));
+assert.ok(a.buildExistingActionPlan('REPLACE',1,{
+ ...f2SegTwoWay,
+ restrictions:[f2RedAllRes,...Array.from({length:11},()=>makeLiveSdkRestriction({direction:'REV'}))]
+},{
+ ...f2EditDraftState,
+ schedule:{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'10:00'},{fromTime:'12:00',toTime:'14:00'}]}
+}).blockers.includes('conversion_overbudget'));
+// UI wiring & read-only invariants for Fase 2.
+assert.ok(src.includes('async function openDeletePreview(targetIndex)') &&
+ src.includes('actionsBox.dataset.guidedExistingActions="true";') &&
+ src.includes('banner.dataset.guidedActionBanner=actionMode;') &&
+ src.includes('const remainingSegmentFor=seg=>{') &&
+ src.includes('renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft})'),
+ 'Fase 2 UI must expose guided edit/delete/recreate preview controls and exclude only targetIndex from conflict screening');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;
