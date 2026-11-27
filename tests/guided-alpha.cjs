@@ -2507,7 +2507,192 @@ assert.ok(src.includes('async function openDeletePreview(targetIndex)') &&
  src.includes('const remainingSegmentFor=seg=>{') &&
  src.includes('renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft})'),
  'Fase 2 UI must expose guided edit/delete/recreate preview controls and exclude only targetIndex from conflict screening');
+// Alpha 46: dynamic launch button label (Create vs Edit) + runtime DOM regression checks.
+assert.equal(a.launchButtonLabelKey(null),'launch');
+assert.equal(a.launchButtonLabelKey({restrictions:[]}),'launch');
+assert.equal(a.launchButtonLabelKey({restrictions:[f2RedAllRes]}),'launch_existing');
+assert.equal(a.launchButtonLabelKey({restrictions:null}),'launch_existing');
+assert.equal(a.labels.launch_existing[0],'Modifica restrizione guidata');
+assert.equal(a.labels.launch_existing.length,6);
 (async()=>{
+ // Minimal fake-DOM VM harness executing the full UI path (no real timers/network/writes)
+ // to catch runtime ReferenceErrors like the Alpha 45 renderExistingRestrictionList bug.
+ const makeEl=(tag)=>{
+  const el={
+   tagName:tag.toUpperCase(),id:'',type:'',value:'',checked:false,disabled:false,open:false,
+   hidden:false,style:{},dataset:{},attrs:Object.create(null),listeners:Object.create(null),
+   children:[],parentElement:null,_text:'',
+   get textContent(){return this.children.length?this._text+this.children.map(c=>c.textContent).join(''):this._text;},
+   set textContent(v){this._text=String(v??'');this.children=[];},
+   get innerText(){return this.textContent;},
+   get isConnected(){let p=this;while(p){if(p===fakeDoc.body)return true;p=p.parentElement;}return false;},
+   get previousElementSibling(){
+    if(!this.parentElement)return null;
+    const i=this.parentElement.children.indexOf(this);
+    return i>0?this.parentElement.children[i-1]:null;
+   },
+   setAttribute(k,v){this.attrs[k]=String(v);},
+   getAttribute(k){return this.attrs[k]??null;},
+   removeAttribute(k){delete this.attrs[k];},
+   addEventListener(ev,fn){(this.listeners[ev]??=[]).push(fn);},
+   click(){for(const fn of (this.listeners.click||[]))fn({stopPropagation(){},preventDefault(){}});},
+   getClientRects(){return this.isConnected?[{}]:[];},
+   contains(other){if(other===this)return true;return this.children.some(c=>c.contains?.(other));},
+   closest(sel){
+    const parts=sel.split(',').map(s=>s.trim());
+    let p=this;
+    while(p){
+     for(const s of parts){
+      if(s.startsWith('#')&&p.id===s.slice(1))return p;
+      if(s==='dialog'&&p.tagName==='DIALOG')return p;
+      if(s==='[role="dialog"]'&&p.attrs.role==='dialog')return p;
+     }
+     p=p.parentElement;
+    }
+    return null;
+   },
+   append(...items){
+    for(const item of items){
+     if(!item)continue;
+     if(item.parentElement)item.remove();
+     item.parentElement=this;
+     this.children.push(item);
+    }
+   },
+   replaceChildren(...items){
+    for(const c of this.children)c.parentElement=null;
+    this.children=[];
+    this._text='';
+    this.append(...items);
+   },
+   remove(){
+    if(!this.parentElement)return;
+    const i=this.parentElement.children.indexOf(this);
+    if(i>=0)this.parentElement.children.splice(i,1);
+    this.parentElement=null;
+   },
+   insertAdjacentElement(pos,child){
+    if(pos==='afterend'&&this.parentElement){
+     if(child.parentElement)child.remove();
+     const i=this.parentElement.children.indexOf(this);
+     child.parentElement=this.parentElement;
+     this.parentElement.children.splice(i+1,0,child);
+    }
+   },
+   showModal(){this.open=true;},
+   close(){this.open=false;},
+   querySelectorAll(sel){
+    const out=[];
+    const selectors=sel.split(',').map(s=>s.trim());
+    const matches=n=>selectors.some(s=>{
+     if(s.startsWith('#'))return n.id===s.slice(1);
+     if(s==='[role="button"]')return n.attrs?.role==='button';
+     if(s==='[role="link"]')return n.attrs?.role==='link';
+     if(s==='[data-guided-next="true"]')return n.dataset?.guidedNext==='true';
+     return n.tagName===s.toUpperCase();
+    });
+    const walk=n=>{for(const c of (n.children||[])){if(matches(c))out.push(c);walk(c);}};
+    walk(this);
+    return out;
+   },
+   querySelector(sel){return this.querySelectorAll(sel)[0]||null;}
+  };
+  return el;
+ };
+ const fakeBody=makeEl('body');
+ const nativePanel=makeEl('div');
+ const nativeAnchor=makeEl('button');
+ nativeAnchor.textContent='Aggiungi restrizioni';
+ nativePanel.append(nativeAnchor);
+ const tabPane=makeEl('div');
+ const tabLabel=makeEl('span');
+ fakeBody.append(nativePanel,tabPane);
+ const fakeDoc={
+  hidden:false,body:fakeBody,
+  createElement:tag=>makeEl(tag),
+  createTextNode:text=>{const n=makeEl('#text');n._text=String(text??'');return n;},
+  getElementById:id=>fakeBody.querySelector('#'+id),
+  querySelectorAll:sel=>fakeBody.querySelectorAll(sel),
+  querySelector:sel=>fakeBody.querySelector(sel)
+ };
+ let activeSeg={id:101,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ let refreshCb=null;
+ const warnings=[];
+ const fakeSdk={
+  Settings:{getLocale:async()=>({localeCode:'it'})},
+  Sidebar:{registerScriptTab:async()=>({tabPane,tabLabel})},
+  Editing:{getSelection:async()=>({objectType:'segment',ids:[activeSeg.id]})},
+  DataModel:{
+   Segments:{
+    getById:async()=>activeSeg,
+    getAddress:async()=>({country:{id:106,name:'Italy'}}),
+    hasPermissions:async()=>true,
+    isRoadTypeDrivable:async()=>true,
+    isTollSegment:async()=>false
+   },
+   Countries:{getById:async()=>({restrictionSubscriptions:f2Permits})}
+  }
+ };
+ const fakeWin={getWmeSdk:()=>fakeSdk};
+ vm.runInNewContext(src,{
+  document:fakeDoc,window:fakeWin,unsafeWindow:fakeWin,
+  setInterval:fn=>{refreshCb=fn;return 1;},
+  setTimeout,clearTimeout,
+  console:{warn:(...args)=>warnings.push(args.join(' ')),log(){},error(){}}
+ });
+ await new Promise(r=>setTimeout(r,20));
+ assert.equal(warnings.length,0,'UI startup/refresh must not warn: '+warnings.join('; '));
+ const nativeBtnEmpty=fakeDoc.getElementById('rm-guided-alpha-native');
+ assert.ok(nativeBtnEmpty,'Native panel button must appear on empty segment');
+ assert.equal(nativeBtnEmpty.textContent,'Crea restrizione guidata');
+ const rootEl=fakeDoc.getElementById('rm-guided-alpha-root');
+ const sideButtonsEmpty=rootEl.querySelectorAll('button');
+ assert.ok(sideButtonsEmpty.some(b=>b.textContent==='Crea restrizione guidata'),
+  'Sidebar launch button must show Crea restrizione guidata when no restrictions exist');
+ // Switch to a segment WITH existing restrictions (editable:true + editable:false).
+ activeSeg={
+  id:102,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,
+  restrictions:[f2RedAllRes,makeLiveSdkRestriction({editable:false,direction:'REV'})]
+ };
+ nativeAnchor.textContent='Modifica restrizioni';
+ assert.equal(typeof refreshCb,'function');
+ await refreshCb();
+ assert.equal(warnings.length,0,'Refresh on segment with existing restrictions must not throw/warn: '+warnings.join('; '));
+ const nativeBtnExisting=fakeDoc.getElementById('rm-guided-alpha-native');
+ assert.ok(nativeBtnExisting,'Native panel button must stay visible on segment with existing restrictions');
+ assert.equal(nativeBtnExisting.textContent,'Modifica restrizione guidata');
+ const sideButtonsExisting=rootEl.querySelectorAll('button');
+ assert.ok(sideButtonsExisting.some(b=>b.textContent==='Modifica restrizione guidata'),
+  'Sidebar launch button must switch to Modifica restrizione guidata when existing restrictions are present');
+ const editBtn=sideButtonsExisting.find(b=>b.textContent===a.labels.edit_guided_btn[0]);
+ const recreateBtn=sideButtonsExisting.find(b=>b.textContent===a.labels.delete_recreate_btn[0]);
+ const deleteBtn=sideButtonsExisting.find(b=>b.textContent===a.labels.delete_preview_btn[0]);
+ assert.ok(editBtn&&recreateBtn&&deleteBtn,
+  'Per-restriction Fase 2 buttons must render for editable:true rows');
+ assert.ok(rootEl.textContent.includes(a.labels.edit_locked_note[0]),
+  'Locked editable:false row must show non-editable note instead of edit buttons');
+ // Exercise clicking "Modifica guidata (anteprima)" and "Elimina (anteprima)" live in fake DOM.
+ editBtn.click();
+ await new Promise(r=>setTimeout(r,20));
+ const editDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(editDialog&&editDialog.open,'Clicking Modifica guidata must open wizard dialog');
+ assert.equal(editDialog.querySelector('h2').textContent,'Modifica restrizione guidata');
+ assert.ok(editDialog.children.some(c=>c.dataset?.guidedActionBanner==='EDIT'),
+  'Guided edit dialog must display EDIT action banner');
+ deleteBtn.click();
+ await new Promise(r=>setTimeout(r,20));
+ const delDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(delDialog&&delDialog.open,'Clicking Elimina (anteprima) must open delete preview dialog');
+ assert.ok(delDialog.children.some(c=>c.dataset?.guidedDeletePlan==='true'),
+  'Delete preview dialog must render structured Before/After plan');
+ // Switching back to a segment without restrictions must restore "Crea restrizione guidata" in-place.
+ activeSeg={id:103,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ nativeAnchor.textContent='Aggiungi restrizioni';
+ await refreshCb();
+ assert.equal(fakeDoc.getElementById('rm-guided-alpha-native').textContent,'Crea restrizione guidata');
+ assert.ok(rootEl.querySelectorAll('button').some(b=>b.textContent==='Crea restrizione guidata'));
+ assert.equal(warnings.length,0,'No warnings allowed during guided edit/delete preview interactions');
+
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;
  const countrySdk={DataModel:{Countries:{getById:async ({countryId})=>{

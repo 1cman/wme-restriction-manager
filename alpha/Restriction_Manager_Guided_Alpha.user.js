@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.45
+// @version      4.0.0-alpha.46
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.45";
+    const VERSION = "4.0.0-alpha.46";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -70,6 +70,7 @@
     const LANGS = ["it", "en", "fr", "es", "de", "pt"];
     const labels = {
         launch:["Crea restrizione guidata","Create guided restriction","Créer une restriction guidée","Crear restricción guiada","Beschränkung geführt erstellen","Criar restrição guiada"],
+        launch_existing:["Modifica restrizione guidata","Edit guided restriction","Modifier une restriction guidée","Editar restricción guiada","Beschränkung geführt bearbeiten","Editar restrição guiada"],
         test:["Alpha di sola lettura: nessuna modifica alla mappa o ai preset.","Read-only alpha: no map or preset changes.","Alpha en lecture seule : aucune modification de la carte ou des préréglages.","Alfa de solo lectura: sin cambios en el mapa ni en los preajustes.","Schreibgeschützte Alpha: keine Karten- oder Vorlagenänderungen.","Alfa só de leitura: sem alterações no mapa ou nas predefinições."],
         select:["Seleziona un solo segmento.","Select exactly one segment.","Sélectionnez un seul segment.","Selecciona un solo segmento.","Wähle genau ein Segment.","Seleciona apenas um segmento."],
         country:["Paese del segmento","Segment country","Pays du segment","País del segmento","Land des Segments","País do segmento"],
@@ -1596,6 +1597,10 @@
         return {present:listed.entries.length>0,unknown:false,
             count:listed.entries.length,verified:false};
     }
+    function launchButtonLabelKey(segment) {
+        if(!segment)return "launch";
+        return inspectExistingRestrictionNotice(segment).present?"launch_existing":"launch";
+    }
     // Never allow creating an additional restriction when conflict screening
     // finds a potential conflict, overlap, or cannot prove separation.
     function evaluateConflictGate(report) {
@@ -2335,7 +2340,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,launchButtonLabelKey,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -2376,12 +2381,13 @@
         if (!context || !availableDirections(context.segment).length) { removeNative(); return false; }
         const anchor = findNativeAnchor();
         if (!anchor?.parentElement) { removeNative(); return false; }
+        const labelText=tr(launchButtonLabelKey(context.segment));
         if (nativeButton?.isConnected && nativeButton.previousElementSibling === anchor) {
-            if (nativeButton.textContent !== tr("launch")) nativeButton.textContent=tr("launch");
+            if (nativeButton.textContent !== labelText) nativeButton.textContent=labelText;
             return true;
         }
         removeNative();
-        nativeButton=button(tr("launch"),event=>{
+        nativeButton=button(labelText,event=>{
             // An unlabelled WME click target may wrap the "Edit restrictions"
             // text; never let our click bubble into its native edit handler.
             event.stopPropagation();
@@ -2410,7 +2416,8 @@
         if(dialog?.open)dialog.close();
         anchor.click();
     }
-    function renderExistingRestrictionList(segment,expanded=false,{onEngineReview,beforeRead}={}){
+    function renderExistingRestrictionList(segment,expanded=false,options={}){
+        const {onEngineReview,beforeRead,allowGuidedActions,permits}=options||{};
         const data=listExistingRestrictions(segment);
         const wrap=node("details");
         wrap.open=expanded;
@@ -2551,7 +2558,7 @@
                     item.append(p);
                 }
             }
-            if(options.allowGuidedActions??showHeader){
+            if(allowGuidedActions??expanded){
                 const nativeRow=segment?.restrictions?.[entry.index-1];
                 const actionsBox=node("div");
                 actionsBox.dataset.guidedExistingActions="true";
@@ -2561,9 +2568,15 @@
                     locked.style.cssText="margin:0;font-size:12px;color:#92400e;font-weight:600;";
                     actionsBox.append(locked);
                 }else{
-                    const preload=preloadExistingRestrictionToWizard(
-                        nativeRow,segment,options.permits??context?.permits??null
-                    );
+                    let preload;
+                    try{
+                        preload=preloadExistingRestrictionToWizard(
+                            nativeRow,segment,permits??context?.permits??null
+                        );
+                    }catch(_){
+                        preload={editableInWizard:false,blockers:["preservation_unknown"],
+                            preloaded:null,saveAllowed:false,verified:false};
+                    }
                     const rowBtns=node("div");
                     rowBtns.style.cssText="display:flex;gap:6px;flex-wrap:wrap;";
                     if(preload.editableInWizard){
@@ -2711,7 +2724,7 @@
         root.append(node("p",tr("observed")+": "+(Array.isArray(context.segment.restrictions)?context.segment.restrictions.length:tr("unknown"))));
         const existingAlert=renderExistingAlert(context.segment);
         if(existingAlert)root.append(existingAlert);
-        const launch=button(tr("launch"),openWizard);
+        const launch=button(tr(launchButtonLabelKey(context.segment)),openWizard);
         launch.disabled=!availableDirections(context.segment).length;
         root.append(launch,node("p",tr("anchor")+": "+(nativeButton?.isConnected?tr("found"):tr("fallback"))));
         root.append(renderExistingRestrictionList(context.segment,true));
@@ -2763,7 +2776,10 @@
                 context?.isTollSegment,availableDirections(context?.segment),
                 restrictionSnapshot(context?.segment,true),injected,canEditNative]);
             if (key!==lastKey) { lastKey=key; renderPanel(); }
-        } catch (_) { context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();} }
+        } catch (err) {
+            console.warn("[RM Guided Alpha] Refresh error:", err?.message || "Unavailable");
+            context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();}
+        }
         finally { refreshing=false; }
     }
     async function openDeletePreview(targetIndex) {
@@ -3307,7 +3323,8 @@
             render();
         }
         function render(){
-            dialog.replaceChildren(node("h2",tr("launch")),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
+            const headingKey=actionMode==="EDIT"?"launch_existing":launchButtonLabelKey(current.segment);
+            dialog.replaceChildren(node("h2",tr(headingKey)),node("p",tr("country")+": "+(current.country?.name || tr("unknown"))),node("p",tr("test")));
             if(targetIndex!==null){
                 const banner=node("div");
                 banner.dataset.guidedActionBanner=actionMode;
