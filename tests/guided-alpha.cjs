@@ -749,10 +749,8 @@ assert.ok(src.includes('if(baselineSnapshot!==latestSnapshot)'),
 assert.ok(src.includes('showDraftContextProblem(check.reason)') &&
  src.includes('showDraftContextProblem(reason)') && src.includes('node("p",tr(reason))'),
  'Stale drafts must show a clear message');
-assert.ok(src.includes('const inspection=inspectRestrictionCapabilities(context.segment);'),
- 'SDK observation belongs in the sidebar, not a write path');
-assert.ok(src.includes('details.append(note);root.append(details);'),
- 'Inspection must communicate its read-only, observed-only limitations');
+assert.ok(!src.includes('node("summary",tr("inspection_title"))'),
+ 'Redundant technical inspection box must stay removed from the cleaned-up sidebar');
 // Alpha 14: a green whitelist must have dates and hours AFTER vehicle-specific conditions.
 assert.ok(src.includes('if(step===5&&(intent==="BLOCKED"||intent==="ALLOWED"))return 7;'),
  'Green advanced conditions must continue to the shared calendar');
@@ -854,13 +852,8 @@ assert.equal(operationOverFrames.projectedRestrictions,4);
 assert.equal(operationOverFrames.projectedFrames,13);
 assert.equal(budgetForCounts(Array(12).fill(allDayRule),[{}]).status,'UNKNOWN');
 assert.equal(a.estimateGuidedOperationBudget(Array(1)).status,'UNKNOWN');
-assert.ok(src.includes('estimateSafe12Budget(') &&
- src.includes('const estimate=conversion.budget;') &&
- src.includes('tr("budget_assumption")'),
- 'Read-only summary must show conservative SAFE12 estimate and assumptions');
-assert.ok(src.includes('tr("budget_unknown")') &&
- src.includes('tr(estimate.status==="OVER"?"budget_over":"budget_within")'),
- 'Budget must be transparent about over-limit and unknown cases');
+assert.ok(src.includes('tr("budget_total")+": "') && !src.includes('const budgetBox=node("section");'),
+ 'Step 6 shows SAFE12 total directly in the Before/After plan without the redundant legacy budgetBox');
 const previewSchedule=a.normalizeRedSchedule({...overnightDraft,slots:[
  ...overnightDraft.slots,{fromTime:'08:00',toTime:'09:00'}
 ]});
@@ -930,12 +923,8 @@ for(const badScope of [null,'unknown','LEFT_LANE']){
 for(const badType of [null,'HOV','bus','invented']){
  assert.throws(()=>a.inspectLaneDraft({scope:'segment',lane:badType},[]),/Invalid special lane type/);
 }
-assert.ok(src.includes('const laneCheck=inspectLaneDraft(draft,current.segment.restrictions);'),
- 'Show lane evidence in guided lane step');
-assert.ok(src.includes('const laneReport=inspectLaneDraft(draft,current.segment.restrictions);'),
- 'Show lane scope candidate in all final summaries');
-assert.ok(src.includes('tr("lane_special_pending")') && src.includes('tr("lane_caution")'),
- 'Warning must distinguish unverified special lane mappings from observed values');
+assert.ok(src.includes('tr("lane_special_pending")') && !src.includes('const laneBox=node("section");'),
+ 'Step 2 warns cleanly on special lanes without the redundant technical lane boxes');
 assertSingleGatedWriteEntry();
 // Alpha 17: WME changes the native panel action when restrictions exist.
 const nativeActions={
@@ -972,7 +961,7 @@ assert.ok(src.includes('if(outer.length>1)return null;') &&
 assert.ok(src.includes('nativeButton.addEventListener("pointerdown",event=>event.stopPropagation());') &&
  src.includes('nativeButton.addEventListener("mousedown",event=>event.stopPropagation());'),
  'A nested guided button must not trigger the WME native edit handler');
-assert.ok(src.includes('root.append(launch,node("p",tr("anchor")'),
+assert.ok(src.includes('root.append(launch);'),
  'The independent sidebar wizard launch must always remain available');
 // Alpha 18: SDK write-contract review must be pure, deterministic and fail closed.
 const conversionSegment={id:901,isAtoB:true,restrictions:[]};
@@ -1081,14 +1070,10 @@ assert.throws(()=>a.reviewSdkConversion({...baseConversion,
 assert.throws(()=>a.reviewSdkConversion({...baseConversion,
  restrictionType:'TOLL',vehicleTypes:[]},conversionSegment,
  conversionSchedule,{},[],noMotor,localeCountry),/TOLL requires/);
-assert.ok(src.includes('const conversion=reviewSdkConversion('),
- 'The wizard summary must show the conversion review');
-assert.ok(src.includes('conversion.sdkWritePayload===null')===false,
- 'The interface must never treat a missing write payload as a positive validation');
-assert.ok(src.includes('node("summary",tr("conversion_title"))'),
- 'The conversion review must have a collapsible accessible heading');
-assert.ok(src.includes('node("p",tr("conversion_blocked"))'),
- 'The conversion review must always warn that saving is unavailable');
+assert.ok(src.includes('const conversion=reviewSdkConversion(') &&
+ !src.includes('node("summary",tr("conversion_title"))') &&
+ !src.includes('node("p",tr("conversion_blocked"))'),
+ 'Step 6 must use the active Phase 3/4A controlled apply box instead of the obsolete always-blocked conversion details');
 assertSingleGatedWriteEntry();
 // Alpha 19: preserve ALL existing native restrictions; never serialize read model
 // as SegmentRestrictionData, and never interpret unknown vehicle rules as writable.
@@ -1322,15 +1307,9 @@ const unknownNativeReview=a.reviewSdkConversion({direction:'FWD',scope:'segment'
 assert.equal(unknownNativeReview.preservation.status,'UNKNOWN');
 assert.ok(unknownNativeReview.blockers.includes('conversion_unknown'));
 assert.ok(unknownNativeReview.blockers.includes('conversion_preservation_gate'));
-assert.ok(src.includes('const audit=conversion.preservation;'),
- 'Read-only summary must show the preservation audit');
-assert.ok(src.includes('for(const entry of audit.entries)')&&src.includes('tr(issue.reason)'),
- 'The summary must show per-restriction findings');
-assert.ok(src.includes('node("h4",tr("preservation_title"))') &&
- src.includes('node("p",tr("preservation_status")'),
- 'Audit heading and status must be localized');
-assert.ok(src.includes('node("p",tr("preservation_warning"))'),
- 'The audit must warn that it never creates a writable SDK payload');
+assert.ok(src.includes('planBox.dataset.guidedPlanStatus="true";') &&
+ !src.includes('node("p",tr("preservation_warning"))'),
+ 'Step 6 shows structured per-restriction preservation status inside Before/After instead of the legacy conversion details');
 assertSingleGatedWriteEntry();
 // Alpha 20: show all existing restrictions and catch only defensible overlaps.
 const existingBase={id:77,isAtoB:true,isBtoA:true,isTwoWay:true,restrictions:[{
@@ -1473,8 +1452,8 @@ assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segm
 assert.ok(src.includes('details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));') &&
  src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
  'Existing restrictions remain accessible in the final review');
-assert.ok(src.includes('dialog.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));'),
- 'Conflict review must be visible before and in the final summary');
+assert.ok(src.includes('feedback.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));'),
+ 'Conflict review must be visible on Step 7 before reaching the final summary');
 assert.ok(src.includes('nativeRestrictionAction(') &&
  src.includes('anchor.click();') &&
  src.includes('if(dialog?.open)dialog.close();'),
@@ -1918,10 +1897,9 @@ const tollUnknownReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentEmpty,
  {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:null});
 assert.equal(tollUnknownReview.tollState.status,'UNKNOWN');
 assert.ok(tollUnknownReview.blockers.includes('conversion_toll_state_unknown'));
-assert.ok(src.includes('node("p",tr("inspection_permissions")+": "+tr(permissionLabel(eligibility)))') &&
- src.includes('node("p",tr("inspection_drivable")+": "+tr(drivableLabel(eligibility)))') &&
- src.includes('node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(tollState)))'),
- 'Sidebar technical inspection must display read-only permissions, drivability and toll state');
+assert.ok(!src.includes('node("p",tr("inspection_permissions")+": "+tr(permissionLabel(eligibility)))') &&
+ src.includes('if(eligibility.hasAnyPermission===false)blockers.push("conversion_no_permission");'),
+ 'Permissions and drivability are enforced directly by the write gate instead of cluttering the sidebar');
 assert.ok(src.includes('if(conversion.plannedHasToll===true){') &&
  src.includes('details.append(node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(conversion.tollState))));'),
  'Before/After preview must show baseline SDK toll state for blue toll drafts');
@@ -2348,11 +2326,11 @@ const f1UnknownSegPlan=a.buildStructuredBeforeAfterPlan(
 assert.equal(f1UnknownSegPlan.status,'BLOCKED');
 assert.equal(f1UnknownSegPlan.existingStatus,'UNKNOWN');
 assert.ok(f1UnknownSegPlan.blockers.includes('preservation_unknown'));
-// UI integration & read-only invariants for Fase 1.
-assert.ok(src.includes('const renderPlanStatus=(engineChecks=null)=>{') &&
+// UI integration & read-only invariants for Fase 1 + Fase 4A automatic motor checks.
+assert.ok(src.includes('const renderPlanStatus=(engineChecks=initialEngineChecks)=>{') &&
  src.includes('planBox.dataset.guidedPlanStatus="true";') &&
- src.includes('renderPlanStatus(new Map(review.rows.map(row=>[row.index,row])));'),
- 'Before/After preview must render redacted Fase 1 plan status and refresh on opt-in engine review');
+ src.includes('renderPlanStatus(autoEngineChecksForSegment(current.segment,targetIndex));'),
+ 'Before/After preview must render plan status and refresh with internal motor preservation checks');
 // Alpha 45 (Fase 2): read-only guided edit preload, delete eligibility and DELETE / REPLACE action plans.
 assert.equal(a.canDeleteExistingRestrictionInWizard({editable:true}),true);
 assert.equal(a.canDeleteExistingRestrictionInWizard({editable:false}),false);
@@ -2946,6 +2924,146 @@ assert.equal(a.labels.launch_existing.length,6);
  assert.equal(f3PureRes.status,'ROLLED_BACK');
  assert.equal(f3PureRes.undone,true);
  assert.equal(f3PureUndo,1);
+ // Alpha 49 (Fase 4A): cleaned-up sidebar check + safe internal preservation of
+ // existing motorcycle engine conditions via ActionManager + restriction.with().
+ assert.ok(!rootEl.textContent.includes(a.labels.inspection_title[0]),
+  'Cleaned-up sidebar must not display the obsolete technical inspection box');
+ assert.ok(!rootEl.textContent.includes(a.labels.anchor[0]),
+  'Cleaned-up sidebar must not display the obsolete native-anchor technical row');
+ const makeInternalMotoRow=(direction,engineCaps)=>{
+  const rawJson={
+   defaultType:'FREE',description:null,direction,laneScope:'WHOLE_SEGMENT',laneType:null,
+   timeFrames:[{startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'08:00',toTime:'18:00',
+    weekdays:['MONDAY'],timeZone:'Europe/Rome',repeatYearly:false,dayAlternation:null}],
+   driveProfiles:{BLOCKED:[{vehicleTypes:['MOTORCYCLE'],subscriptions:[],minPassengers:0,
+    licensePlateRule:null,engineCapacities:engineCaps.map(c=>({...c}))}]}
+  };
+  return {
+   getDriveProfileList(group){
+    if(group!=='BLOCKED')return {getDriveProfiles:()=>[]};
+    return {getDriveProfiles:()=>[{getEngineCapacities:()=>engineCaps.map(c=>({attributes:{...c}}))}]};
+   },
+   toJSON(){return JSON.parse(JSON.stringify(rawJson));},
+   with(patch){
+    const nextCaps=(patch.driveProfiles?.BLOCKED?.[0]?.engineCapacities)||[];
+    return makeInternalMotoRow(patch.direction??direction,nextCaps);
+   }
+  };
+ };
+ const f4MotoCaps=[
+  {vehicleType:'MOTORCYCLE',engineType:'FUEL',operator:'LT',capacityThreshold:150},
+  {vehicleType:'MOTORCYCLE',engineType:'ELECTRIC',operator:'LT',capacityThreshold:11}
+ ];
+ const f4MotoSdkRow=makeLiveSdkRestriction({
+  defaultType:'FREE',direction:'FWD',
+  timeFrames:[makeLiveSdkFrame({startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'08:00',toTime:'18:00',weekdays:['MONDAY'],timeZone:'Europe/Rome'})],
+  vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['MOTORCYCLE']})]}
+ });
+ let f4RawRestrictions=[makeInternalMotoRow('FWD',f4MotoCaps)];
+ let f4SdkSeg={id:950,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[f4MotoSdkRow]};
+ const f4Actions=[];
+ const f4ActionManager={
+  getActions:()=>f4Actions,
+  add(action){
+   f4Actions.push(action);
+   const target=action.subActions.find(s=>s.object.getID()===950);
+   if(target)f4RawRestrictions=target.newAttributes.restrictions;
+  }
+ };
+ const f4Page={
+  W:{model:{
+   actionManager:f4ActionManager,
+   segments:{getObjectById:id=>id===950?{attributes:{restrictions:f4RawRestrictions}}:null}
+  }}
+ };
+ const f4Captured=a.captureInternalMotorPreservation(f4Page,f4SdkSeg);
+ assert.equal(f4Captured.get(1).status,'MATCH');
+ assert.equal(f4Captured.get(1).count,2);
+ assert.ok(f4Captured.get(1).rawJson&&f4Captured.get(1).motorStamp);
+ const f4NewDraft={direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]};
+ const f4NewSched={startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'09:00',toTime:'12:00'}]};
+ const f4BlockedWithoutOptIn=a.buildStructuredBeforeAfterPlan(
+  f4NewDraft,f4SdkSeg,f4NewSched,{},f2Permits,{enabled:false,conditions:[]},
+  {access:f3AccessOk,engineChecks:f4Captured}
+ );
+ assert.equal(f4BlockedWithoutOptIn.status,'BLOCKED');
+ assert.ok(f4BlockedWithoutOptIn.blockers.includes('serializer_engine_gap'));
+ const f4PlanWithMotors=a.buildStructuredBeforeAfterPlan(
+  f4NewDraft,f4SdkSeg,f4NewSched,{},f2Permits,{enabled:false,conditions:[]},
+  {access:f3AccessOk,engineChecks:f4Captured,preserveMotorsWithInternal:true}
+ );
+ assert.equal(f4PlanWithMotors.status,'CANDIDATE_COMPLETE');
+ assert.equal(f4PlanWithMotors.usesInternalMotorPreservation,true);
+ assert.equal(f4PlanWithMotors.internalMotorSpecs.length,2);
+ assert.ok(f4PlanWithMotors.internalMotorSpecs[0]&&f4PlanWithMotors.internalMotorSpecs[1]===null);
+ // Gate must pass with ActionManager and block without it.
+ assert.equal(a.evaluateControlledWriteGate(f4PlanWithMotors,f4SdkSeg,f3AccessOk,{pageWindow:f4Page}).allowed,true);
+ assert.ok(a.evaluateControlledWriteGate(f4PlanWithMotors,f4SdkSeg,f3AccessOk,{pageWindow:{}}).blockers.includes('motor_internal_unavailable'));
+ // Execute controlled write with ActionManager interception preserving the 2 motorcycle engine conditions.
+ const f4BaseSnap=a.restrictionSnapshot(f4SdkSeg,true);
+ const f4OrigAdd=f4ActionManager.add;
+ let f4SaveCalled=false;
+ const f4Sdk={
+  Editing:{undo:async()=>{throw Error('Undo must not run on successful Phase 4A write');},save:async()=>{f4SaveCalled=true;}},
+  DataModel:{Segments:{
+   getById:async()=>f4SdkSeg,
+   updateSegment:async({restrictions})=>{
+    // Simulate WME SDK creating stripped internal rows (0 engine capacities) and passing them to ActionManager.add
+    const strippedInternal=restrictions.map(r=>makeInternalMotoRow(r.direction,[]));
+    const action=new UpdateSegmentsRestrictions(950);
+    action.subActions[0].newAttributes={restrictions:strippedInternal};
+    f4ActionManager.add(action);
+    f4SdkSeg={...f4SdkSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+   }
+  }}
+ };
+ const f4WriteRes=await a.executeControlledSegmentWrite(
+  f4Sdk,f4Page,950,f4PlanWithMotors.candidateRestrictions,f4BaseSnap,
+  {plan:f4PlanWithMotors,access:f3AccessOk,internalMotorSpecs:f4PlanWithMotors.internalMotorSpecs}
+ );
+ assert.equal(f4WriteRes.status,'APPLIED_PENDING');
+ assert.equal(f4WriteRes.verified,true);
+ assert.equal(f4WriteRes.preservedInternalMotors,true);
+ assert.equal(f4SaveCalled,false,'Phase 4A must never auto-save');
+ assert.equal(f4ActionManager.add,f4OrigAdd,'ActionManager.add must always be restored');
+ assert.equal(f4RawRestrictions.length,2);
+ assert.equal(a.extractNormalizedMotorStamp(f4RawRestrictions[0]),f4Captured.get(1).motorStamp,
+  'Retained motorcycle restriction must keep both engine conditions intact after pending apply');
+ // Failure case: if internal model drops motor conditions after apply, executeControlledSegmentWrite rolls back via undo.
+ let f4UndoCount=0;
+ let f4FailSeg={id:951,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[f4MotoSdkRow]};
+ const f4FailBase=a.restrictionSnapshot(f4FailSeg,true);
+ let f4FailRaw=[makeInternalMotoRow('FWD',f4MotoCaps)];
+ const f4FailActions=[];
+ const f4FailMgr={
+  getActions:()=>f4FailActions,
+  add(action){
+   f4FailActions.push(action);
+   // Simulate WME losing engine conditions even after interception
+   f4FailRaw=action.subActions[0].newAttributes.restrictions.map(r=>makeInternalMotoRow('FWD',[]));
+  }
+ };
+ const f4FailPage={W:{model:{actionManager:f4FailMgr,segments:{getObjectById:id=>id===951?{attributes:{restrictions:f4FailRaw}}:null}}}};
+ const f4FailSdk={
+  Editing:{undo:async()=>{f4UndoCount++;f4FailActions.pop();f4FailSeg={...f4FailSeg,restrictions:[f4MotoSdkRow]};f4FailRaw=[makeInternalMotoRow('FWD',f4MotoCaps)];}},
+  DataModel:{Segments:{
+   getById:async()=>f4FailSeg,
+   updateSegment:async({restrictions})=>{
+    const action=new UpdateSegmentsRestrictions(951);
+    action.subActions[0].newAttributes={restrictions:restrictions.map(r=>makeInternalMotoRow(r.direction,[]))};
+    f4FailMgr.add(action);
+    f4FailSeg={...f4FailSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+   }
+  }}
+ };
+ const f4FailRes=await a.executeControlledSegmentWrite(
+  f4FailSdk,f4FailPage,951,f4PlanWithMotors.candidateRestrictions,f4FailBase,
+  {plan:f4PlanWithMotors,access:f3AccessOk,internalMotorSpecs:f4PlanWithMotors.internalMotorSpecs}
+ );
+ assert.equal(f4FailRes.status,'ROLLED_BACK');
+ assert.equal(f4FailRes.undone,true);
+ assert.equal(f4UndoCount,1);
+ assert.ok(f4FailRes.mismatches.includes('motor_preservation_mismatch'));
 
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;

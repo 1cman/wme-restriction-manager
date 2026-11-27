@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.48
-// @description  Guided segment and lane restrictions (Phase 3: controlled pending WME edits for verified SDK cases, manual Save). Separate from stable 3.2.0.
+// @version      4.0.0-alpha.49
+// @description  Guided segment and lane restrictions (Phase 4A: controlled pending WME edits + safe internal preservation of existing motorcycle engine rules, manual Save). Separate from stable 3.2.0.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
 // @match        https://beta.waze.com/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.48";
+    const VERSION = "4.0.0-alpha.49";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -71,7 +71,7 @@
     const labels = {
         launch:["Crea restrizione guidata","Create guided restriction","Créer une restriction guidée","Crear restricción guiada","Beschränkung geführt erstellen","Criar restrição guiada"],
         launch_existing:["Modifica restrizione guidata","Edit guided restriction","Modifier une restriction guidée","Editar restricción guiada","Beschränkung geführt bearbeiten","Editar restrição guiada"],
-        test:["Alpha Fase 3: applica solo modifiche in sospeso verificate su singolo segmento (Salva WME manuale, nessuna modifica ai preset).","Phase 3 Alpha: applies only verified pending edits on a single segment (manual WME Save, no preset changes).","Alpha Phase 3 : applique uniquement des modifications en attente vérifiées sur un segment (Enregistrement WME manuel, sans toucher aux préréglages).","Alfa Fase 3: aplica solo cambios pendientes verificados en un segmento (Guardado WME manual, sin cambiar preajustes).","Alpha Phase 3: wendet nur geprüfte ausstehende Änderungen auf ein Segment an (manuelles WME-Speichern, keine Vorlagenänderungen).","Alfa Fase 3: aplica apenas alterações pendentes verificadas num segmento (Gravação WME manual, sem alterar predefinições)."],
+        test:["Modifiche controllate in sospeso su singolo segmento (Salva WME sempre manuale).","Controlled pending edits on a single segment (WME Save always manual).","Modifications contrôlées en attente sur un segment (Enregistrement WME manuel).","Cambios controlados pendientes en un segmento (Guardado WME manual).","Kontrollierte ausstehende Änderungen auf einem Segment (WME-Speichern manuell).","Alterações controladas pendentes num segmento (Gravação WME manual)."],
         select:["Seleziona un solo segmento.","Select exactly one segment.","Sélectionnez un seul segment.","Selecciona un solo segmento.","Wähle genau ein Segment.","Seleciona apenas um segmento."],
         country:["Paese del segmento","Segment country","Pays du segment","País del segmento","Land des Segments","País do segmento"],
         unknown:["Non rilevato","Not detected","Non détecté","No detectado","Nicht erkannt","Não detetado"],
@@ -348,6 +348,9 @@
         edit_nav_conditions:["Condizioni","Conditions","Conditions","Condiciones","Bedingungen","Condições"],
         edit_nav_schedule:["Date e orari","Dates & times","Dates et horaires","Fechas y horarios","Daten & Zeiten","Datas e horários"],
         edit_nav_summary:["Riepilogo e applica","Summary & apply","Résumé et appliquer","Resumen y aplicar","Übersicht & anwenden","Resumo e aplicar"],
+        motor_preserve_ready:["Conservabile con condizioni motore moto (verifica interna WME attiva)","Preservable with motorcycle engine conditions (internal WME verification active)","Conservable avec conditions moteur moto (vérification interne WME active)","Conservable con condiciones de motor de moto (verificación interna WME activa)","Mit Motorrad-Motorbedingungen erhaltbar (interne WME-Prüfung aktiv)","Conservável com condições de motor de moto (verificação interna WME ativa)"],
+        motor_preserve_notice:["Questa operazione conserva anche le condizioni motore moto tramite modello interno WME, con verifica automatica dopo l'applicazione e annullamento di sicurezza in caso di discrepanza.","This operation also preserves motorcycle engine conditions via the internal WME model, with automatic post-apply verification and safety undo on any mismatch.","Cette opération conserve aussi les conditions moteur moto via le modèle interne WME, avec vérification automatique et annulation de sécurité en cas d'écart.","Esta operación conserva también las condiciones de motor de moto mediante el modelo interno WME, con verificación automática y deshacer de seguridad ante cualquier discrepancia.","Dieser Vorgang erhält auch Motorrad-Motorbedingungen über das interne WME-Modell, inklusive automatischer Prüfung und Rückgängigmachen bei Abweichung.","Esta operação preserva também as condições de motor de moto através do modelo interno WME, com verificação automática e anulação de segurança em caso de discrepância."],
+        motor_internal_unavailable:["Modello interno WME non disponibile: impossibile conservare in sicurezza le condizioni motore moto.","Internal WME model unavailable: cannot safely preserve motorcycle engine conditions.","Modèle interne WME indisponible : impossible de conserver sûrement les conditions moteur moto.","Modelo interno WME no disponible: no se pueden conservar con seguridad las condiciones de motor de moto.","Internes WME-Modell nicht verfügbar: Motorrad-Motorbedingungen können nicht sicher erhalten werden.","Modelo interno WME indisponível: impossível preservar com segurança as condições de motor de moto."],
         calendar_read_check:["Confronta calendario SDK e modello interno","Compare SDK and internal calendars","Comparer les calendriers SDK et interne","Comparar los calendarios del SDK y del modelo interno","SDK-Kalender mit internem Modell vergleichen","Comparar os calendários do SDK e do modelo interno"],
         calendar_read_match:["I campi del calendario coincidono","Calendar fields match","Les champs du calendrier concordent","Los campos del calendario coinciden","Kalenderfelder stimmen überein","Os campos do calendário coincidem"],
         calendar_read_different:["Differenze nei campi del calendario","Calendar fields differ","Les champs du calendrier diffèrent","Los campos del calendario difieren","Kalenderfelder unterscheiden sich","Os campos do calendário diferem"],
@@ -905,6 +908,56 @@
         // restriction has engine conditions outside the SDK write contract.
         return review.rows.filter(row=>row.status==="MATCH"&&row.count>0)
             .map(({index,count})=>({index,count}));
+    }
+    // Fase 4A: canonical internal motorcycle-engine stamp matching stable 3.2.0
+    // (never displayed or logged; used solely for before/after equality checks).
+    function extractNormalizedMotorStamp(restriction) {
+        if(typeof restriction?.getDriveProfileList!=="function")return null;
+        try{
+            const list=restriction.getDriveProfileList("BLOCKED");
+            const profiles=list?.getDriveProfiles?.()||[];
+            const items=[];
+            for(const profile of profiles){
+                const caps=profile?.getEngineCapacities?.()||[];
+                for(const item of caps){
+                    const d=item?.attributes??item;
+                    if(!d||typeof d!=="object")return null;
+                    const thr=d.capacityThreshold;
+                    const num=typeof thr==="string"&&thr.trim()?Number(thr):thr;
+                    items.push(JSON.stringify({
+                        vehicleType:d.vehicleType??null,
+                        engineType:d.engineType??null,
+                        operator:d.operator??null,
+                        capacityThreshold:num??null
+                    }));
+                }
+            }
+            return JSON.stringify(items.sort());
+        }catch(_){return null;}
+    }
+    // Fase 4A: capture uniquely paired internal raw JSON + motor stamp for
+    // existing restrictions so ActionManager preservation can keep engine
+    // conditions intact (exact mechanism verified in stable 3.2.0).
+    function captureInternalMotorPreservation(page,segment) {
+        const byIndex=new Map();
+        const read=readInternalEngineRows(page,segment?.id);
+        const native=read?.rows;
+        const sdk=segment?.restrictions;
+        const raw=readInternalRestrictionJson(native?.map(row=>row.restriction));
+        const review=readEnginePreservation(page,segment);
+        const paired=pairInternalRestrictionRows(sdk,raw);
+        for(const row of review.rows){
+            const pair=paired.find(p=>p.index===row.index);
+            let rawJson=null,motorStamp=null;
+            if(row.status==="MATCH"&&row.count>0&&pair&&!pair.reason&&raw[pair.position]&&native?.[pair.position]?.restriction){
+                try{
+                    rawJson=JSON.parse(JSON.stringify(raw[pair.position]));
+                    motorStamp=extractNormalizedMotorStamp(native[pair.position].restriction);
+                }catch(_){rawJson=null;motorStamp=null;}
+            }
+            byIndex.set(row.index,{...row,rawJson,motorStamp});
+        }
+        return byIndex;
     }
     function isRecordedTimeZone(value) {
         if(typeof value!=="string"||!/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(value))
@@ -1748,15 +1801,20 @@
         const verifiedZeroEngines=engineCheck?.status==="MATCH"&&engineCheck?.count===0;
         const verifiedPositiveEngines=engineCheck?.status==="MATCH"&&
             Number.isSafeInteger(engineCheck?.count)&&engineCheck.count>0;
+        const canPreserveMotors=Boolean(
+            options?.preserveMotorsWithInternal&&verifiedPositiveEngines&&
+            engineCheck?.rawJson&&typeof engineCheck.rawJson==="object"&&!Array.isArray(engineCheck.rawJson)&&
+            typeof engineCheck?.motorStamp==="string"&&engineCheck.motorStamp!=="[]"
+        );
         for(const issue of inspectRestrictionUpdateShape(copied,failedFields)){
             if(failedFields.has(issue.field))continue;
             if(issue.reason==="native_engine_review"){
-                if(verifiedZeroEngines)continue;
+                if(verifiedZeroEngines||canPreserveMotors)continue;
                 if(verifiedPositiveEngines){addIssue(issue.field,"serializer_engine_gap");continue;}
             }
             addIssue(issue.field,issue.reason);
         }
-        if(verifiedPositiveEngines)addIssue("vehicleRules","serializer_engine_gap");
+        if(verifiedPositiveEngines&&!canPreserveMotors)addIssue("vehicleRules","serializer_engine_gap");
         if(copied.laneType!==null&&!failedFields.has("laneType"))
             addIssue("laneType","serializer_special_lane");
         if(copied.isExpired!==undefined&&typeof copied.isExpired!=="boolean")
@@ -1802,6 +1860,7 @@
                 blockers:[...new Set(issues.map(issue=>issue.reason))],
                 fields:[...new Set(issues.map(issue=>issue.field))],
                 candidateData:null,hasSensitiveValues,
+                requiresInternalMotorPreservation:false,internalMotorSpec:null,
                 saveAllowed:false,verified:false
             };
         }
@@ -1836,6 +1895,12 @@
         return {
             status:"CANDIDATE_READY",editable:true,
             blockers:[],fields:[],candidateData,hasSensitiveValues,
+            requiresInternalMotorPreservation:canPreserveMotors,
+            internalMotorSpec:canPreserveMotors?{
+                rawJson:JSON.parse(JSON.stringify(engineCheck.rawJson)),
+                motorStamp:engineCheck.motorStamp,
+                count:engineCheck.count
+            }:null,
             saveAllowed:false,verified:false
         };
     }
@@ -1987,7 +2052,8 @@
                 const desc=Object.getOwnPropertyDescriptor(rows,index);
                 const native=desc&&"value" in desc?desc.value:undefined;
                 const roundTrip=serializeExistingRestrictionForSdk(native,{
-                    engineCheck:lookupEngine(index+1)
+                    engineCheck:lookupEngine(index+1),
+                    preserveMotorsWithInternal:Boolean(options?.preserveMotorsWithInternal)
                 });
                 retained.push({index:index+1,action:"RETAIN",...roundTrip});
                 if(roundTrip.status!=="CANDIDATE_READY")blockers.push(...roundTrip.blockers);
@@ -1997,6 +2063,10 @@
             retained.every(row=>row.status==="CANDIDATE_READY");
         const combined=allRetainedReady&&addition.status==="CANDIDATE_READY"?
             [...retained.map(row=>row.candidateData),...addition.candidateRestrictions]:null;
+        const internalMotorSpecs=combined?[
+            ...retained.map(row=>row.internalMotorSpec??null),
+            ...addition.candidateRestrictions.map(()=>null)
+        ]:null;
         const safe12=combined?countSafe12Operation([combined]):null;
         if(combined&&(!safe12||safe12.overLimit))
             blockers.push(safe12?.overLimit?"conversion_overbudget":"budget_unknown");
@@ -2012,6 +2082,8 @@
             eligibility,
             safe12,
             candidateRestrictions:complete?combined:null,
+            internalMotorSpecs:complete?internalMotorSpecs:null,
+            usesInternalMotorPreservation:Boolean(complete&&internalMotorSpecs?.some(Boolean)),
             blockers:uniqueBlockers,
             saveAllowed:false,verified:false
         };
@@ -2227,7 +2299,8 @@
             const native=desc&&"value" in desc?desc.value:undefined;
             remainingRaw.push(native);
             const roundTrip=serializeExistingRestrictionForSdk(native,{
-                engineCheck:lookupEngine(index+1)
+                engineCheck:lookupEngine(index+1),
+                preserveMotorsWithInternal:Boolean(options?.preserveMotorsWithInternal)
             });
             retained.push({index:index+1,action:"RETAIN",...roundTrip});
             if(roundTrip.status!=="CANDIDATE_READY")blockers.push(...roundTrip.blockers);
@@ -2237,6 +2310,7 @@
         if(action==="DELETE"){
             const combined=targetEditable&&allRetainedReady?
                 retained.map(row=>row.candidateData):null;
+            const internalMotorSpecs=combined?retained.map(row=>row.internalMotorSpec??null):null;
             const safe12=combined?(combined.length?countSafe12Operation([combined]):
                 {restrictions:0,timeFrames:0,overLimit:false}):null;
             if(combined&&(!safe12||safe12.overLimit))
@@ -2248,6 +2322,8 @@
                 status:complete?"CANDIDATE_COMPLETE":"BLOCKED",
                 removed,retained,addition:null,conflictGate:null,eligibility,safe12,
                 candidateRestrictions:complete?combined:null,
+                internalMotorSpecs:complete?internalMotorSpecs:null,
+                usesInternalMotorPreservation:Boolean(complete&&internalMotorSpecs?.some(Boolean)),
                 blockers:uniqueBlockers,saveAllowed:false,verified:false
             };
         }
@@ -2264,10 +2340,20 @@
         const conflictGate=evaluateConflictGate(conflicts);
         if(conflictGate.blocked)blockers.push("conversion_conflict_blocked");
         let combined=null;
+        let internalMotorSpecs=null;
         if(targetEditable&&allRetainedReady&&addition.status==="CANDIDATE_READY"){
-            const beforeTarget=retained.filter(row=>row.index<targetIndex).map(row=>row.candidateData);
-            const afterTarget=retained.filter(row=>row.index>targetIndex).map(row=>row.candidateData);
-            combined=[...beforeTarget,...addition.candidateRestrictions,...afterTarget];
+            const beforeRows=retained.filter(row=>row.index<targetIndex);
+            const afterRows=retained.filter(row=>row.index>targetIndex);
+            combined=[
+                ...beforeRows.map(row=>row.candidateData),
+                ...addition.candidateRestrictions,
+                ...afterRows.map(row=>row.candidateData)
+            ];
+            internalMotorSpecs=[
+                ...beforeRows.map(row=>row.internalMotorSpec??null),
+                ...addition.candidateRestrictions.map(()=>null),
+                ...afterRows.map(row=>row.internalMotorSpec??null)
+            ];
         }
         const safe12=combined?countSafe12Operation([combined]):null;
         if(combined&&(!safe12||safe12.overLimit))
@@ -2281,14 +2367,15 @@
             status:complete?"CANDIDATE_COMPLETE":"BLOCKED",
             removed,retained,addition,conflictGate,eligibility,safe12,
             candidateRestrictions:complete?combined:null,
+            internalMotorSpecs:complete?internalMotorSpecs:null,
+            usesInternalMotorPreservation:Boolean(complete&&internalMotorSpecs?.some(Boolean)),
             blockers:uniqueBlockers,saveAllowed:false,verified:false
         };
     }
-    // Fase 3: strict fail-closed gate before allowing a controlled pending SDK
-    // write on a single segment. Only 100%-SDK-covered cases pass (laneType:null,
-    // BLOCKED/FREE defaults, confirmed permissions + drivability, zero conflicts,
-    // verified lossless round-trip of retained rows, and SAFE12 <= 12).
-    function evaluateControlledWriteGate(plan,segment,access) {
+    // Fase 3 / 4A: strict fail-closed gate before allowing a controlled pending
+    // write on a single segment. Only 100%-SDK-covered cases (plus verified
+    // internal preservation of existing motorcycle engine rules in 4A) pass.
+    function evaluateControlledWriteGate(plan,segment,access,options={}) {
         const eligibility=inspectSegmentEligibility(segment,access);
         const blockers=[];
         if(eligibility.hasAnyPermission===false)blockers.push("conversion_no_permission");
@@ -2298,12 +2385,20 @@
         if(!plan||typeof plan!=="object"){
             blockers.push("preservation_unknown");
             return {allowed:false,blockers:[...new Set(blockers)],eligibility,safe12:null,
-                restrictionCount:null,frameCount:null};
+                restrictionCount:null,frameCount:null,usesInternalMotorPreservation:false};
         }
         if(Array.isArray(plan.blockers))blockers.push(...plan.blockers);
         if(plan.conflictGate?.blocked)blockers.push("conversion_conflict_blocked");
         if(plan.status!=="CANDIDATE_COMPLETE"||!Array.isArray(plan.candidateRestrictions)){
             blockers.push("preservation_unknown");
+        }
+        const usesInternalMotors=Boolean(plan.usesInternalMotorPreservation);
+        if(usesInternalMotors&&options?.pageWindow){
+            const mgr=options.pageWindow?.W?.model?.actionManager;
+            const segs=options.pageWindow?.W?.model?.segments;
+            if(typeof mgr?.add!=="function"||typeof segs?.getObjectById!=="function"){
+                blockers.push("motor_internal_unavailable");
+            }
         }
         const rows=Array.isArray(plan.candidateRestrictions)?plan.candidateRestrictions:null;
         let safe12=null;
@@ -2357,7 +2452,8 @@
             eligibility,
             safe12,
             restrictionCount:rows?rows.length:null,
-            frameCount:safe12?.timeFrames??null
+            frameCount:safe12?.timeFrames??null,
+            usesInternalMotorPreservation:usesInternalMotors
         };
     }
     // Fase 3: canonical post-write verification comparing the re-read SDK segment
@@ -2468,7 +2564,7 @@
             }
         }
         if(options.plan){
-            const gate=evaluateControlledWriteGate(options.plan,fresh,options.access);
+            const gate=evaluateControlledWriteGate(options.plan,fresh,options.access,{pageWindow});
             if(!gate.allowed){
                 return {status:"ABORTED",reason:gate.blockers[0]||"plan_blocked",
                     verified:false,undone:false,mismatches:[]};
@@ -2502,7 +2598,14 @@
                 ])
             )
         }));
+        const motorSpecs=Array.isArray(options.internalMotorSpecs)?options.internalMotorSpecs:
+            (Array.isArray(options.plan?.internalMotorSpecs)?options.plan.internalMotorSpecs:null);
+        const hasRichMotors=Boolean(motorSpecs&&motorSpecs.length===cleanPayload.length&&motorSpecs.some(Boolean));
         const manager=pageWindow?.W?.model?.actionManager;
+        const segmentsModel=pageWindow?.W?.model?.segments;
+        if(hasRichMotors&&(typeof manager?.add!=="function"||typeof segmentsModel?.getObjectById!=="function")){
+            return {status:"ABORTED",reason:"motor_internal_unavailable",verified:false,undone:false,mismatches:[]};
+        }
         const beforeActions=typeof manager?.getActions==="function"?manager.getActions().slice():null;
         const rollbackOwnAction=async()=>{
             if(typeof sdk?.Editing?.undo!=="function")return false;
@@ -2526,26 +2629,89 @@
                 return restrictionSnapshot(afterUndo,true)===baselineSnapshot;
             }catch(_){return false;}
         };
+        let intercepted=false,patched=false;
+        const ownAdd=hasRichMotors?Object.getOwnPropertyDescriptor(manager,"add"):null;
+        const originalAdd=hasRichMotors?manager.add:null;
         try{
+            if(hasRichMotors){
+                manager.add=function(action,...args){
+                    if(action?.constructor?.name!=="UpdateSegmentsRestrictions"){
+                        return originalAdd.call(this,action,...args);
+                    }
+                    intercepted=true;
+                    const subs=action.subActions||[];
+                    const target=subs.find(sub=>
+                        String(sub?.object?.getID?.()??sub?.object?.attributes?.id)===String(segmentId));
+                    if(!target||!Array.isArray(target.newAttributes?.restrictions)){
+                        throw Error("Missing restriction subAction");
+                    }
+                    const original=target.newAttributes.restrictions;
+                    if(original.length!==cleanPayload.length){
+                        throw Error("Restriction count mismatch in WME action");
+                    }
+                    target.newAttributes.restrictions=original.map((restriction,i)=>{
+                        const spec=motorSpecs[i];
+                        if(!spec)return restriction;
+                        if(typeof restriction?.with!=="function"){
+                            throw Error("SegmentRestriction.with unavailable");
+                        }
+                        const sdkGenerated=restriction.toJSON?.()||{};
+                        const next=restriction.with({
+                            ...JSON.parse(JSON.stringify(spec.rawJson)),
+                            direction:cleanPayload[i].direction,
+                            timeFrames:sdkGenerated.timeFrames??JSON.parse(JSON.stringify(cleanPayload[i].timeFrames))
+                        });
+                        if(extractNormalizedMotorStamp(next)!==spec.motorStamp){
+                            throw Error("Motor preservation verification failed");
+                        }
+                        return next;
+                    });
+                    patched=true;
+                    return originalAdd.call(this,action,...args);
+                };
+                if(manager.add===originalAdd)throw Error("ActionManager interception failed");
+            }
             await sdk.DataModel.Segments.updateSegment({segmentId,restrictions:cleanPayload});
         }catch(_){
+            if(hasRichMotors){
+                if(ownAdd)Object.defineProperty(manager,"add",ownAdd);
+                else delete manager.add;
+            }
             const undone=await rollbackOwnAction();
             return {status:undone?"ROLLED_BACK":"MISMATCH_MANUAL_UNDO",
                 verified:false,undone,mismatches:["update_failed"]};
+        }finally{
+            if(hasRichMotors){
+                if(ownAdd)Object.defineProperty(manager,"add",ownAdd);
+                else delete manager.add;
+            }
         }
         let after=null;
         try{after=await sdk.DataModel.Segments.getById({segmentId});}catch(_){after=null;}
         const verification=verifyAppliedSegmentRestrictions(cleanPayload,after);
-        if(verification.ok){
+        let motorsOk=true;
+        if(hasRichMotors){
+            try{
+                const rawAfter=segmentsModel.getObjectById(segmentId)?.attributes?.restrictions;
+                const nowActions=typeof manager?.getActions==="function"?manager.getActions():null;
+                const actionAdded=beforeActions===null||(Array.isArray(nowActions)&&nowActions.length===beforeActions.length+1);
+                motorsOk=intercepted&&patched&&actionAdded&&Array.isArray(rawAfter)&&
+                    rawAfter.length===cleanPayload.length&&
+                    motorSpecs.every((spec,i)=>!spec||extractNormalizedMotorStamp(rawAfter[i])===spec.motorStamp);
+            }catch(_){motorsOk=false;}
+        }
+        if(verification.ok&&motorsOk){
             return {
                 status:"APPLIED_PENDING",verified:true,undone:false,
-                restrictionCount:after.restrictions.length,mismatches:[]
+                restrictionCount:after.restrictions.length,mismatches:[],
+                preservedInternalMotors:hasRichMotors
             };
         }
         const undone=await rollbackOwnAction();
         return {
             status:undone?"ROLLED_BACK":"MISMATCH_MANUAL_UNDO",
-            verified:false,undone,mismatches:verification.mismatches
+            verified:false,undone,
+            mismatches:[...verification.mismatches,...(motorsOk?[]:["motor_preservation_mismatch"])]
         };
     }
     async function readPermits(sdk,country) {
@@ -2627,7 +2793,7 @@
     }
     // Expose pure functions only in Node, not in the WME page.
     if (typeof module === "object" && module.exports && typeof document === "undefined") {
-        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,launchButtonLabelKey,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,evaluateControlledWriteGate,verifyAppliedSegmentRestrictions,executeControlledSegmentWrite,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
+        module.exports = {VERSION,LANGS,labels,vehicleLabels,availableDirections,countryIdentity,inspectRestrictionCapabilities,restrictionSnapshot,countSafe12Operation,estimateSafe12Budget,estimateGuidedOperationBudget,previewDraftBeforeAfter,inspectLaneDraft,inspectSegmentTollState,inspectSegmentEligibility,inspectExistingRestrictionNotice,launchButtonLabelKey,evaluateConflictGate,reviewSdkConversion,serializeExistingRestrictionForSdk,serializeDraftForSdk,buildStructuredBeforeAfterPlan,canDeleteExistingRestrictionInWizard,preloadExistingRestrictionToWizard,buildExistingActionPlan,evaluateControlledWriteGate,verifyAppliedSegmentRestrictions,executeControlledSegmentWrite,extractNormalizedMotorStamp,captureInternalMotorPreservation,auditRestrictionPreservation,listExistingRestrictions,previewRestrictionConflicts,reviewVehicleConflictEffects,inspectNativeVehicleCondition,inspectNativeVehicleRules,compareLegacyVehicleRules,LANE_SCOPE_CANDIDATES,normalizeTollActivationDraft,normalizeDraft,normalizeAdvanced,readPermits,normalizeLabel,nativeRestrictionAction,readContext,selectedVehicleTypes,hasAllowedCriteria,normalizeVehicleRules,nextWizardStep,previousWizardStep,normalizeMotorDraft,normalizeRedSchedule,observedMotorTypes,countInternalEngineConditions,inspectInternalEnginePreservation,trackInternalEnginePreservation,findEnginePreservationGaps,inspectInternalCalendarPreservation,WEEKDAYS,sortPermits,normalizePermitSearch,filterPermits,SCOPES,LANES,RESTRICTION_TYPES,DEFAULT_TYPES,VEHICLE_TYPES,OVERRIDE_TYPES,RESTRICTION_COLORS};
         return;
     }
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -3005,48 +3171,16 @@
     function renderPanel() {
         const root = pane.querySelector("#"+ID+"-root");
         if (!root) return;
-        root.replaceChildren(node("h3","Guided Creator "+VERSION),node("p",tr("test")));
+        root.replaceChildren(node("h3","Restriction Manager "+VERSION),node("p",tr("test")));
         if (!context) { root.append(node("p",tr("select"))); return; }
-        root.append(node("p",tr("country")+": "+(context.country?.name || tr("unknown"))));
-        root.append(node("p",tr("observed")+": "+(Array.isArray(context.segment.restrictions)?context.segment.restrictions.length:tr("unknown"))));
+        const count=Array.isArray(context.segment.restrictions)?context.segment.restrictions.length:tr("unknown");
+        root.append(node("p",tr("country")+": "+(context.country?.name || tr("unknown"))+" · "+tr("observed")+": "+count));
         const existingAlert=renderExistingAlert(context.segment);
         if(existingAlert)root.append(existingAlert);
         const launch=button(tr(launchButtonLabelKey(context.segment)),openWizard);
         launch.disabled=!availableDirections(context.segment).length;
-        root.append(launch,node("p",tr("anchor")+": "+(nativeButton?.isConnected?tr("found"):tr("fallback"))));
+        root.append(launch);
         root.append(renderExistingRestrictionList(context.segment,true));
-        const inspection=inspectRestrictionCapabilities(context.segment);
-        const eligibility=inspectSegmentEligibility(context.segment,context.access);
-        const tollState=inspectSegmentTollState(context.segment,context.isTollSegment);
-        const details=node("details");
-        details.style.cssText="margin-top:10px;padding:10px;border:1px solid #d1d5db;"+
-            "border-radius:8px;background:#f8fafc;font-size:12px;";
-        const summary=node("summary",tr("inspection_title"));
-        summary.style.cssText="cursor:pointer;font-weight:600;";
-        details.append(summary);
-        const list=(label,values)=>{
-            const field=node("p",tr(label)+": "+(values.length?values.join(", "):tr("inspection_none")));
-            field.style.cssText="margin:7px 0;overflow-wrap:anywhere;";
-            details.append(field);
-        };
-        list("inspection_scope",inspection.laneScopes);
-        list("inspection_lane",inspection.laneTypes);
-        list("inspection_defaults",inspection.defaultTypes);
-        list("inspection_zone",inspection.timeZones);
-        const counts=inspection.editable;
-        details.append(node("p",tr("inspection_editable")+": "+
-            [counts.yes,counts.no,counts.unknown].join(" / ")));
-        details.append(
-            node("p",tr("inspection_permissions")+": "+tr(permissionLabel(eligibility))),
-            node("p",tr("inspection_drivable")+": "+tr(drivableLabel(eligibility))),
-            node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(tollState)))
-        );
-        const snap=restrictionSnapshot(context.segment);
-        details.append(node("p",tr("inspection_snapshot")+": "+
-            (snap===null?tr("unknown"):tr("found"))));
-        const note=node("p",tr("inspection_warn"));
-        note.style.cssText="color:#92400e;font-weight:600;margin:8px 0 0;";
-        details.append(note);root.append(details);
     }
     let lastKey="";
     async function refresh() {
@@ -3072,7 +3206,7 @@
     function renderControlledApplyBox(container,{plan,segment,access,baselineSnapshot,buttonLabelKey,checkFresh}) {
         container.replaceChildren();
         container.dataset.guidedApplyBox="true";
-        const gate=evaluateControlledWriteGate(plan,segment,access);
+        const gate=evaluateControlledWriteGate(plan,segment,access,{pageWindow:page});
         const heading=node("h4",tr("write_box_title"));
         heading.style.cssText="margin:0 0 8px;";
         container.append(heading);
@@ -3089,6 +3223,12 @@
         container.style.cssText="margin-top:12px;padding:12px;border:2px solid #16a34a;"+
             "border-radius:8px;background:#f0fdf4;color:#14532d;";
         container.append(node("p",tr("write_ready_intro")));
+        if(gate.usesInternalMotorPreservation){
+            const motoNote=node("p",tr("motor_preserve_notice"));
+            motoNote.dataset.guidedMotorPreserveNotice="true";
+            motoNote.style.cssText="margin:6px 0;padding:7px 9px;border-left:3px solid #2563eb;background:#eff6ff;color:#1e3a8a;font-size:12px;font-weight:600;";
+            container.append(motoNote);
+        }
         const confirmLabel=node("label");
         confirmLabel.style.cssText="display:flex;align-items:start;gap:8px;margin:10px 0;font-weight:600;cursor:pointer;";
         const confirm=node("input");
@@ -3107,7 +3247,7 @@
             statusBox.replaceChildren(node("p",tr("write_applying")));
             const outcome=await executeControlledSegmentWrite(
                 sdk,page,segment.id,plan.candidateRestrictions,baselineSnapshot,
-                {plan,access,checkFresh}
+                {plan,access,checkFresh,internalMotorSpecs:plan.internalMotorSpecs}
             );
             if(outcome.status==="APPLIED_PENDING"){
                 applied=true;
@@ -3146,6 +3286,14 @@
             if(!applied)applyBtn.disabled=!confirm.checked;
         });
         container.append(confirmLabel,applyBtn,statusBox);
+    }
+    function autoEngineChecksForSegment(segment,excludeIndex=null){
+        const rows=segment?.restrictions;
+        if(!Array.isArray(rows)||!rows.length)return null;
+        const hasMoto=rows.some((r,idx)=>idx+1!==excludeIndex&&
+            inspectNativeVehicleRules(r).rows.some(rule=>rule.types.includes("MOTORCYCLE")));
+        if(!hasMoto)return null;
+        try{return captureInternalMotorPreservation(page,segment);}catch(_){return null;}
     }
     async function openDeletePreview(targetIndex) {
         let current;
@@ -3194,10 +3342,11 @@
         planBox.dataset.guidedDeletePlan="true";
         planBox.style.cssText="margin-top:10px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;";
         const applyBox=node("section");
-        const renderDeletePlan=(engineChecks=null)=>{
+        const initialEngineChecks=autoEngineChecksForSegment(current.segment,targetIndex);
+        const renderDeletePlan=(engineChecks=initialEngineChecks)=>{
             planBox.replaceChildren(node("h5",tr("plan_title")));
             const plan=buildExistingActionPlan("DELETE",targetIndex,current.segment,null,{
-                access:current.access,engineChecks
+                access:current.access,engineChecks,preserveMotorsWithInternal:true
             });
             const summaryLine=node("p",tr(plan.status==="CANDIDATE_COMPLETE"?"delete_plan_complete":"plan_blocked"));
             summaryLine.style.cssText="font-weight:600;color:"+
@@ -3207,7 +3356,8 @@
                 const list=node("ul");
                 list.style.cssText="padding-left:20px;margin:6px 0;";
                 for(const row of plan.retained){
-                    const state=row.status==="CANDIDATE_READY"?tr("plan_row_ready"):
+                    const state=row.status==="CANDIDATE_READY"?
+                        tr(row.requiresInternalMotorPreservation?"motor_preserve_ready":"plan_row_ready"):
                         tr("plan_row_blocked")+": "+row.blockers.map(tr).join("; ");
                     list.append(node("li",tr("existing_rule")+" "+row.index+" · "+state));
                 }
@@ -3234,7 +3384,7 @@
         const remainingNote=node("p",otherIndices.length?
             tr("delete_preview_remaining")+": "+otherIndices.map(i=>tr("existing_rule")+" "+i).join(", "):
             tr("delete_preview_none_left"));
-        const onEngineReview=review=>renderDeletePlan(new Map(review.rows.map(row=>[row.index,row])));
+        const onEngineReview=()=>renderDeletePlan(autoEngineChecksForSegment(current.segment,targetIndex));
         const footer=node("div");
         footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
         footer.append(button(tr("close"),()=>dialog.close()));
@@ -3394,7 +3544,8 @@
             planBox.dataset.guidedPlanStatus="true";
             planBox.style.cssText="margin-top:10px;padding:8px 10px;border:1px solid #cbd5e1;"+
                 "border-radius:6px;background:#fff;";
-            const renderPlanStatus=(engineChecks=null)=>{
+            const initialEngineChecks=autoEngineChecksForSegment(current.segment,targetIndex);
+            const renderPlanStatus=(engineChecks=initialEngineChecks)=>{
                 planBox.replaceChildren(node("h5",tr("plan_title")));
                 let plan=null;
                 try{
@@ -3402,11 +3553,11 @@
                         buildExistingActionPlan(
                             "REPLACE",targetIndex,current.segment,
                             {draft,schedule:redSchedule,vehicleRules,permits:current.permits,motorDraft},
-                            {mode:actionMode,access:current.access,engineChecks}
+                            {mode:actionMode,access:current.access,engineChecks,preserveMotorsWithInternal:true}
                         ):
                         buildStructuredBeforeAfterPlan(
                             draft,current.segment,redSchedule,vehicleRules,current.permits,motorDraft,
-                            {access:current.access,engineChecks}
+                            {access:current.access,engineChecks,preserveMotorsWithInternal:true}
                         );
                 }catch(_){
                     planBox.append(node("p",tr("plan_blocked")));
@@ -3431,7 +3582,8 @@
                     const list=node("ul");
                     list.style.cssText="padding-left:20px;margin:6px 0;";
                     for(const row of plan.retained){
-                        const state=row.status==="CANDIDATE_READY"?tr("plan_row_ready"):
+                        const state=row.status==="CANDIDATE_READY"?
+                            tr(row.requiresInternalMotorPreservation?"motor_preserve_ready":"plan_row_ready"):
                             tr("plan_row_blocked")+": "+row.blockers.map(tr).join("; ");
                         list.append(node("li",tr("existing_rule")+" "+row.index+" · "+state));
                     }
@@ -3443,6 +3595,10 @@
                 addLine.style.cssText="margin:6px 0;color:"+
                     (plan.addition.status==="CANDIDATE_READY"?"#17603c":"#991b1b")+";";
                 planBox.append(addLine);
+                if(plan.safe12){
+                    planBox.append(node("p",tr("budget_total")+": "+
+                        plan.safe12.restrictions+" / "+plan.safe12.timeFrames+" (max "+MAX_DRAFT_TIME_FRAMES+")"));
+                }
                 for(const warning of plan.addition.warnings){
                     const note=node("p",tr(warning));
                     note.style.cssText="font-size:12px;color:#475569;margin:4px 0;";
@@ -3467,7 +3623,7 @@
                 const onEngineReview=review=>{
                     const warnings=findEnginePreservationGaps(review).map(({index,count})=>
                         node("p",tr("existing_rule")+" "+index+" · "+
-                            tr("native_engine_row_count")+": "+count+" · "+tr("native_engine_sdk_gap")));
+                            tr("native_engine_row_count")+": "+count+" · "+tr("motor_preserve_ready")));
                     const changes=review.changes.map(({index,status})=>{
                         const key={SAME:"native_engine_since_first_same",CHANGED:"native_engine_since_first_changed",
                             UNKNOWN:"native_engine_since_first_unknown"}[status];
@@ -3476,30 +3632,9 @@
                         return line;
                     });
                     engineGaps.replaceChildren(...changes,...warnings);
-                    renderPlanStatus(new Map(review.rows.map(row=>[row.index,row])));
+                    renderPlanStatus(autoEngineChecksForSegment(current.segment,targetIndex));
                 };
                 details.append(renderExistingRestrictionList(current.segment,false,{onEngineReview,beforeRead}));
-            }
-            if(preview.before?.length){
-                const result=node("div");
-                result.setAttribute("role","status");
-                details.append(button(tr("calendar_read_check"),async()=>{
-                    if(!(await beforeRead()))return;
-                    const rows=inspectInternalCalendarPreservation(page,current.segment);
-                    result.replaceChildren();
-                    for(const row of rows){
-                        const status={MATCH:"calendar_read_match",DIFFERENT:"calendar_read_different",
-                            UNKNOWN:"calendar_read_unknown",UNPAIRED:"native_engine_unpaired"}[row.status];
-                        const count=row.frameCount===null?"":" · "+tr("existing_times")+": "+row.frameCount;
-                        const reason=row.reason?" · "+tr(row.reason):"";
-                        const fields=row.fields.length?" ("+row.fields.join(", ")+")":"";
-                        result.append(node("p",tr("existing_rule")+" "+row.index+" · "+tr(status)+count+reason+fields));
-                        if(row.timeZones.length){
-                            const zones=row.timeZones.map(zone=>zone??tr("calendar_zone_unset"));
-                            result.append(node("p",tr("calendar_recorded_zone")+" · "+zones.join(", ")));
-                        }
-                    }
-                }),result);
             }
             details.append(node("h4",tr("before_after_after")));
             const retained=preview.after.retained;
@@ -3810,23 +3945,11 @@
             }
             if(step===2) {
                 dialog.append(node("h3",tr("lane")),options(LANES,draft.lane,v=>draft.lane=v));
-                const laneCheck=inspectLaneDraft(draft,current.segment.restrictions);
-                const report=node("div");
-                report.style.cssText="border:1px solid #cbd5e1;padding:10px;"+
-                    "border-radius:8px;background:#f8fafc;margin-top:10px;";
-                report.append(node("h4",tr("lane_check")),
-                    node("p",tr("lane_candidate")+": "+laneCheck.laneScopeCandidate),
-                    node("p",tr("lane_evidence")+": "+
-                        (laneCheck.readAvailable?
-                            (laneCheck.observedScope?tr("found"):tr("inspection_none")):
-                            tr("unknown"))));
-                report.append(node("p",laneCheck.laneTypeStatus==="UNMAPPED"?
-                    tr("lane_special_pending"):tr("lane_none_requested")));
-                report.append(node("p",tr("lane_observed_types")+": "+
-                    (laneCheck.observedLaneTypes.join(", ")||tr("inspection_none"))));
-                report.append(node("p",tr("lane_orientation")),
-                    node("p",tr("lane_caution")));
-                dialog.append(report);
+                if(draft.lane!=="lane_none"){
+                    const warn=node("p",tr("lane_special_pending"));
+                    warn.style.cssText="margin-top:10px;padding:8px 10px;border:1px solid #d97706;border-radius:6px;background:#fffbeb;color:#78350f;font-size:12px;font-weight:600;";
+                    dialog.append(warn);
+                }
             }
             if(step===3) {
                 dialog.append(node("h3",tr("restriction_kind")),
@@ -4255,120 +4378,6 @@
                 step6ApplyBox=node("section");
                 dialog.append(renderBeforeAfterPreview(schedule,conversion));
                 dialog.append(step6ApplyBox);
-                // Conservative budget only: not an SDK write plan and NOT
-                // a pass from the stable v3.2 SAFE12 full-operation validator.
-                const estimate=conversion.budget;
-                const budgetBox=node("section");
-                budgetBox.style.cssText="padding:10px;margin-top:14px;border:1px solid #cbd5e1;"+
-                    "border-radius:8px;background:#f8fafc;";
-                budgetBox.append(node("h4",tr("budget_heading")));
-                if(estimate.status==="UNKNOWN"){
-                    budgetBox.append(node("p",tr("budget_unknown")));
-                }else{
-                    budgetBox.append(
-                        node("p",tr("budget_existing")+": "+estimate.existingRestrictions),
-                        node("p",tr("budget_existing_frames")+": "+estimate.existingFrames),
-                        node("p",tr("budget_new")+": "+estimate.proposedRestrictions),
-                        node("p",tr("budget_total")+": "+
-                            estimate.projectedRestrictions+" / "+estimate.projectedFrames+
-                            " (max "+estimate.limit+")")
-                    );
-                    const warning=node("p",
-                        tr(estimate.status==="OVER"?"budget_over":"budget_within"));
-                    warning.style.cssText="font-weight:600;color:"+
-                        (estimate.status==="OVER"?"#b91c1c":"#475569")+";";
-                    if(estimate.status==="OVER")warning.setAttribute("role","alert");
-                    budgetBox.append(warning);
-                }
-                const assumption=node("p",tr("budget_assumption"));
-                assumption.style.cssText="font-size:12px;color:#475569;";
-                budgetBox.append(assumption);
-                dialog.append(budgetBox);
-                // Repeat the lane preflight at the final review, regardless of
-                // whether the editor went through the red, green or blue path.
-                const laneReport=inspectLaneDraft(draft,current.segment.restrictions);
-                const laneBox=node("section");
-                laneBox.style.cssText="padding:10px;margin-top:12px;"+
-                    "border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;";
-                laneBox.append(node("h4",tr("lane_check")),
-                    node("p",tr("lane_candidate")+": "+laneReport.laneScopeCandidate),
-                    node("p",tr("lane_evidence")+": "+
-                        (laneReport.readAvailable?
-                            (laneReport.observedScope?tr("found"):tr("inspection_none")):
-                            tr("unknown"))),
-                    node("p",laneReport.laneTypeStatus==="UNMAPPED"?
-                        tr("lane_special_pending"):tr("lane_none_requested")),
-                    node("p",tr("lane_caution")));
-                dialog.append(laneBox);
-                dialog.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));
-                const details=node("details");
-                details.style.cssText="border:1px solid #cbd5e1;border-radius:8px;"+
-                    "padding:10px;margin-top:12px;background:#f8fafc;";
-                const heading=node("summary",tr("conversion_title"));
-                heading.style.cssText="font-weight:600;cursor:pointer;";
-                details.append(heading);
-                const put=(key,value)=>details.append(node("p",tr(key)+": "+value));
-                put("conversion_default",conversion.defaultType);
-                put("conversion_direction",conversion.directionDesign);
-                put("conversion_overrides",conversion.overrideType?
-                    conversion.overrideType+" · "+conversion.vehicleConditionRows.map(
-                        row=>row.vehicleType).join(", "):
-                    tr("conversion_no_override"));
-                put("conversion_frames",String(conversion.proposedFrameCount));
-                put("inspection_permissions",tr(permissionLabel(conversion.eligibility)));
-                put("inspection_drivable",tr(drivableLabel(conversion.eligibility)));
-                if(conversion.plannedHasToll===true){
-                    put("inspection_toll_state",tr(tollStateLabel(conversion.tollState)));
-                    put("conversion_toll","hasToll: true ("+tr("toll_both_directions")+")");
-                }
-                const blocked=node("p",tr("conversion_blocked"));
-                blocked.style.cssText="font-weight:600;color:#991b1b;";
-                blocked.setAttribute("role","status");
-                details.append(blocked,node("h4",tr("conversion_blockers")));
-                const reasons=node("ul");
-                reasons.style.cssText="padding-left:22px;line-height:1.5;";
-                for(const reason of conversion.blockers){
-                    reasons.append(node("li",tr(reason)));
-                }
-                details.append(reasons,node("h4",tr("preservation_title")));
-                const audit=conversion.preservation;
-                const auditMessage=audit.status==="NO_EXISTING"?"preservation_none":
-                    audit.status==="REQUIRES_ROUNDTRIP"?"preservation_roundtrip":
-                    "preservation_unknown";
-                details.append(node("p",tr("preservation_status")+": "+tr(auditMessage)));
-                if(audit.count!==null){
-                    const entries=[
-                        ["budget_existing",audit.count],
-                        ["preservation_frames",audit.frameCount],
-                        ["preservation_noneditable",audit.nonEditable],
-                        ["preservation_editable_unknown",audit.editabilityUnknown],
-                        ["preservation_opaque",audit.opaqueVehicleRules],
-                        ["preservation_legacy",audit.legacyFields],
-                        ["preservation_incomplete",audit.incomplete]
-                    ];
-                    for(const [key,count] of entries){
-                        details.append(node("p",tr(key)+": "+count));
-                    }
-                }
-                for(const entry of audit.entries){
-                    const title=tr("existing_rule")+" "+entry.index+" · ";
-                    if(!entry.issues.length){
-                        details.append(node("p",title+tr("preservation_row_roundtrip")));
-                        continue;
-                    }
-                    const row=node("details");
-                    row.append(node("summary",title+tr("preservation_row_review")));
-                    const findings=node("ul");
-                    for(const issue of entry.issues){
-                        findings.append(node("li",issue.field+" · "+tr(issue.reason)));
-                    }
-                    row.append(findings);
-                    details.append(row);
-                }
-                const preservationWarning=node("p",tr("preservation_warning"));
-                preservationWarning.style.cssText="color:#991b1b;font-weight:600;";
-                details.append(preservationWarning);
-                dialog.append(details);
             }
             const footer=node("div");footer.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;";
             footer.append(button(tr("close"),()=>dialog.close()));
