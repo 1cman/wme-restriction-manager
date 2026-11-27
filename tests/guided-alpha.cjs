@@ -2596,6 +2596,7 @@ assert.equal(a.labels.launch_existing.length,6);
      if(s==='[role="button"]')return n.attrs?.role==='button';
      if(s==='[role="link"]')return n.attrs?.role==='link';
      if(s==='[data-guided-next="true"]')return n.dataset?.guidedNext==='true';
+     if(s==='[data-guided-edit-step="6"]')return n.dataset?.guidedEditStep==='6';
      return n.tagName===s.toUpperCase();
     });
     const walk=n=>{for(const c of (n.children||[])){if(matches(c))out.push(c);walk(c);}};
@@ -2729,7 +2730,52 @@ assert.equal(a.labels.launch_existing.length,6);
   'Delete dialog must report APPLIED_PENDING after post-write verification');
  assert.equal(fakeDoc.getElementById('rm-guided-alpha-native').textContent,'Crea restrizione guidata',
   'After deleting the last restriction, refresh must switch the launch button back to Crea restrizione guidata');
- assert.equal(warnings.length,0,'No warnings allowed during Phase 3 guided delete apply flow');
+ // Alpha 48 fake-DOM end-to-end check: Guided Edit must NOT bury controls under the
+ // amber existing-restrictions alert or expanded list, must expose direct quick-jump
+ // buttons, and must allow changing a field and applying the pending edit in WME.
+ vmUpdates.length=0;
+ activeSeg={id:105,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[f2RedAllRes]};
+ nativeAnchor.textContent='Modifica restrizioni';
+ await refreshCb();
+ const editBtnSingle=rootEl.querySelectorAll('button').find(b=>b.textContent===a.labels.edit_guided_btn[0]);
+ assert.ok(editBtnSingle,'Guided edit button must appear on editable restriction');
+ editBtnSingle.click();
+ await new Promise(r=>setTimeout(r,20));
+ const geDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(geDialog&&geDialog.open,'Guided edit must open dialog');
+ assert.ok(!geDialog.textContent.includes(a.labels.existing_alert_title[0]),
+  'Guided edit Step 0 must not show the redundant amber existing-restriction alert');
+ const geOuterDetails=geDialog.children.filter(c=>c.tagName==='DETAILS');
+ assert.ok(geOuterDetails.length===1&&!geOuterDetails[0].open,
+  'Existing restriction list must stay collapsed on Guided Edit Step 0 so controls stay visible');
+ const revRadio=geDialog.querySelectorAll('input').find(i=>i.type==='radio'&&i.value==='REV');
+ assert.ok(revRadio,'Direction radio options must be immediately visible on Guided Edit Step 0');
+ revRadio.checked=true;
+ for(const fn of (revRadio.listeners.change||[]))fn({});
+ const jumpSchedule=geDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='7');
+ assert.ok(jumpSchedule,'Guided Edit quick-nav must expose direct jump to Dates & times');
+ jumpSchedule.click();
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(geDialog.querySelectorAll('h3').some(h=>h.textContent===a.labels.red_schedule[0]),
+  'Clicking Dates & times shortcut must jump directly to Step 7');
+ const jumpSummary=geDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='6');
+ assert.ok(jumpSummary&&!jumpSummary.disabled,'Summary & apply shortcut must be enabled when edit draft is valid');
+ jumpSummary.click();
+ await new Promise(r=>setTimeout(r,30));
+ const editConfirm=geDialog.querySelectorAll('input').find(i=>i.dataset?.guidedWriteConfirm==='true');
+ const editApplyBtn=geDialog.querySelectorAll('button').find(b=>b.dataset?.guidedApplyBtn==='true');
+ assert.ok(editConfirm&&editApplyBtn,'Guided Edit Step 6 must show controlled apply box');
+ editConfirm.checked=true;
+ for(const fn of (editConfirm.listeners.change||[]))fn({});
+ editApplyBtn.click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(vmUpdates.length,1,'Guided Edit apply must invoke updateSegment exactly once');
+ assert.equal(vmUpdates[0].segmentId,105);
+ assert.equal(vmUpdates[0].restrictions.length,1,'Guided Edit must replace without duplicating');
+ assert.equal(vmUpdates[0].restrictions[0].direction,'REV','Edited direction must be written');
+ assert.ok(geDialog.querySelectorAll('div').some(d=>d.dataset?.guidedWriteOutcome==='APPLIED_PENDING'),
+  'Guided Edit must verify and report APPLIED_PENDING');
+ assert.equal(warnings.length,0,'No warnings allowed during Phase 3 guided edit & delete apply flows');
 
  // Alpha 47 (Fase 3): evaluateControlledWriteGate, verifyAppliedSegmentRestrictions,
  // and executeControlledSegmentWrite (success, abort, surgical rollback, manual-undo fallback).

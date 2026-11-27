@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.47
+// @version      4.0.0-alpha.48
 // @description  Guided segment and lane restrictions (Phase 3: controlled pending WME edits for verified SDK cases, manual Save). Separate from stable 3.2.0.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.47";
+    const VERSION = "4.0.0-alpha.48";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -340,6 +340,14 @@
         write_rolled_back:["Discrepanza o errore dopo l'applicazione: la modifica è stata annullata automaticamente in WME.","Mismatch or error after apply: the edit was automatically undone in WME.","Différence ou erreur après application : la modification a été annulée automatiquement dans WME.","Discrepancia o error tras aplicar: el cambio se deshizo automáticamente en WME.","Abweichung oder Fehler nach dem Anwenden: die Änderung wurde in WME automatisch rückgängig gemacht.","Discrepância ou erro após aplicação: a alteração foi anulada automaticamente no WME."],
         write_manual_undo:["Discrepanza o errore dopo l'applicazione e annullamento automatico non confermato: controlla subito il segmento e premi Annulla (Ctrl+Z) in WME prima di salvare.","Mismatch or error after apply and automatic undo could not be confirmed: inspect the segment immediately and press Undo (Ctrl+Z) in WME before saving.","Différence ou erreur après application et annulation automatique non confirmée : vérifiez immédiatement le segment et faites Annuler (Ctrl+Z) dans WME avant d'enregistrer.","Discrepancia o error tras aplicar y no se pudo confirmar la reversión automática: revisa de inmediato el segmento y pulsa Deshacer (Ctrl+Z) en WME antes de guardar.","Abweichung oder Fehler nach dem Anwenden; automatisches Rückgängigmachen nicht bestätigt: prüfe das Segment sofort und drücke Strg+Z in WME vor dem Speichern.","Discrepância ou erro após aplicação e anulação automática não confirmada: verifica de imediato o segmento e prime Anular (Ctrl+Z) no WME antes de guardar."],
         write_aborted:["Operazione interrotta prima di modificare il segmento","Operation stopped before editing the segment","Opération interrompue avant de modifier le segment","Operación detenida antes de modificar el segmento","Vorgang vor dem Bearbeiten des Segments abgebrochen","Operação interrompida antes de modificar o segmento"],
+        edit_nav_hint:["Scegli cosa modificare direttamente o procedi con Avanti:","Jump directly to what you want to edit, or continue with Next:","Accédez directement à ce que vous voulez modifier ou cliquez sur Suivant :","Ve directamente a lo que quieras editar o continúa con Siguiente:","Springe direkt zu dem, was du ändern möchtest, oder klicke auf Weiter:","Salta diretamente para o que queres editar ou continua com Seguinte:"],
+        edit_nav_direction:["Direzione","Direction","Direction","Dirección","Richtung","Direção"],
+        edit_nav_scope:["Corsia","Lane scope","Voie","Carril","Fahrstreifen","Via"],
+        edit_nav_kind:["Tipo","Type","Type","Tipo","Typ","Tipo"],
+        edit_nav_vehicles:["Veicoli","Vehicles","Véhicules","Vehículos","Fahrzeuge","Veículos"],
+        edit_nav_conditions:["Condizioni","Conditions","Conditions","Condiciones","Bedingungen","Condições"],
+        edit_nav_schedule:["Date e orari","Dates & times","Dates et horaires","Fechas y horarios","Daten & Zeiten","Datas e horários"],
+        edit_nav_summary:["Riepilogo e applica","Summary & apply","Résumé et appliquer","Resumen y aplicar","Übersicht & anwenden","Resumo e aplicar"],
         calendar_read_check:["Confronta calendario SDK e modello interno","Compare SDK and internal calendars","Comparer les calendriers SDK et interne","Comparar los calendarios del SDK y del modelo interno","SDK-Kalender mit internem Modell vergleichen","Comparar os calendários do SDK e do modelo interno"],
         calendar_read_match:["I campi del calendario coincidono","Calendar fields match","Les champs du calendrier concordent","Los campos del calendario coinciden","Kalenderfelder stimmen überein","Os campos do calendário coincidem"],
         calendar_read_different:["Differenze nei campi del calendario","Calendar fields differ","Les champs du calendrier diffèrent","Los campos del calendario difieren","Kalenderfelder unterscheiden sich","Os campos do calendário diferem"],
@@ -3526,11 +3534,22 @@
             details.append(planBox);
             return details;
         }
+        function isDraftReadyForSummary(){
+            if(!availableDirections(current.segment).includes(draft.direction))return false;
+            if(!SCOPES.includes(draft.scope)||!LANES.includes(draft.lane)||!RESTRICTION_TYPES.includes(draft.restrictionType))return false;
+            if((draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!selectedVehicleTypes(draft.vehicleTypes).length)return false;
+            if((draft.restrictionType==="ALLOWED"||(draft.restrictionType==="BLOCKED"&&draft.vehicleTypes.includes("MOTORCYCLE")))&&!isAdvancedValid())return false;
+            if(!isScheduleValid()||currentConflictGate().blocked)return false;
+            return true;
+        }
         function refreshNext(){
             const next=dialog.querySelector('[data-guided-next="true"]');
-            if(!next)return;
-            if(step===5)next.disabled=!isAdvancedValid();
-            if(step===7)next.disabled=!isScheduleValid()||currentConflictGate().blocked;
+            if(next){
+                if(step===5)next.disabled=!isAdvancedValid();
+                if(step===7)next.disabled=!isScheduleValid()||currentConflictGate().blocked;
+            }
+            const summaryJump=dialog.querySelector('[data-guided-edit-step="6"]');
+            if(summaryJump)summaryJump.disabled=!isDraftReadyForSummary();
         }
         // Separate picker instance for each vehicle that actually requires a pass.
         // It keeps the same alphabetic, accent-insensitive autocomplete semantics.
@@ -3704,6 +3723,24 @@
             if(destination===6)current=fresh;
             step=destination;
             render();
+            dialog.scrollTop=0;
+        }
+        async function jumpToEditStep(dest){
+            if(dest===step)return;
+            if(dest===6){
+                if(!isDraftReadyForSummary())return;
+                const activeDialog=dialog;
+                const {fresh,reason}=await checkDraftContext();
+                if(activeDialog!==dialog||!activeDialog.open)return;
+                if(reason){showDraftContextProblem(reason);return;}
+                if(currentConflictGate(fresh.segment).blocked){
+                    current=fresh;step=7;render();dialog.scrollTop=0;return;
+                }
+                current=fresh;
+            }
+            step=dest;
+            render();
+            dialog.scrollTop=0;
         }
         function render(){
             const headingKey=actionMode==="EDIT"?"launch_existing":launchButtonLabelKey(current.segment);
@@ -3719,14 +3756,47 @@
                     " "+tr("existing_rule")+" "+targetIndex);
                 label.style.display="block";
                 banner.append(label,node("span",tr("mode_readonly_note")));
+                if(actionMode==="EDIT"){
+                    const navHint=node("p",tr("edit_nav_hint"));
+                    navHint.style.cssText="margin:8px 0 5px;font-weight:600;font-size:12px;";
+                    const navBar=node("div");
+                    navBar.dataset.guidedEditNav="true";
+                    navBar.style.cssText="display:flex;flex-wrap:wrap;gap:5px;";
+                    const hasStep5=draft.restrictionType==="ALLOWED"&&selectedVehicleTypes(draft.vehicleTypes).length>0||
+                        draft.restrictionType==="BLOCKED"&&draft.vehicleTypes.includes("MOTORCYCLE");
+                    const items=[
+                        [0,"edit_nav_direction"],
+                        [1,"edit_nav_scope"],
+                        [3,"edit_nav_kind"],
+                        [4,"edit_nav_vehicles"],
+                        ...(hasStep5?[[5,"edit_nav_conditions"]]:[]),
+                        [7,"edit_nav_schedule"],
+                        [6,"edit_nav_summary"]
+                    ];
+                    for(const [targetStep,key] of items){
+                        const active=step===targetStep;
+                        const jumpBtn=button(tr(key),()=>jumpToEditStep(targetStep));
+                        jumpBtn.dataset.guidedEditStep=String(targetStep);
+                        if(targetStep===6)jumpBtn.disabled=!isDraftReadyForSummary();
+                        jumpBtn.style.cssText="padding:4px 8px;border:1px solid #2563eb;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;"+
+                            (active?"background:#2563eb;color:#fff;":"background:#fff;color:#1d4ed8;");
+                        navBar.append(jumpBtn);
+                    }
+                    banner.append(navHint,navBar);
+                }
                 dialog.append(banner);
             }
             if(step===0) {
-                const existingAlert=renderExistingAlert(current.segment);
-                if(existingAlert)dialog.append(existingAlert);
-                dialog.append(renderExistingRestrictionList(current.segment,true));
+                if(targetIndex===null){
+                    const existingAlert=renderExistingAlert(current.segment);
+                    if(existingAlert)dialog.append(existingAlert);
+                    dialog.append(renderExistingRestrictionList(current.segment,true));
+                }
                 dialog.append(node("h3",tr("direction")),
                     options(availableDirections(current.segment),draft.direction,v=>draft.direction=v));
+                if(targetIndex!==null){
+                    dialog.append(renderExistingRestrictionList(current.segment,false,{allowGuidedActions:false}));
+                }
             }
             if(step===1) {
                 dialog.append(node("h3",tr("scope")),options(SCOPES,draft.scope,v=>{draft.scope=v;}));
