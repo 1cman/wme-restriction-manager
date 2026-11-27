@@ -1,0 +1,3334 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const file=path.join(__dirname,'../alpha/Restriction_Manager_Guided_Alpha.user.js');
+const src=fs.readFileSync(file,'utf8');
+new vm.Script(src,{filename:file});
+const a=require(file);
+function assertSingleGatedWriteEntry(){
+ const matches=src.match(/\bupdateSegment\s*\(/g)||[];
+ assert.equal(matches.length,1,'Phase 3 allows exactly one gated updateSegment call site');
+ const fnStart=src.indexOf('async function executeControlledSegmentWrite(');
+ const fnEnd=src.indexOf('async function readPermits(',fnStart);
+ assert.ok(fnStart>0&&fnEnd>fnStart,'executeControlledSegmentWrite must exist before readPermits');
+ const body=src.slice(fnStart,fnEnd);
+ assert.equal((body.match(/\bupdateSegment\s*\(/g)||[]).length,1,
+  'The sole updateSegment call must live inside executeControlledSegmentWrite');
+ assert.ok(!/\bEditing\s*\.\s*save\s*\(/.test(src),'WME Save must remain strictly manual');
+ assert.ok(!/\b(savePreset|localStorage|GM_xmlhttpRequest|fetch)\s*\(/.test(src),
+  'Phase 3 Alpha must not persist presets or make network requests');
+}
+assertSingleGatedWriteEntry();
+assert.deepEqual(a.normalizeAdvanced({minPassengers:null,permitIds:[]},null),{minPassengers:null,permitIds:[],verified:false});
+assert.deepEqual(a.normalizeAdvanced({minPassengers:3,permitIds:['pass1','pass1']},[{id:'pass1',name:'Example'}]),{minPassengers:3,permitIds:['pass1'],verified:false});
+for(const bad of [0,1,-1,1.5,NaN,Infinity,'2']) {
+    assert.throws(()=>a.normalizeAdvanced({minPassengers:bad,permitIds:[]},[]),/Invalid occupancy/);
+}
+assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['unlisted']},[]),/Unrecognized country permit/);
+assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:['pass1']},null),/Unrecognized country permit/);
+assert.throws(()=>a.normalizeAdvanced({minPassengers:null,permitIds:'pass1'},null),/Invalid permits/);
+assert.ok(src.includes('if(step===6) {'),'Advanced step must precede the summary');
+assert.ok(src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);') &&
+          src.includes('normalizeDraft(draft,current.segment);'),
+  'Next handler must validate per-vehicle advanced conditions before reaching summary');
+assert.ok(src.includes('JSON.stringify(fresh.permits)!==JSON.stringify(current.permits)'),
+  'Changes to country permit choices must abort the wizard');
+assert.deepEqual(a.availableDirections({isAtoB:true}),['FWD']);
+assert.deepEqual(a.availableDirections({isBtoA:true}),['REV']);
+assert.deepEqual(a.availableDirections({isTwoWay:true}),['FWD','REV','BOTH']);
+assert.deepEqual(a.availableDirections({}),[]);
+assert.deepEqual(a.countryIdentity({country:{id:1,name:'Italy'}}),{id:1,name:'Italy',code:null});
+assert.equal(a.countryIdentity(null),null);
+assert.equal(a.countryIdentity({country:{name:'Italy'}}),null);
+assert.equal(a.normalizeLabel(' + Aggiungi   restrizioni '),'aggiungi restrizioni');
+assert.equal(a.SCOPES.length,4);
+assert.equal(a.LANES.length,6);
+assert.deepEqual(a.RESTRICTION_TYPES,['BLOCKED','ALLOWED','TOLL']);
+assert.deepEqual(a.DEFAULT_TYPES,{BLOCKED:'BLOCKED',ALLOWED:'BLOCKED',TOLL:'TOLL'});
+assert.ok(!a.RESTRICTION_TYPES.includes('FREE'),'Do not confuse wizard intents with SDK defaultType FREE');
+assert.deepEqual(a.VEHICLE_TYPES,['PRIVATE','EV','MOTORCYCLE','TAXI']);
+assert.equal(new Set(a.VEHICLE_TYPES).size,4);
+const excludedSdkTypes=[
+ 'BUS','CAV','CLEAN_FUEL','HAZARDOUS_MATERIALS','HOV_2','HOV_3',
+ 'HYBRID','PUBLIC_TRANSPORTATION','RV','TOWING_VEHICLE','TRUCK'
+];
+for(const excluded of excludedSdkTypes){
+ assert.throws(()=>a.selectedVehicleTypes([excluded]),/Invalid vehicle selection/);
+ for(const restrictionType of a.RESTRICTION_TYPES){
+  assert.throws(()=>a.normalizeDraft({
+   direction:'FWD',scope:'segment',lane:'lane_none',
+   restrictionType,vehicleTypes:[excluded]
+  },{isAtoB:true}),/Invalid vehicle selection/);
+ }
+ assert.throws(()=>a.normalizeVehicleRules([excluded],{},null),/Invalid vehicle selection/);
+}
+assert.deepEqual(a.selectedVehicleTypes(['TAXI','PRIVATE','EV','MOTORCYCLE']),
+ ['PRIVATE','EV','MOTORCYCLE','TAXI']);
+assert.equal(a.OVERRIDE_TYPES.BLOCKED,'FREE');
+assert.equal(a.OVERRIDE_TYPES.ALLOWED,'FREE');
+assert.equal(a.OVERRIDE_TYPES.TOLL,'FREE');
+assert.deepEqual(a.selectedVehicleTypes(['TAXI','PRIVATE','TAXI']),['PRIVATE','TAXI']);
+assert.throws(()=>a.selectedVehicleTypes(['INVENTED']));
+assert.throws(()=>a.selectedVehicleTypes('BUS'));
+assert.ok(!a.SCOPES.includes('scope_none'));
+assert.ok(!a.SCOPES.includes(null));
+assert.ok(a.SCOPES.includes('segment'));
+assert.ok(a.SCOPES.includes('left') && a.SCOPES.includes('center') && a.SCOPES.includes('right'));
+assert.ok(a.LANES.includes('lane_none'));
+for(const scope of a.SCOPES)for(const lane of a.LANES){
+    const draft=a.normalizeDraft({direction:'FWD',scope,lane,restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true});
+    assert.equal(draft.verified,false);
+    assert.equal(draft.lane,lane);
+}
+assert.throws(()=>a.normalizeDraft({direction:'REV',scope:'left',lane:'hov',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'left',lane:'invented',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:null,restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'random',lane:'hov',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'scope_none',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:null,lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}));
+assert.deepEqual(a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},{isAtoB:true}),{
+  direction:'FWD',scope:'segment',lane:'lane_none',restrictionIntent:'BLOCKED',
+  defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:[],verified:false
+});
+const redBase={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED'};
+const redAll=a.normalizeDraft({...redBase,vehicleTypes:[]},{isAtoB:true});
+assert.equal(redAll.defaultType,'BLOCKED');
+assert.deepEqual(redAll.vehicleTypes,[]);
+const redOnlyMotor=a.normalizeDraft({...redBase,vehicleTypes:['MOTORCYCLE']},{isAtoB:true});
+assert.equal(redOnlyMotor.defaultType,'FREE');
+assert.equal(redOnlyMotor.overrideType,'BLOCKED');
+assert.deepEqual(redOnlyMotor.vehicleTypes,['MOTORCYCLE']);
+const redTwo=a.normalizeDraft({...redBase,vehicleTypes:['MOTORCYCLE','PRIVATE']},{isAtoB:true});
+assert.equal(redTwo.defaultType,'FREE');
+assert.equal(redTwo.overrideType,'BLOCKED');
+assert.deepEqual(redTwo.vehicleTypes,['PRIVATE','MOTORCYCLE']);
+assert.ok(src.includes('tr("blocked_everyone")+" (SDK BLOCKED)"'), 'All forbidden summary must be explicit');
+assert.ok(src.includes('tr("blocked_only_selected")'), 'Selective red prohibition must preserve other vehicle access');
+assert.ok(src.includes('"FREE":DEFAULT_TYPES[draft.restrictionType]'), 'Selective red default must switch to FREE');
+assert.ok(src.includes('"BLOCKED":OVERRIDE_TYPES[draft.restrictionType]'), 'Selective red vehicle rules must be BLOCKED');
+assert.ok(src.includes('"BLOCKED"?"blocked_vehicle_step"'), 'Red vehicle question must refer to prohibited, not exempt types');
+assert.ok(src.includes('motorDraft.conditions'), 'Motor conditions must be tracked separately');
+assert.ok(src.includes('motor_select_fuel') && src.includes('motor_select_electric'), 'Native-style fuel/electric UI missing');
+assert.ok(src.includes('motor_limit_cc') && src.includes('motor_limit_kw'), 'Native-style cc/kW thresholds missing');
+
+for (const restrictionType of a.RESTRICTION_TYPES) {
+  const draft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:['MOTORCYCLE','TAXI']};
+  const result=a.normalizeDraft(draft,{isAtoB:true});
+  assert.equal(result.restrictionIntent,restrictionType);
+  assert.equal(result.defaultType,restrictionType==='BLOCKED'?'FREE':a.DEFAULT_TYPES[restrictionType]);
+  assert.equal(result.overrideType,restrictionType==='BLOCKED'?'BLOCKED':a.OVERRIDE_TYPES[restrictionType]);
+  assert.deepEqual(result.vehicleTypes,['MOTORCYCLE','TAXI']);
+  assert.equal(result.verified,false);
+  assert.deepEqual(draft.vehicleTypes,['MOTORCYCLE','TAXI'],'Input must not be modified');
+}
+for (const restrictionType of ['ALLOWED','TOLL']) {
+  const expected=restrictionType==='ALLOWED'?/ALLOWED requires at least one authorized vehicle type/:/TOLL requires explicit vehicle exemption rules/;
+  assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType,vehicleTypes:[]},{isAtoB:true}),expected);
+}
+// White-list mode must NOT produce an SDK FREE default (which allows all vehicles).
+const whitelist={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']};
+assert.deepEqual(a.normalizeDraft(whitelist,{isAtoB:true}),{
+ direction:'FWD',scope:'segment',lane:'lane_none',restrictionIntent:'ALLOWED',
+ defaultType:'BLOCKED',overrideType:'FREE',vehicleTypes:['PRIVATE','EV'],verified:false
+});
+const passOnly={...whitelist,vehicleTypes:[]};
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:['pass1']}),false);
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:2,permitIds:[]}),false);
+assert.equal(a.hasAllowedCriteria(passOnly,{minPassengers:null,permitIds:[]}),false);
+assert.equal(a.hasAllowedCriteria(whitelist),true);
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:3,permitIds:[]}),
+  /ALLOWED requires at least one authorized vehicle type/);
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:['pass1']}),
+  /ALLOWED requires at least one authorized vehicle type/);
+assert.throws(()=>a.normalizeDraft(passOnly,{isAtoB:true},{minPassengers:null,permitIds:[]}),
+  /ALLOWED requires at least one authorized vehicle type/);
+assert.equal(a.normalizeDraft(whitelist,{isAtoB:true}).defaultType,'BLOCKED');
+assert.throws(()=>a.normalizeDraft({...whitelist,restrictionType:'FREE'},{isAtoB:true}),/Invalid restriction intent/);
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'FAKE',vehicleTypes:[]},{isAtoB:true}));
+assert.throws(()=>a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['FAKE']},{isAtoB:true}));
+assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
+  'User cannot progress from scope step until an explicit valid choice');
+assert.ok(src.includes('if (step === 1 && !SCOPES.includes(draft.scope)) return;'),
+  'Programmatic progression must enforce scope selection');
+assert.ok(src.includes('warning.setAttribute("role","alert")'),
+  'Missing selection must display an accessible warning');
+assert.ok(src.includes('const draft={direction:availableDirections(current.segment).at(-1),scope:null,lane:"lane_none",restrictionType:"BLOCKED",vehicleTypes:[]};'),
+  'The wizard must never preselect an arbitrary scope');
+assert.ok(src.includes('(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")'),
+  'Both ALLOWED and TOLL steps must require at least one selected vehicle');
+assert.ok(src.includes('if (step===4 && (draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")'),
+  'Advance must enforce selection, not just disable the button');
+assert.ok(src.includes('(step===4&&(draft.restrictionType==="TOLL"||draft.restrictionType==="ALLOWED")&&!draft.vehicleTypes.length)'),
+  'Next button must be disabled when green whitelist has no vehicle');
+assert.ok(src.includes('normalizeDraft(draft,current.segment);') &&
+          src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits);'),
+  'Advanced vehicle draft must be validated before proceeding and in the summary');
+assert.ok(src.includes('draft.restrictionType==="ALLOWED" && !hasAllowedCriteria(draft)'),
+  'ALLOWED requires vehicle types irrespective of passes and occupancy');
+assert.ok(src.includes('for(const key of Object.keys(vehicleRules))delete vehicleRules[key];') &&
+          src.includes('motorDraft.enabled=false;motorDraft.conditions=[];'),
+  'Changing restriction intent must clear stale per-vehicle and motor conditions');
+assert.ok(src.includes('node("p",tr("others_blocked"))'),
+  'Whitelist summary must clearly state the default prohibition');
+// Sorting and typeahead must be locale aware, accent-insensitive, and non-mutating.
+const rawPermits=[
+  {id:'z',name:'ZTL Zeta'},
+  {id:'a',name:'Àrea centrale'},
+  {id:'b',name:'area nord'},
+  {id:'c',name:'Èlite'},
+  {id:'d',name:'Carpool 10'},
+  {id:'e',name:'Carpool 2'}
+];
+assert.deepEqual(a.sortPermits(rawPermits,'it').map(p=>p.id),['a','b','e','d','c','z']);
+assert.equal(rawPermits[0].id,'z','Sorting must not mutate SDK data');
+assert.deepEqual(a.filterPermits(rawPermits,'AREA','it').map(p=>p.id),['a','b']);
+assert.deepEqual(a.filterPermits(rawPermits,'elite','it').map(p=>p.id),['c']);
+assert.deepEqual(a.filterPermits(rawPermits,'CARPOOL','it').map(p=>p.id),['e','d']);
+assert.deepEqual(a.filterPermits(rawPermits,'no-match','it'),[]);
+assert.deepEqual(a.filterPermits(rawPermits,'','it').map(p=>p.id),['a','b','e','d','c','z']);
+assert.ok(src.includes('search.setAttribute("role","combobox")'),
+  'Pass search must expose accessible autocomplete');
+assert.ok(src.includes('search.addEventListener("input"'),
+  'Pass autocomplete must refresh on each keystroke');
+assert.ok(src.includes('search.addEventListener("keydown"'),
+  'Pass autocomplete must support keyboard input');
+assert.ok(src.includes('matches=filterPermits(current.permits,search.value,lang);'),
+  'Visible pass list must be sorted and filtered by WME locale via filterPermits');
+assert.ok(src.includes('rule.permitIds=rule.permitIds.includes(id)?'),
+  'Autocomplete and checkboxes must share a persistent per-vehicle selection');
+assert.ok(src.includes('next.disabled=(step===1&&!SCOPES.includes(draft.scope))'),
+  'Next button must still guard scope');
+// Alpha 15: only the four editor-requested categories are valid in a new draft.
+assert.ok(src.includes('const VEHICLE_TYPES = Object.freeze(["PRIVATE", "EV", "MOTORCYCLE", "TAXI"]);'));
+assert.ok(src.includes('for (const type of VEHICLE_TYPES)'),
+ 'The wizard must render exclusively the validated shortlist');
+assert.ok(src.includes('selectedVehicleTypes(draft.vehicleTypes)'),
+ 'Next validation must reject types outside the shortlist');
+assert.ok(!src.includes('for (const type of ["BUS"'),
+ 'The wizard must not hardcode previously exposed SDK categories');
+// Alpha 9: conditions are attached to INDIVIDUAL authorized vehicle types.
+const selectedVehicles=['PRIVATE','MOTORCYCLE','EV','TAXI'];
+const vehicleRules={
+  PRIVATE:{requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null},
+  MOTORCYCLE:{requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null},
+  EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null},
+  TAXI:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}
+};
+const knownPermits=[{id:'zone',name:'ZTL zone'}];
+const mixed=a.normalizeVehicleRules(selectedVehicles,vehicleRules,knownPermits);
+assert.equal(mixed.verified,false);
+assert.deepEqual(mixed.vehicles.map(v=>[v.vehicleType,v.access]),[
+  ['PRIVATE','CONDITIONAL'],['EV','DIRECT'],['MOTORCYCLE','CONDITIONAL'],['TAXI','DIRECT']
+]);
+for(const direct of ['EV','TAXI']){
+  const row=mixed.vehicles.find(v=>v.vehicleType===direct);
+  assert.deepEqual(row.permitIds,[]);
+  assert.equal(row.minPassengers,null);
+}
+for(const conditional of ['MOTORCYCLE','PRIVATE']){
+  const row=mixed.vehicles.find(v=>v.vehicleType===conditional);
+  assert.deepEqual(row.permitIds,['zone']);
+  assert.equal(row.minPassengers,null);
+}
+assert.deepEqual(vehicleRules.PRIVATE.permitIds,['zone'],'Validation must not mutate source');
+assert.equal(a.normalizeDraft({...whitelist,vehicleTypes:selectedVehicles},{isAtoB:true}).defaultType,'BLOCKED');
+assert.deepEqual(a.normalizeVehicleRules(['EV'],{},null).vehicles[0],{
+  vehicleType:'EV',access:'DIRECT',requiresPass:false,
+  requiresOccupancy:false,permitIds:[],minPassengers:null
+});
+const minOnly={PRIVATE:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:3}};
+assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles.find(v=>v.vehicleType==='EV').access,'DIRECT');
+assert.equal(a.normalizeVehicleRules(['PRIVATE','EV'],minOnly,null).vehicles.find(v=>v.vehicleType==='PRIVATE').minPassengers,3);
+const both={PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['zone'],minPassengers:2}};
+assert.equal(a.normalizeVehicleRules(['PRIVATE'],both,knownPermits).vehicles[0].access,'CONDITIONAL');
+assert.throws(()=>a.normalizeVehicleRules([],{},knownPermits),/No authorized vehicle/);
+assert.throws(()=>a.normalizeVehicleRules(['EV'],{PRIVATE:vehicleRules.PRIVATE},knownPermits),/unselected vehicle/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:true,requiresOccupancy:false,permitIds:[],minPassengers:null
+}},knownPermits),/Missing vehicle permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:true,requiresOccupancy:false,permitIds:['not-listed'],minPassengers:null
+}},knownPermits),/Unrecognized vehicle permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:true,requiresOccupancy:false,permitIds:['zone'],minPassengers:null
+}},null),/Unrecognized vehicle permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:null
+}},knownPermits),/Invalid vehicle occupancy/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:1
+}},knownPermits),/Invalid vehicle occupancy/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:false,permitIds:['zone'],minPassengers:null
+}},knownPermits),/Inactive permit/);
+assert.throws(()=>a.normalizeVehicleRules(['PRIVATE'],{PRIVATE:{
+  requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:3
+}},knownPermits),/Inactive occupancy/);
+assert.ok(src.includes('if(input.checked)vehicleRules[type]=emptyRule();') &&
+  src.includes('else delete vehicleRules[type];'),'Deselection must remove the vehicle conditions');
+assert.ok(src.includes('if(draft.restrictionType==="ALLOWED")') &&
+  src.includes('normalizeVehicleRules(draft.vehicleTypes,vehicleRules,current.permits)'),
+  'Whitelist next-step validation must use per-vehicle rules');
+assert.ok(src.includes('vehiclePermitPicker(type,rule)') &&
+  src.includes('search.setAttribute("role","combobox")'),
+  'Vehicles requiring permits must retain searchable autocomplete');
+assert.ok(src.includes('const conditions=normalizeVehicleRules(') &&
+  src.includes('node("h4",tr("vehicle_rules_summary"))'),
+  'Summary must distinguish vehicle-by-vehicle rules');
+assert.ok(src.includes('if(rule.access==="DIRECT")box.append(node("p",tr("direct_access")))'),
+  'Summary must clearly label direct access');
+assert.ok(src.includes('(step===5&&!isAdvancedValid())'),
+  'Next button must be blocked on invalid per-vehicle requirements');
+// Alpha 10 red flow: skip permits/occupancy entirely, except optional motorcycle engine.
+for(const types of [[],['PRIVATE'],['TAXI']]){
+ assert.equal(a.nextWizardStep(4,'BLOCKED',types),7);
+ assert.equal(a.previousWizardStep(7,'BLOCKED',types),4);
+}
+assert.equal(a.nextWizardStep(4,'BLOCKED',['MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(4,'BLOCKED',['PRIVATE','MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(5,'BLOCKED',['MOTORCYCLE']),7);
+assert.equal(a.nextWizardStep(7,'BLOCKED',['MOTORCYCLE']),6);
+assert.equal(a.previousWizardStep(6,'BLOCKED',['MOTORCYCLE']),7);
+assert.equal(a.previousWizardStep(7,'BLOCKED',['MOTORCYCLE']),5);
+assert.equal(a.previousWizardStep(5,'BLOCKED',['MOTORCYCLE']),4);
+assert.equal(a.nextWizardStep(4,'ALLOWED',['MOTORCYCLE']),5);
+assert.equal(a.nextWizardStep(5,'ALLOWED',['MOTORCYCLE']),7);
+assert.equal(a.nextWizardStep(7,'ALLOWED',['MOTORCYCLE']),6);
+assert.equal(a.previousWizardStep(6,'ALLOWED',['MOTORCYCLE']),7);
+assert.equal(a.previousWizardStep(7,'ALLOWED',['MOTORCYCLE']),5);
+// The blue exemption skips advanced pass/occupancy/plate conditions entirely.
+for(const types of [['PRIVATE'],['PRIVATE','TAXI'],['MOTORCYCLE','EV']]){
+ assert.equal(a.nextWizardStep(4,'TOLL',types),7);
+ assert.equal(a.nextWizardStep(7,'TOLL',types),6);
+ assert.equal(a.previousWizardStep(6,'TOLL',types),7);
+ assert.equal(a.previousWizardStep(7,'TOLL',types),4);
+}
+const tollDraft=a.normalizeDraft({
+ direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'TOLL',vehicleTypes:['PRIVATE','TAXI']
+},{isAtoB:true});
+assert.equal(tollDraft.defaultType,'TOLL');
+assert.equal(tollDraft.overrideType,'FREE');
+assert.deepEqual(tollDraft.vehicleTypes,['PRIVATE','TAXI']);
+assert.deepEqual(a.normalizeTollActivationDraft(tollDraft,[101]),{
+ segmentIds:[101],hasToll:true,directions:'BOTH',
+ required:true,applied:false,verified:false
+});
+const multiToll=a.normalizeTollActivationDraft(tollDraft,[101,202]);
+assert.deepEqual(multiToll.segmentIds,[101,202]);
+assert.throws(()=>a.normalizeTollActivationDraft(
+ {...tollDraft,restrictionIntent:'BLOCKED'},[101]),/Toll intent required/);
+for(const bad of [[],[0],[-3],['101'],[1,1],[1.5]]){
+ assert.throws(()=>a.normalizeTollActivationDraft(tollDraft,bad),/Invalid toll target segments/);
+}
+assert.ok(src.includes('if(step===4&&intent==="TOLL")return 7;'),
+ 'Toll must bypass advanced pass and occupancy screens');
+assert.ok(src.includes('if(step===7&&intent==="TOLL")return 4;'),
+ 'Toll back navigation goes directly to selected vehicle types');
+assert.ok(src.includes('normalizeTollActivationDraft(checked,[current.segment.id])'),
+ 'The automatic toll flag draft must target the selected segment');
+assert.ok(src.includes('node("h4",tr("toll_auto_flag"))'),
+ 'Toll summary must preview the automatic flag');
+assert.ok(src.includes('const scheduleTitle=draft.restrictionType==="ALLOWED"?"green_schedule"') &&
+ src.includes('draft.restrictionType==="TOLL"?"toll_schedule":"red_schedule"'),
+ 'Scheduling must display green, blue or red localized headings');
+assertSingleGatedWriteEntry();
+const redSchedule={
+ startDate:'2026-12-01',endDate:'2027-01-15',
+ weekdays:['MONDAY','FRIDAY'],allDay:false,
+ slots:[{fromTime:'07:00',toTime:'09:00'},{fromTime:'17:30',toTime:'19:00'}]
+};
+assert.deepEqual(a.normalizeRedSchedule(redSchedule),{
+ timeFrames:[{startDate:'2026-12-01',endDate:'2027-01-15',
+   weekdays:['MONDAY','FRIDAY'],fromTime:'07:00',toTime:'09:00',
+   timeZone:null,verified:false},
+  {startDate:'2026-12-01',endDate:'2027-01-15',
+   weekdays:['MONDAY','FRIDAY'],fromTime:'17:30',toTime:'19:00',
+   timeZone:null,verified:false}],
+ verified:false
+});
+assert.equal(a.normalizeRedSchedule({...redSchedule,allDay:true}).timeFrames.length,1);
+assert.equal(a.normalizeRedSchedule({
+ ...redSchedule,startDate:'',endDate:''
+}).timeFrames[0].startDate,null);
+assert.equal(redSchedule.slots[0].fromTime,'07:00','Validation must not mutate calendar input');
+for(const date of ['2026-02-30','2026-13-01','not-date']){
+ assert.throws(()=>a.normalizeRedSchedule({...redSchedule,startDate:date}),/Invalid dates/);
+}
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ endDate:'2026-11-30'}),/Invalid dates/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,weekdays:[]}),/Invalid weekdays/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ weekdays:['MONDAY','MONDAY']}),/Invalid weekdays/);
+const overnightDraft={
+ startDate:'2026-12-06',endDate:'2026-12-06',weekdays:['SUNDAY'],allDay:false,
+ slots:[{fromTime:'22:00',toTime:'06:00'}]
+};
+const overnightFrames=a.normalizeRedSchedule(overnightDraft).timeFrames;
+assert.deepEqual(overnightFrames,[{
+ startDate:'2026-12-06',endDate:'2026-12-06',weekdays:['SUNDAY'],
+ fromTime:'22:00',toTime:'06:00',timeZone:null,verified:false
+}],'A night range keeps its start weekday and date in one read-only frame');
+assert.equal(a.normalizeRedSchedule({...overnightDraft,slots:[{fromTime:'22:00',toTime:'00:00'}]})
+ .timeFrames[0].toTime,'00:00');
+assert.equal(a.normalizeRedSchedule({...overnightDraft,slots:[
+ ...overnightDraft.slots,{fromTime:'08:00',toTime:'09:00'}
+]}).timeFrames.length,2);
+const nightBudget=a.estimateSafe12Budget([],overnightFrames);
+assert.equal(nightBudget.projectedRestrictions,1);
+assert.equal(nightBudget.projectedFrames,1);
+assert.equal(a.normalizeRedSchedule({...overnightDraft,slots:Array(12).fill(overnightDraft.slots[0])})
+ .timeFrames.length,12);
+for(const slot of [null,{}, {fromTime:'24:00',toTime:'06:00'},
+ {fromTime:'22:00',toTime:'06:60'}, {fromTime:'22:00',toTime:['06:00']}]){
+ assert.throws(()=>a.normalizeRedSchedule({...overnightDraft,slots:[slot]}),/Invalid time range/);
+}
+assert.throws(()=>a.normalizeRedSchedule({...overnightDraft,slots:Array(1)}),/Invalid time range/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ slots:[{fromTime:'09:00',toTime:'09:00'}]}),/Invalid time range/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ slots:Array(13).fill(overnightDraft.slots[0])}),/SAFE12/);
+assert.throws(()=>a.normalizeRedSchedule({...redSchedule,
+ allDay:false,slots:[]}),/SAFE12/);
+assert.deepEqual(a.normalizeMotorDraft({enabled:false,conditions:[]},true),
+ {mode:'ALL_MOTORCYCLES',conditions:[],verified:false});
+assert.deepEqual(a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125},
+ {engineType:'ELECTRIC',operator:'LTE',capacityThreshold:11.5}
+]},true),{
+ mode:'MATCHING_ENGINES',
+ conditions:[{engineType:'FUEL',operator:'LT',capacityThreshold:125},
+             {engineType:'ELECTRIC',operator:'LTE',capacityThreshold:11.5}],
+ verified:false
+});
+assert.deepEqual(a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:null}
+]},true).conditions[0],{
+ engineType:'FUEL',operator:'ALL',capacityThreshold:null
+});
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[]},true),
+ /Select at least one motorcycle engine/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'ELECTRIC',operator:'LT',capacityThreshold:null}
+]},true),/Invalid motorcycle engine threshold/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LTE',capacityThreshold:1.3}
+]},true),/Invalid motorcycle engine threshold/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:125}
+]},true),/ALL engine condition cannot have threshold/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:null},
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125}
+]},true),/Invalid motorcycle engine condition/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FAKE',operator:'ALL',capacityThreshold:null}
+]},true),/Invalid motorcycle engine condition/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'FAKE',capacityThreshold:null}
+]},true),/Invalid motorcycle engine condition/);
+assert.throws(()=>a.normalizeMotorDraft({enabled:true,conditions:[
+ {engineType:'FUEL',operator:'ALL',capacityThreshold:null}
+]},false),/Motorcycle type not selected/);
+const sampleRaw={W:{model:{segments:{getObjectById:()=>({
+ attributes:{restrictions:[{getDriveProfileList:()=>({
+  getDriveProfiles:()=>[{getEngineCapacities:()=>[
+    {attributes:{vehicleType:'MOTORCYCLE',engineType:'NATIVE-X'}},
+    {attributes:{vehicleType:'PRIVATE',engineType:'NOT-MOTOR'}}
+  ]}]
+ })}]}
+})}}}};
+assert.deepEqual(a.observedMotorTypes(sampleRaw,1),['NATIVE-X']);
+assert.deepEqual(a.observedMotorTypes({},1),[]);
+assert.equal(a.countInternalEngineConditions(sampleRaw,1),2);
+const rawSegmentWith=restrictions=>({W:{model:{segments:{
+ getObjectById:()=>({attributes:{restrictions}})
+}}}});
+const profileWith=conditions=>({getDriveProfileList:group=>{
+ assert.equal(group,'BLOCKED');
+ return {getDriveProfiles:()=>[{getEngineCapacities:()=>conditions}]};
+}});
+assert.equal(a.countInternalEngineConditions(rawSegmentWith([
+ profileWith([{attributes:{engineType:'PRIVATE-MOTOR-VALUE'}}]),profileWith([{}])
+]),1),2,'Only the segment-wide count is returned');
+assert.equal(a.countInternalEngineConditions(rawSegmentWith([profileWith([])]),1),0);
+assert.equal(a.countInternalEngineConditions(rawSegmentWith([profileWith(undefined)]),1),0,
+ 'The native getter returns undefined when the profile contains no engine conditions');
+for(const page of [{},rawSegmentWith([{}]),rawSegmentWith([profileWith(Array(2))]),
+ rawSegmentWith([profileWith(null)]),rawSegmentWith([{getDriveProfileList:()=>({getDriveProfiles:()=>[{}]})}]),
+ rawSegmentWith([{getDriveProfileList(){throw Error('Unavailable');}}])]){
+ assert.equal(a.countInternalEngineConditions(page,1),null,'Unavailable data must not look like zero conditions');
+}
+const sdkEngineRow={direction:'FWD',defaultType:'FREE',laneScope:'WHOLE_SEGMENT',laneType:null};
+const fuelRule=Object.freeze({vehicleType:'MOTORCYCLE',engineType:'PRIVATE_FUEL_VALUE',
+ operator:'PRIVATE_OPERATOR',capacityThreshold:110});
+const electricRule=Object.freeze({...fuelRule,engineType:'PRIVATE_ELECTRIC_VALUE',capacityThreshold:5});
+const nativeEngineRow=(identity,direct,stored)=>({
+ getDriveProfileList:group=>{
+  assert.equal(group,'BLOCKED');
+  return {getDriveProfiles:()=>direct.map(conditions=>({
+   getEngineCapacities:()=>Object.freeze(conditions.map(attributes=>({attributes})))
+  }))};
+ },
+ toJSON:()=>({...identity,driveProfiles:{BLOCKED:stored.map(engineCapacities=>({engineCapacities}))}})
+});
+const engineSegment={id:1,restrictions:[sdkEngineRow]};
+const sameEngines=nativeEngineRow(sdkEngineRow,[[fuelRule,electricRule]],
+ [[electricRule,{...fuelRule,capacityThreshold:'110'}]]);
+const matched=a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),engineSegment);
+assert.deepEqual(matched,{count:2,rows:[{index:1,count:2,status:'MATCH'}],internalRows:[]});
+assert.doesNotMatch(JSON.stringify(matched),/PRIVATE_|capacityThreshold|110/);
+const mixedEngineProfiles={
+ getDriveProfileList:()=>({getDriveProfiles:()=>[
+  {getEngineCapacities:()=>undefined},
+  {getEngineCapacities:()=>Object.freeze([fuelRule,electricRule])}
+ ]}),
+ toJSON:()=>({...sdkEngineRow,driveProfiles:{BLOCKED:[{},{engineCapacities:[fuelRule,electricRule]}]}})
+};
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([mixedEngineProfiles]),engineSegment),
+ matched,'A plain profile must not hide confirmed engine conditions on another profile');
+assert.deepEqual(a.findEnginePreservationGaps(matched),[{index:1,count:2}]);
+const compareNativeLane=(privateFields,publicFields={})=>a.inspectInternalEnginePreservation(rawSegmentWith([
+ nativeEngineRow({direction:'FWD',defaultType:'FREE',...privateFields},[[fuelRule,electricRule]],
+  [[electricRule,fuelRule]])
+]),{id:1,restrictions:[{...sdkEngineRow,...publicFields}]});
+for(const [disposition,laneScope] of ['NONE','WHOLE_SEGMENT','LEFT_LANE','MIDDLE_LANE','RIGHT_LANE'].entries()){
+ assert.deepEqual(compareNativeLane({disposition,laneType:null},{laneScope}),matched);
+}
+for(const [index,laneType] of ['HOV','HOT','EXPRESS','BUS','FAST'].entries()){
+ assert.deepEqual(compareNativeLane({disposition:2,laneType:index+1},{laneScope:'LEFT_LANE',laneType}),matched);
+}
+assert.deepEqual(compareNativeLane({laneScope:'WHOLE_SEGMENT',disposition:1}),matched,
+ 'A decoded legacy field may agree with the current field');
+for(const [privateFields,fields] of [
+ [{disposition:0},['laneScope']],
+ [{disposition:99},['laneScope']],
+ [{disposition:'1'},['laneScope']],
+ [{laneScope:'WHOLE_SEGMENT',disposition:4},['laneScope']],
+ [{disposition:1,laneType:0},['laneType']],
+ [{disposition:1,laneType:99},['laneType']]
+]){
+ const report=compareNativeLane(privateFields);
+ assert.equal(report.rows[0].status,'UNPAIRED');
+ assert.deepEqual(report.rows[0].fields,fields);
+ assert.deepEqual(report.internalRows,matched.rows);
+}
+assert.equal(compareNativeLane({disposition:1},{laneScope:1}).rows[0].status,'UNPAIRED',
+ 'The private bridge must not change the public SDK contract');
+for(const [direct,stored] of [
+ [[[fuelRule,electricRule]],[[fuelRule]]],
+ [[[fuelRule]],[[{...fuelRule,capacityThreshold:120}]]],
+ [[[fuelRule],[electricRule]],[[electricRule],[fuelRule]]],
+ [[[fuelRule],[electricRule]],[[fuelRule,electricRule]]]
+]){
+ const report=a.inspectInternalEnginePreservation(rawSegmentWith([
+  nativeEngineRow(sdkEngineRow,direct,stored)
+ ]),engineSegment);
+ assert.equal(report.rows[0].status,'DIFFERENT');
+}
+const badStored=nativeEngineRow(sdkEngineRow,[[fuelRule]],[[{...fuelRule,capacityThreshold:'UNKNOWN'}]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([badStored]),engineSegment),
+ {count:1,rows:[{index:1,count:1,status:'UNAVAILABLE'}],internalRows:[]});
+const unpairedEngine=(index,reason,fields=[])=>({index,count:null,status:'UNPAIRED',reason,fields});
+const internalMatch={index:1,count:2,status:'MATCH'};
+const unknownJson={...sameEngines,toJSON(){throw Error('PRIVATE_JSON_ERROR');}};
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([unknownJson]),engineSegment),
+ {count:2,rows:[unpairedEngine(1,'native_engine_pair_json')],
+  internalRows:[{index:1,count:2,status:'UNAVAILABLE'}]});
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines,sameEngines]),engineSegment),
+ {count:4,rows:[unpairedEngine(1,'native_engine_pair_count')],
+  internalRows:[internalMatch,{...internalMatch,index:2}]});
+assert.deepEqual(a.inspectInternalEnginePreservation({},engineSegment),
+ {count:null,rows:[unpairedEngine(1,'native_engine_pair_model')],internalRows:[]});
+const missingDirection=nativeEngineRow({},[[fuelRule,electricRule]],[[electricRule,fuelRule]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([missingDirection]),engineSegment),
+ {count:2,rows:[unpairedEngine(1,'native_engine_pair_direction_missing')],internalRows:[internalMatch]},
+ 'The internal comparison remains available without an SDK association');
+const opaqueDirection=nativeEngineRow({direction:99},[[fuelRule,electricRule]],[[electricRule,fuelRule]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([opaqueDirection]),engineSegment),
+ {count:2,rows:[unpairedEngine(1,'native_engine_pair_direction')],internalRows:[internalMatch]});
+const sensitiveScope=nativeEngineRow({...sdkEngineRow,laneScope:'PRIVATE_SCOPE'},
+ [[fuelRule,electricRule]],[[fuelRule]]);
+const scopeMismatch=a.inspectInternalEnginePreservation(rawSegmentWith([sensitiveScope]),engineSegment);
+assert.deepEqual(scopeMismatch,{count:2,rows:[unpairedEngine(1,'native_engine_pair_fields',['laneScope'])],
+ internalRows:[{index:1,count:2,status:'DIFFERENT'}]});
+assert.doesNotMatch(JSON.stringify(scopeMismatch),/PRIVATE_|capacityThreshold/);
+const reverseEngineRow={...sdkEngineRow,direction:'REV'};
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines]),{
+ ...engineSegment,restrictions:[reverseEngineRow]
+}),{count:2,rows:[unpairedEngine(1,'native_engine_pair_fields',['direction'])],internalRows:[internalMatch]});
+const secondNativeEngineRow=nativeEngineRow(reverseEngineRow,[[fuelRule]],[[fuelRule]]);
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([secondNativeEngineRow,sameEngines]),{
+ ...engineSegment,restrictions:[sdkEngineRow,reverseEngineRow]
+}),{count:3,rows:[{index:1,count:2,status:'MATCH'},{index:2,count:1,status:'MATCH'}],internalRows:[]},
+ 'Association uses SDK-visible evidence, independent of internal list order');
+assert.deepEqual(a.inspectInternalEnginePreservation(rawSegmentWith([sameEngines,sameEngines]),{
+ ...engineSegment,restrictions:[sdkEngineRow,{...sdkEngineRow}]
+}),{count:4,rows:[unpairedEngine(1,'native_engine_pair_ambiguous'),unpairedEngine(2,'native_engine_pair_ambiguous')],
+ internalRows:[internalMatch,{...internalMatch,index:2}]},
+ 'Equal row counts and same direction do not resolve ambiguous association');
+assert.deepEqual(a.findEnginePreservationGaps({
+ count:2,rows:[unpairedEngine(1,'native_engine_pair_fields',['laneScope']),
+  {index:2,count:2,status:'DIFFERENT'},{index:3,count:null,status:'UNAVAILABLE'},
+  {index:4,count:0,status:'MATCH'}],internalRows:[internalMatch]
+}),[],'Only positive matching evidence paired to a specific SDK restriction yields a warning');
+
+let currentEngineRows=[sameEngines],engineReadCount=0;
+const liveEngineModel={W:{model:{segments:{getObjectById:()=>{
+ engineReadCount++;
+ return {attributes:{restrictions:currentEngineRows}};
+}}}}};
+const trackEngines=a.trackInternalEnginePreservation(liveEngineModel,engineSegment);
+assert.equal(engineReadCount,0,'Opening the summary does not read private engine conditions');
+assert.deepEqual(trackEngines(),{...matched,changes:[]},'The first match establishes the baseline');
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[electricRule,fuelRule]],[[fuelRule,electricRule]])];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'SAME'}],'Condition order within a profile may vary');
+const changedFuelRule={...fuelRule,capacityThreshold:12345};
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[changedFuelRule,electricRule]],[[changedFuelRule,electricRule]])];
+const changedEngines=trackEngines();
+assert.deepEqual(changedEngines,{...matched,changes:[{index:1,status:'CHANGED'}]},
+ 'Both current reads agree and the count is unchanged, but the first verified threshold differs');
+assert.doesNotMatch(JSON.stringify(changedEngines),/PRIVATE_|capacityThreshold|snapshot|12345/);
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[changedFuelRule,electricRule]],[[fuelRule,electricRule]])];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'UNKNOWN'}],
+ 'Disagreeing reads cannot confirm a change');
+currentEngineRows=[sameEngines,sameEngines];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'UNKNOWN'}],
+ 'Losing the unique SDK association makes a reread inconclusive');
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[],[])];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'CHANGED'}],'Removing the conditions is a change');
+currentEngineRows=[sameEngines];
+assert.deepEqual(trackEngines().changes,[{index:1,status:'SAME'}],
+ 'Intermediate discrepancies do not replace the first verified baseline');
+assert.deepEqual(a.trackInternalEnginePreservation(liveEngineModel,engineSegment)().changes,[],
+ 'Each new summary starts with an independent baseline');
+const trackLateRead=a.trackInternalEnginePreservation(liveEngineModel,engineSegment);
+currentEngineRows=null;
+assert.deepEqual(trackLateRead().changes,[],'An unavailable read does not set the baseline');
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[],[])];
+assert.deepEqual(trackLateRead().changes,[]);
+currentEngineRows=[nativeEngineRow(sdkEngineRow,[[]],[[]])];
+assert.deepEqual(trackLateRead().changes,[],'Profile changes with no engine conditions produce no engine alert');
+currentEngineRows=[sameEngines];
+assert.deepEqual(trackLateRead().changes,[{index:1,status:'CHANGED'}],'New engine conditions are detected');
+
+const sdkCalendar=Object.freeze({startDate:'2026-11-25',endDate:'2026-12-25',
+ fromTime:'22:00',toTime:'06:00',repeatYearly:false,dayAlternation:'EVEN_DAYS',
+ weekdays:Object.freeze(['SUNDAY','MONDAY']),timeZone:'Europe/Rome'});
+const nativeCalendar=Object.freeze({startDate:sdkCalendar.startDate,endDate:sdkCalendar.endDate,
+ fromTime:sdkCalendar.fromTime,toTime:sdkCalendar.toTime,repeatYearly:false,
+ daysOfMonth:715827882,weekdays:65,timeZone:sdkCalendar.timeZone});
+const nativeCalendarRow=timeFrames=>({toJSON:()=>({direction:'FWD',defaultType:'FREE',
+ disposition:1,timeFrames})});
+const compareCalendar=(sdkFrames,internalFrames)=>a.inspectInternalCalendarPreservation(
+ rawSegmentWith([nativeCalendarRow(internalFrames)]),
+ {id:1,restrictions:[{...sdkEngineRow,timeFrames:sdkFrames}]})[0];
+const calendarMatch={index:1,status:'MATCH',frameCount:1,fields:[],timeZones:['Europe/Rome']};
+assert.deepEqual(compareCalendar([sdkCalendar],[nativeCalendar]),calendarMatch,
+ 'Native weekday bits start with Monday, regardless of SDK array order');
+assert.deepEqual(compareCalendar([{...sdkCalendar,timeZone:null,dayAlternation:'ODD_DAYS',
+ weekdays:a.WEEKDAYS}], [{...nativeCalendar,timeZone:null,daysOfMonth:1431655765,weekdays:null}]),
+ {...calendarMatch,timeZones:[null]},'Native null weekdays mean all days, and a null zone is left unset');
+assert.deepEqual(compareCalendar([{...sdkCalendar,weekdays:[]}],[{...nativeCalendar,weekdays:0}]),
+ calendarMatch,'Zero weekday bits mean an empty SDK list');
+assert.deepEqual(compareCalendar([{...sdkCalendar,weekdays:[]}],[{...nativeCalendar,weekdays:127}]),
+ {...calendarMatch,status:'DIFFERENT',fields:['timeFrames[0].weekdays']});
+assert.deepEqual(compareCalendar([sdkCalendar],[{...nativeCalendar,weekdays:128,daysOfMonth:1}]),
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].weekdays','timeFrames[0].dayAlternation']});
+assert.deepEqual(compareCalendar([{...sdkCalendar,weekdays:['MONDAY','MONDAY']}],[nativeCalendar]),
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].weekdays']});
+assert.deepEqual(compareCalendar([sdkCalendar],[{...nativeCalendar,timeZone:'America/Los_Angeles'}]),
+ {...calendarMatch,status:'DIFFERENT',fields:['timeFrames[0].timeZone'],timeZones:[]});
+assert.deepEqual(compareCalendar([sdkCalendar],
+ [{...nativeCalendar,startDate:'2026-11-24',toTime:'05:00',repeatYearly:true}]),
+ {...calendarMatch,status:'DIFFERENT',fields:['timeFrames[0].startDate','timeFrames[0].toTime',
+  'timeFrames[0].repeatYearly']});
+assert.deepEqual(compareCalendar([sdkCalendar],
+ [{...nativeCalendar,endDate:'2026-11-31',weekdays:undefined}]),
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].endDate','timeFrames[0].weekdays']});
+const opaqueZone='PRIVATE-UNVERIFIED-ZONE';
+const redactedCalendar=compareCalendar([{...sdkCalendar,timeZone:opaqueZone}],
+ [{...nativeCalendar,timeZone:opaqueZone}]);
+assert.deepEqual(redactedCalendar,
+ {...calendarMatch,status:'UNKNOWN',fields:['timeFrames[0].timeZone'],timeZones:[]});
+assert.doesNotMatch(JSON.stringify(redactedCalendar),/PRIVATE/);
+assert.deepEqual(compareCalendar([sdkCalendar],null),
+ {...calendarMatch,status:'UNKNOWN',frameCount:null,fields:['timeFrames'],timeZones:[]});
+assert.deepEqual(compareCalendar([sdkCalendar],[]),
+ {...calendarMatch,status:'DIFFERENT',frameCount:null,fields:['timeFrames'],timeZones:[]});
+assert.deepEqual(compareCalendar([],[]),{...calendarMatch,frameCount:0,timeZones:[]});
+const noCalendarPair=a.inspectInternalCalendarPreservation(
+ rawSegmentWith([nativeCalendarRow([nativeCalendar]),nativeCalendarRow([nativeCalendar])]),
+ {id:1,restrictions:Array.from({length:2},()=>({...sdkEngineRow,timeFrames:[sdkCalendar]}))});
+assert.deepEqual(noCalendarPair.map(({status,reason,timeZones})=>({status,reason,timeZones})),
+ Array.from({length:2},()=>({status:'UNPAIRED',reason:'native_engine_pair_ambiguous',timeZones:[]})));
+
+assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(draft.restrictionType))'),
+ 'Date and time screen must include red, green and blue');
+assert.ok(src.includes('const destination=nextWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
+ 'Next navigation must use intent-aware flow');
+assert.ok(src.includes('const previous=previousWizardStep(step,draft.restrictionType,draft.vehicleTypes);'),
+ 'Back navigation must mirror the correct flow');
+assert.ok(src.includes('(step===7&&!isScheduleValid())'),
+ 'Invalid red schedule must block Next');
+assert.ok(src.includes('normalizeMotorDraft(motorDraft,draft.vehicleTypes.includes("MOTORCYCLE"));'),
+ 'Optional motor guard must be checked before advancing');
+assert.ok(src.includes('if(draft.restrictionType==="BLOCKED"){') &&
+ src.includes('node("h3",tr("motorcycle_step"))'),
+ 'Red motorcycle path must not show permit/occupancy controls');
+// Alpha 12: read-only SDK inspection must never be mistaken for geographic eligibility.
+const observedSegment={
+ id:204,isAtoB:true,isBtoA:true,isTwoWay:true,
+ restrictions:[
+  {direction:'FWD',defaultType:'BLOCKED',laneScope:'ALL',laneType:'HOV',
+   timeFrames:[{startDate:'2026-11-23',timeZone:'Europe/Rome'}],vehicleRules:{FREE:[]},
+   editable:true,description:'Test local restriction'},
+  {direction:'REV',defaultType:'FREE',laneScope:'RIGHT',laneType:'BUS',
+   timeFrames:[{timeZone:'Europe/Rome'},{timeZone:null}],vehicleRules:{BLOCKED:[]},
+   editable:false},
+  {direction:'REV',defaultType:'FREE',laneScope:'RIGHT',laneType:'BUS',
+   timeFrames:[],vehicleRules:{BLOCKED:[]},editable:null}
+ ]
+};
+const observedReport=a.inspectRestrictionCapabilities(observedSegment);
+assert.deepEqual(observedReport,{
+ available:true,count:3,laneScopes:['ALL','RIGHT'],
+ laneTypes:['BUS','HOV'],defaultTypes:['BLOCKED','FREE'],
+ timeZones:['Europe/Rome'],editable:{yes:1,no:1,unknown:1},verified:false
+});
+assert.deepEqual(a.inspectRestrictionCapabilities({id:5,restrictions:[]}),{
+ available:true,count:0,laneScopes:[],laneTypes:[],defaultTypes:[],
+ timeZones:[],editable:{yes:0,no:0,unknown:0},verified:false
+});
+assert.equal(a.inspectRestrictionCapabilities({id:5}).available,false);
+assert.equal(a.restrictionSnapshot({id:5}),null);
+const baseline=a.restrictionSnapshot(observedSegment);
+assert.ok(typeof baseline==='string');
+assert.equal(a.restrictionSnapshot(observedSegment),baseline,'Same SDK data must preserve fingerprint');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,isBtoA:false}),baseline,
+ 'Direction change must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ ...observedSegment.restrictions.slice(0,1),{...observedSegment.restrictions[1],
+  timeFrames:[{timeZone:'Europe/Rome',fromTime:'18:00'}]},observedSegment.restrictions[2]
+]}),baseline,'Time-range modification must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...observedSegment.restrictions[0],vehicleRules:{FREE:[{vehicleTypes:['BUS']}]}},
+ ...observedSegment.restrictions.slice(1)
+]}),baseline,'Vehicle-rule modification must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...observedSegment.restrictions[0],laneScope:'LEFT'},
+ ...observedSegment.restrictions.slice(1)
+]}),baseline,'Lane-scope modification must invalidate draft');
+assert.notEqual(a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...observedSegment.restrictions[0],editable:false},
+ ...observedSegment.restrictions.slice(1)
+]}),baseline,'Edit permission change must invalidate draft');
+const [firstObserved,...otherObserved]=observedSegment.restrictions;
+const snapshotWith=fields=>a.restrictionSnapshot({...observedSegment,restrictions:[
+ {...firstObserved,...fields},...otherObserved
+]});
+assert.notEqual(snapshotWith({isExpired:true}),snapshotWith({isExpired:false}));
+assert.notEqual(snapshotWith({opaque:{category:1}}),snapshotWith({opaque:{category:2}}));
+assert.equal(snapshotWith({opaque:{a:1,b:2}}),snapshotWith({opaque:{b:2,a:1}}));
+for(const opaque of [undefined,NaN,Infinity,new Date(),Array(1),Symbol(),()=>{}]){
+ assert.equal(snapshotWith({opaque}),null,'Values JSON could discard or coerce must not become equal');
+}
+let accessorEvaluated=false;
+const opaqueAccessor={get unexpected(){accessorEvaluated=true;return 1;}};
+assert.equal(snapshotWith({opaque:opaqueAccessor}),null);
+assert.equal(accessorEvaluated,false,'Snapshot must not evaluate native accessors');
+const cyclic={id:20,isAtoB:true,restrictions:[{direction:'FWD'}]};
+cyclic.restrictions[0].timeFrames=cyclic.restrictions;
+assert.equal(a.restrictionSnapshot(cyclic),null,'Unserializable SDK state must be unknown, not guessed');
+assert.ok(src.includes('const baselineSnapshot=restrictionSnapshot(current.segment,true);'),
+ 'The wizard must capture initial SDK restrictions');
+assert.ok(src.includes('if(baselineSnapshot!==latestSnapshot)'),
+ 'Next must abort if observed SDK restrictions or direction changed');
+assert.ok(src.includes('showDraftContextProblem(reason)') && src.includes('node("p",tr(reason))'),
+ 'Stale drafts must show a clear message');
+assert.ok(!src.includes('node("summary",tr("inspection_title"))'),
+ 'Redundant technical inspection box must stay removed from the cleaned-up sidebar');
+// Alpha 14: a green whitelist must have dates and hours AFTER vehicle-specific conditions.
+assert.ok(src.includes('if(step===5&&(intent==="BLOCKED"||intent==="ALLOWED"))return 7;'),
+ 'Green advanced conditions must continue to the shared calendar');
+assert.ok(src.includes('if(step===7&&RESTRICTION_TYPES.includes(intent))return 6;'),
+ 'Every restriction type must go from calendar to summary');
+assert.ok(src.includes('if(step===7&&intent==="ALLOWED")return 5;'),
+ 'Back from green schedule must return to per-vehicle rules');
+for(const intent of ['red','green','toll']){
+ assert.ok(src.includes(`renderScheduleSummary(schedule,"${intent}_schedule_intro");`),
+  'All summaries must display the same overnight semantics');
+}
+assert.ok(src.includes('tr("schedule_overnight")')&&src.includes('tr("schedule_next_day")'),
+ 'The calendar editor and summary must identify the next-day ending');
+const proposedFrames=[
+ {weekdays:['MONDAY'],fromTime:'08:00',toTime:'11:00'},
+ {weekdays:['MONDAY'],fromTime:'16:00',toTime:'19:00'}
+];
+const emptyBudget=a.estimateSafe12Budget([],proposedFrames);
+assert.deepEqual(emptyBudget,{
+ status:'WITHIN_ESTIMATE',existingRestrictions:0,existingFrames:0,
+ proposedRestrictions:2,proposedFrames:2,projectedRestrictions:2,projectedFrames:2,
+ limit:12,verified:false
+});
+const existingRestrictions=[
+ {timeFrames:[{fromTime:'09:00',toTime:'10:00'}]},
+ {timeFrames:[{fromTime:'10:00',toTime:'11:00'},{fromTime:'14:00',toTime:'15:00'}]}
+];
+const within=a.estimateSafe12Budget(existingRestrictions,proposedFrames);
+assert.equal(within.status,'WITHIN_ESTIMATE');
+assert.equal(within.existingRestrictions,2);
+assert.equal(within.existingFrames,3);
+assert.equal(within.projectedRestrictions,4);
+assert.equal(within.projectedFrames,5);
+assert.equal(within.verified,false,'An estimate must never be marked verified');
+assert.equal(existingRestrictions[0].timeFrames.length,1,'Inspector must never mutate SDK restrictions');
+const overByRules=a.estimateSafe12Budget(
+ Array.from({length:11},()=>({timeFrames:[]})),proposedFrames);
+assert.equal(overByRules.status,'OVER');
+assert.equal(overByRules.projectedRestrictions,13);
+const overByFrames=a.estimateSafe12Budget(
+ [{timeFrames:Array.from({length:11},()=>({weekdays:['TUESDAY']}))}],
+ proposedFrames);
+assert.equal(overByFrames.status,'OVER');
+assert.equal(overByFrames.projectedRestrictions,3);
+assert.equal(overByFrames.projectedFrames,13);
+const exactLimit=a.estimateSafe12Budget(
+ Array.from({length:10},()=>({timeFrames:[{}]})),proposedFrames);
+assert.equal(exactLimit.status,'WITHIN_ESTIMATE');
+assert.equal(exactLimit.projectedRestrictions,12);
+assert.equal(exactLimit.projectedFrames,12);
+for(const unknown of [
+ a.estimateSafe12Budget(null,proposedFrames),
+ a.estimateSafe12Budget([{description:'no-frames'}],proposedFrames),
+ a.estimateSafe12Budget([null],proposedFrames),
+ a.estimateSafe12Budget(Array(1),proposedFrames),
+ a.estimateSafe12Budget([{timeFrames:Array(1)}],proposedFrames),
+ a.estimateSafe12Budget([],[]),
+ a.estimateSafe12Budget([],null),
+ a.estimateSafe12Budget([],Array(1)),
+ a.estimateSafe12Budget([],['invalid'])
+]){
+ assert.equal(unknown.status,'UNKNOWN','Incomplete SDK data cannot be guessed');
+ assert.equal(unknown.projectedFrames,null);
+ assert.equal(unknown.verified,false);
+}
+const allDayRule={timeFrames:[{}]};
+assert.deepEqual(a.countSafe12Operation([[allDayRule],[]]),{
+ restrictions:1,timeFrames:1,overLimit:false
+});
+assert.deepEqual(a.countSafe12Operation([
+ Array(7).fill(allDayRule),Array(5).fill(allDayRule)
+]),{restrictions:12,timeFrames:12,overLimit:false});
+assert.deepEqual(a.countSafe12Operation([
+ Array(7).fill({timeFrames:[]}),Array(6).fill(allDayRule)
+]),{restrictions:13,timeFrames:6,overLimit:true},'Restriction cap applies across all segments');
+assert.deepEqual(a.countSafe12Operation([
+ [{timeFrames:Array(7).fill({})}],[{timeFrames:Array(6).fill({})}]
+]),{restrictions:2,timeFrames:13,overLimit:true},'Frame cap applies across all segments');
+assert.equal(a.countSafe12Operation([Array(13).fill(allDayRule),[{timeFrames:[null]}]]),null,
+ 'A malformed segment cannot produce an authoritative aggregate even when another exceeds the cap');
+const oneNewFrame=[proposedFrames[0]];
+const budgetForCounts=(left,right)=>a.estimateGuidedOperationBudget([
+ {existingRestrictions:left,proposedTimeFrames:oneNewFrame},
+ {existingRestrictions:right,proposedTimeFrames:oneNewFrame}
+]);
+const operationWithin=budgetForCounts(Array(5).fill(allDayRule),Array(5).fill(allDayRule));
+assert.deepEqual(operationWithin,{
+ status:'WITHIN_ESTIMATE',existingRestrictions:10,existingFrames:10,
+ proposedRestrictions:2,proposedFrames:2,projectedRestrictions:12,projectedFrames:12,
+ limit:12,verified:false
+});
+const operationOverRules=budgetForCounts(Array(5).fill({timeFrames:[]}),Array(6).fill({timeFrames:[]}));
+assert.equal(operationOverRules.status,'OVER');
+assert.equal(operationOverRules.projectedRestrictions,13);
+assert.equal(operationOverRules.projectedFrames,2);
+const operationOverFrames=budgetForCounts([{timeFrames:Array(5).fill({})}],[{timeFrames:Array(6).fill({})}]);
+assert.equal(operationOverFrames.status,'OVER');
+assert.equal(operationOverFrames.projectedRestrictions,4);
+assert.equal(operationOverFrames.projectedFrames,13);
+assert.equal(budgetForCounts(Array(12).fill(allDayRule),[{}]).status,'UNKNOWN');
+assert.equal(a.estimateGuidedOperationBudget(Array(1)).status,'UNKNOWN');
+assert.ok(src.includes('tr("budget_total")+": "') && !src.includes('const budgetBox=node("section");'),
+ 'Step 6 shows SAFE12 total directly in the Before/After plan without the redundant legacy budgetBox');
+const previewSchedule=a.normalizeRedSchedule({...overnightDraft,slots:[
+ ...overnightDraft.slots,{fromTime:'08:00',toTime:'09:00'}
+]});
+const previewInput=Object.freeze({restrictions:Object.freeze([
+ Object.freeze({editable:false,licensePlateRule:'PRIVATE-PLATE'}),
+ Object.freeze({vehicleRules:{BLOCKED:[{vehicleTypes:['MOTORCYCLE'],engineType:'PRIVATE-ENGINE'}]}})
+])});
+const projectedDraft=a.previewDraftBeforeAfter(previewInput,previewSchedule);
+assert.deepEqual(projectedDraft.before,[1,2]);
+assert.deepEqual(projectedDraft.after.retained,[1,2]);
+assert.notEqual(projectedDraft.before,projectedDraft.after.retained);
+assert.equal(projectedDraft.after.additions.length,2);
+assert.deepEqual(projectedDraft.after.additions[0],{
+ startDate:'2026-12-06',endDate:'2026-12-06',weekdays:['SUNDAY'],fromTime:'22:00',toTime:'06:00'
+});
+assert.notEqual(projectedDraft.after.additions[0].weekdays,previewSchedule.timeFrames[0].weekdays);
+assert.doesNotMatch(JSON.stringify(projectedDraft),/PRIVATE-|sdkWritePayload/);
+assert.equal(projectedDraft.saveAllowed,false);
+assert.equal(projectedDraft.verified,false);
+const unknownDraftPreview=a.previewDraftBeforeAfter({restrictions:null},previewSchedule);
+assert.equal(unknownDraftPreview.before,null);
+assert.equal(unknownDraftPreview.after.retained,null,'An unavailable list must not look empty');
+assert.deepEqual(unknownDraftPreview.after.additions,projectedDraft.after.additions);
+assert.deepEqual(a.previewDraftBeforeAfter({restrictions:[]},previewSchedule).after.retained,[]);
+assert.deepEqual(a.previewDraftBeforeAfter({restrictions:Array(1)},previewSchedule).after.retained,[1]);
+assert.equal(a.listExistingRestrictions({restrictions:Array(1)}).entries[0].index,1,
+ 'An unreadable list slot is still shown as an existing row');
+// Alpha 16: proposed laneScope values are NOT a verified SDK write contract.
+assert.deepEqual(a.LANE_SCOPE_CANDIDATES,{
+ segment:'WHOLE_SEGMENT',left:'LEFT_LANE',
+ center:'MIDDLE_LANE',right:'RIGHT_LANE'
+});
+for(const scope of a.SCOPES){
+ const report=a.inspectLaneDraft({scope,lane:'lane_none'},[]);
+ assert.deepEqual(report,{
+  designScope:scope,laneScopeCandidate:a.LANE_SCOPE_CANDIDATES[scope],
+  observedScope:false,readAvailable:true,
+  designLaneType:'lane_none',sdkLaneType:null,
+  laneTypeStatus:'NONE_REQUESTED',observedLaneTypes:[],
+  verified:false
+ });
+}
+const existingLaneRows=[
+ {laneScope:'LEFT_LANE',laneType:'HOV'},
+ {disposition:'RIGHT_LANE',laneType:'BUS'},
+ {laneScope:'LEFT_LANE',laneType:'HOV'},
+ {laneScope:null,laneType:null},
+ {laneScope:'WHOLE_SEGMENT',laneType:'EXPRESS'}
+];
+const leftReport=a.inspectLaneDraft({scope:'left',lane:'hov'},existingLaneRows);
+assert.equal(leftReport.laneScopeCandidate,'LEFT_LANE');
+assert.equal(leftReport.observedScope,true);
+assert.equal(leftReport.laneTypeStatus,'UNMAPPED');
+assert.equal(leftReport.sdkLaneType,null,'Do not invent SDK values for special lane types');
+assert.deepEqual(leftReport.observedLaneTypes,['BUS','EXPRESS','HOV']);
+assert.equal(leftReport.verified,false,'Existing values are not proof of new restriction eligibility');
+assert.equal(a.inspectLaneDraft({scope:'right',lane:'lane_none'},existingLaneRows).observedScope,true,
+ 'Read deprecated disposition as evidence, but do not write that deprecated field');
+assert.equal(a.inspectLaneDraft({scope:'center',lane:'fast'},existingLaneRows).observedScope,false);
+const unavailableLane=a.inspectLaneDraft({scope:'segment',lane:'express'},null);
+assert.equal(unavailableLane.readAvailable,false);
+assert.equal(unavailableLane.observedScope,false);
+assert.deepEqual(unavailableLane.observedLaneTypes,[]);
+for(const badScope of [null,'unknown','LEFT_LANE']){
+ assert.throws(()=>a.inspectLaneDraft({scope:badScope,lane:'lane_none'},[]),/Invalid lane scope/);
+}
+for(const badType of [null,'HOV','bus','invented']){
+ assert.throws(()=>a.inspectLaneDraft({scope:'segment',lane:badType},[]),/Invalid special lane type/);
+}
+assert.ok(src.includes('tr("lane_special_pending")') && !src.includes('const laneBox=node("section");'),
+ 'Step 2 warns cleanly on special lanes without the redundant technical lane boxes');
+assertSingleGatedWriteEntry();
+// Alpha 17: WME changes the native panel action when restrictions exist.
+const nativeActions={
+  add:['Aggiungi restrizioni','Aggiungi restrizione','Add restrictions','Add restriction',
+       'Ajouter des restrictions','Añadir restricciones','Beschränkungen hinzufügen',
+       'Adicionar restrições'],
+  edit:['Modifica restrizioni','Modifica restrizione','Edit restrictions','Edit restriction',
+        'Modifier les restrictions','Editar restricciones','Beschränkungen bearbeiten',
+        'Editar restrições']
+};
+for(const [action,names] of Object.entries(nativeActions)){
+ for(const name of names){
+  assert.equal(a.nativeRestrictionAction(name),action,name+' should be recognized');
+  assert.equal(a.nativeRestrictionAction('  + '+name.toUpperCase()+'  '),action,
+    'Native restriction action must support normalized visual labels');
+ }
+}
+for(const unrelated of [
+ 'Modifica segmento','Modifica dettagli','Modifica velocità','Aggiungi passaggio',
+ '1 Restrizioni di Guida','Modifica restrizioni strada','Edit turn restrictions',''
+]){
+ assert.equal(a.nativeRestrictionAction(unrelated),null,
+  'Do not inject guided button next to unrelated native control: '+unrelated);
+}
+assert.ok(src.includes('const nativeEditLabels = new Set('),
+ 'The script must support native edit labels, not just add labels');
+assert.ok(src.includes("button,[role=\"button\"],wz-button,a,[role=\"link\"]"),
+ 'The native anchor must search accessible buttons AND links');
+assert.ok(src.includes("document.querySelectorAll('span,strong,div,p')"),
+ 'Provide a guarded fallback when native edit restrictions has no button semantics');
+assert.ok(src.includes('if(outer.length>1)return null;') &&
+  src.includes('return textLeaves.length===1?textLeaves[0]:null;'),
+ 'Ambiguous matching native actions must fall back to the script sidebar');
+assert.ok(src.includes('nativeButton.addEventListener("pointerdown",event=>event.stopPropagation());') &&
+ src.includes('nativeButton.addEventListener("mousedown",event=>event.stopPropagation());'),
+ 'A nested guided button must not trigger the WME native edit handler');
+assert.ok(src.includes('root.append(launch);'),
+ 'The independent sidebar wizard launch must always remain available');
+// Alpha 18: SDK write-contract review must be pure, deterministic and fail closed.
+const conversionSegment={id:901,isAtoB:true,restrictions:[]};
+const conversionSchedule={startDate:'2026-12-01',endDate:'2026-12-31',
+ weekdays:['MONDAY','FRIDAY'],allDay:false,
+ slots:[{fromTime:'08:00',toTime:'10:00'},{fromTime:'17:00',toTime:'19:00'}]};
+const baseConversion={direction:'FWD',scope:'segment',lane:'lane_none'};
+const noMotor={enabled:false,conditions:[]};
+const localeCountry={id:1,name:'Italy'};
+const redNoVehicles=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:[]},conversionSegment,
+ conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(redNoVehicles.defaultType,'BLOCKED');
+assert.equal(redNoVehicles.overrideType,null);
+assert.deepEqual(redNoVehicles.vehicleConditionRows,[]);
+assert.equal(redNoVehicles.proposedFrameCount,2);
+assert.equal(redNoVehicles.plannedHasToll,null);
+assert.equal(redNoVehicles.status,'BLOCKED');
+assert.equal(redNoVehicles.saveAllowed,false);
+assert.equal(redNoVehicles.verified,false);
+assert.equal(redNoVehicles.sdkWritePayload,null);
+assert.ok(redNoVehicles.blockers.includes('conversion_sdk_contract'));
+assert.ok(redNoVehicles.blockers.includes('conversion_schedule'));
+assert.ok(redNoVehicles.blockers.includes('conversion_safe12'));
+assert.ok(redNoVehicles.blockers.includes('conversion_country'));
+assert.ok(!redNoVehicles.blockers.includes('conversion_preserve'));
+const redSelected=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:['PRIVATE','MOTORCYCLE']},
+ conversionSegment,conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(redSelected.defaultType,'FREE');
+assert.equal(redSelected.overrideType,'BLOCKED');
+assert.deepEqual(redSelected.vehicleConditionRows.map(r=>r.vehicleType),['PRIVATE','MOTORCYCLE']);
+assert.ok(redSelected.vehicleConditionRows.every(row=>row.ruleType==='BLOCKED'));
+assert.equal(redSelected.vehicleConditionRows.find(r=>r.vehicleType==='MOTORCYCLE').engineFilter,'ALL_MOTORCYCLES');
+const motorFilter={enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125}]};
+const redMotor=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']},
+ conversionSegment,conversionSchedule,{},[],motorFilter,localeCountry);
+assert.ok(redMotor.blockers.includes('conversion_engine'));
+assert.equal(redMotor.vehicleConditionRows[0].engineFilter,'MATCHING_ENGINES');
+assert.equal(redMotor.sdkWritePayload,null);
+const greenPerVehicle={
+ PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['resident'],minPassengers:3},
+ EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}
+};
+const greenInput={...baseConversion,restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']};
+const green=a.reviewSdkConversion(greenInput,conversionSegment,conversionSchedule,
+ greenPerVehicle,[{id:'resident',name:'Local permit'}],noMotor,localeCountry);
+assert.equal(green.defaultType,'BLOCKED');
+assert.equal(green.overrideType,'FREE');
+assert.equal(green.vehicleConditionRows[0].vehicleType,'PRIVATE');
+assert.equal(green.vehicleConditionRows[0].access,'CONDITIONAL');
+assert.equal(green.vehicleConditionRows[0].permitCount,1);
+assert.equal(green.vehicleConditionRows[0].minPassengers,3);
+assert.equal(green.vehicleConditionRows[1].vehicleType,'EV');
+assert.equal(green.vehicleConditionRows[1].access,'DIRECT');
+assert.equal(green.vehicleConditionRows[1].permitCount,0);
+assert.equal(green.vehicleConditionRows[1].minPassengers,null);
+assert.ok(green.blockers.includes('conversion_conditions'));
+assert.equal(green.sdkWritePayload,null);
+const greenDirect=a.reviewSdkConversion(greenInput,conversionSegment,conversionSchedule,
+ {},[],noMotor,localeCountry);
+assert.ok(!greenDirect.blockers.includes('conversion_conditions'));
+const toll=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},
+ conversionSegment,conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(toll.defaultType,'TOLL');
+assert.equal(toll.overrideType,'FREE');
+assert.deepEqual(toll.vehicleConditionRows,[{
+ vehicleType:'TAXI',ruleType:'FREE',access:'TOLL_EXEMPT'
+}]);
+assert.equal(toll.plannedHasToll,true);
+assert.ok(toll.blockers.includes('conversion_toll_atomic'));
+assert.equal(toll.sdkWritePayload,null);
+const existingSegment={...conversionSegment,restrictions:[{
+ defaultType:'FREE',editable:false,timeFrames:[{weekdays:1,fromTime:'07:00',toTime:'08:00'}],
+ vehicleRules:{BLOCKED:[{vehicleTypes:['BUS']}]}
+}]};
+const withExisting=a.reviewSdkConversion(greenInput,existingSegment,conversionSchedule,
+ greenPerVehicle,[{id:'resident',name:'Local permit'}],noMotor,localeCountry);
+assert.ok(withExisting.blockers.includes('conversion_preserve'));
+assert.equal(withExisting.existingRestrictionCount,1);
+assert.deepEqual(existingSegment.restrictions[0].vehicleRules,
+ {BLOCKED:[{vehicleTypes:['BUS']}]},'Existing native rules must remain untouched');
+const unknownExisting=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'BLOCKED',vehicleTypes:[]},
+ {...conversionSegment,restrictions:null},
+ conversionSchedule,{},[],noMotor,localeCountry);
+assert.ok(unknownExisting.blockers.includes('conversion_unknown'));
+assert.equal(unknownExisting.budgetStatus,'UNKNOWN');
+assert.equal(unknownExisting.budget.status,'UNKNOWN');
+const overConversion=a.reviewSdkConversion({...baseConversion,
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},
+ {...conversionSegment,restrictions:Array.from({length:12},()=>({timeFrames:[]}))},
+ conversionSchedule,{},[],noMotor,localeCountry);
+assert.equal(overConversion.budgetStatus,'OVER');
+assert.equal(overConversion.budget.projectedRestrictions,12+overConversion.proposedFrameCount);
+assert.ok(overConversion.blockers.includes('conversion_overbudget'));
+assert.equal(overConversion.saveAllowed,false);
+assert.throws(()=>a.reviewSdkConversion({...baseConversion,
+ restrictionType:'ALLOWED',vehicleTypes:['PRIVATE']},conversionSegment,
+ conversionSchedule,{PRIVATE:{requiresPass:true,requiresOccupancy:false,
+ permitIds:[],minPassengers:null}},[],noMotor,localeCountry),
+ /Missing vehicle permit/);
+assert.throws(()=>a.reviewSdkConversion({...baseConversion,
+ restrictionType:'TOLL',vehicleTypes:[]},conversionSegment,
+ conversionSchedule,{},[],noMotor,localeCountry),/TOLL requires/);
+assert.ok(src.includes('const conversion=reviewSdkConversion(') &&
+ !src.includes('node("summary",tr("conversion_title"))') &&
+ !src.includes('node("p",tr("conversion_blocked"))'),
+ 'Step 6 must use the active Phase 3/4A controlled apply box instead of the obsolete always-blocked conversion details');
+assertSingleGatedWriteEntry();
+// Alpha 19: preserve ALL existing native restrictions; never serialize read model
+// as SegmentRestrictionData, and never interpret unknown vehicle rules as writable.
+const noRestrictionAudit=a.auditRestrictionPreservation({id:10,isAtoB:true,restrictions:[]});
+assert.deepEqual(noRestrictionAudit,{
+ status:'NO_EXISTING',count:0,frameCount:0,nonEditable:0,editabilityUnknown:0,
+ opaqueVehicleRules:0,legacyFields:0,incomplete:0,entries:[],writeReady:false,verified:false
+});
+const untouchedNative={id:20,isAtoB:true,restrictions:[
+ {defaultType:'BLOCKED',editable:false,timeFrames:[{fromTime:'08:00',toTime:'10:00'}],
+  vehicleRules:{FREE:[{vehicleTypes:['BUS']}]},disposition:'RIGHT_LANE'},
+ {defaultType:'FREE',editable:true,timeFrames:[],vehicleRules:{BLOCKED:[{
+  vehicleTypes:['HAZARDOUS_MATERIALS']}]},driveProfiles:{BLOCKED:[]}},
+ {defaultType:'TOLL',timeFrames:[{},{}],vehicleRules:{}}
+]};
+const beforeNative=JSON.stringify(untouchedNative);
+const audited=a.auditRestrictionPreservation(untouchedNative);
+const {entries:auditedEntries,...auditedTotals}=audited;
+assert.deepEqual(auditedTotals,{
+ status:'REQUIRES_ROUNDTRIP',count:3,frameCount:3,nonEditable:1,
+ editabilityUnknown:1,opaqueVehicleRules:2,legacyFields:2,
+ incomplete:0,writeReady:false,verified:false
+});
+assert.deepEqual(auditedEntries.map(entry=>entry.index),[1,2,3]);
+assert.ok(auditedEntries[0].issues.some(issue=>issue.field==='editable'));
+assert.ok(auditedEntries[1].issues.some(issue=>issue.field==='driveProfiles / vehicleRules'));
+assert.ok(auditedEntries[2].issues.some(issue=>issue.field==='vehicleRules.FREE'));
+assert.equal(JSON.stringify(untouchedNative),beforeNative,
+ 'The preservation audit must never alter any native restrictions');
+const incompleteNative={id:22,isBtoA:true,restrictions:[
+ {defaultType:'BLOCKED',editable:true,vehicleRules:{},timeFrames:[]},
+ {defaultType:'INVALID',editable:true,vehicleRules:{},timeFrames:[]},
+ {defaultType:'FREE',editable:true,timeFrames:[]}
+]};
+const missing=a.auditRestrictionPreservation(incompleteNative);
+assert.equal(missing.status,'UNKNOWN');
+assert.equal(missing.count,3);
+assert.equal(missing.incomplete,2);
+assert.equal(missing.writeReady,false);
+assert.deepEqual(a.auditRestrictionPreservation({id:23,restrictions:null}),{
+ status:'UNKNOWN',count:null,frameCount:null,nonEditable:null,
+ editabilityUnknown:null,opaqueVehicleRules:null,legacyFields:null,
+ incomplete:null,entries:[],writeReady:false,verified:false
+});
+const circularSegment={id:24,restrictions:[{
+ defaultType:'FREE',editable:true,timeFrames:[],vehicleRules:{BLOCKED:[]}
+}]};
+circularSegment.restrictions[0].vehicleRules.SELF=circularSegment.restrictions;
+const circularAudit=a.auditRestrictionPreservation(circularSegment);
+assert.equal(circularAudit.status,'UNKNOWN',
+ 'Circular or unserializable native data must fail closed');
+assert.deepEqual(circularAudit.entries[0].issues[0],{
+ field:'vehicleRules.[…][0]',reason:'preservation_snapshot_cycle'
+});
+assert.ok(circularAudit.entries[0].issues.some(issue=>issue.field==='direction'),
+ 'An opaque field must not stop inspection of other readable fields in the same row');
+
+const publicSoleRule={vehicleTypes:['PUBLIC_TRANSPORTATION'],minPassengers:0,
+ licensePlateRule:'ENDS_WITH_7',subscriptions:['PRIVATE-SUBSCRIPTION-ID']};
+const publicFrame={startDate:'2026-12-06',endDate:'2026-12-06',
+ fromTime:'22:00',toTime:'06:00',weekdays:['SUNDAY'],timeZone:'Europe/Rome',
+ repeatYearly:false,dayAlternation:null,daysOfMonth:null};
+const publicRestriction={defaultType:'FREE',description:'PRIVATE-DESCRIPTION',direction:'FWD',
+ laneScope:'LEFT_LANE',disposition:'LEFT_LANE',laneType:'BUS',timeFrames:[publicFrame],
+ vehicleRules:{BLOCKED:[publicSoleRule]},driveProfiles:{BLOCKED:[{...publicSoleRule}]},
+ editable:true,isExpired:false};
+const preservedShape=a.auditRestrictionPreservation({restrictions:[publicRestriction]});
+assert.deepEqual(preservedShape.entries,[{index:1,issues:[]}],
+ 'A documented SDK vehicle category can match the SDK shape outside the wizard shortlist');
+assert.ok(!a.VEHICLE_TYPES.includes('PUBLIC_TRANSPORTATION'));
+assert.equal(preservedShape.status,'REQUIRES_ROUNDTRIP');
+assert.equal(preservedShape.writeReady,false);
+const sdkReadback={
+ ...publicRestriction,description:undefined,
+ timeFrames:[{...publicFrame,toTime:undefined}],
+ vehicleRules:{BLOCKED:[{...publicSoleRule,minPassengers:undefined}]},
+ driveProfiles:{BLOCKED:[{...publicSoleRule}]}
+};
+const privateField='PRIVATE-ARBITRARY-KEY';
+sdkReadback[privateField]={privateValue:undefined};
+let preservationGetterCalls=0;
+Object.defineProperty(sdkReadback,'laneScope',{
+ get(){preservationGetterCalls++;throw new Error('PRIVATE-GETTER-ERROR');}
+});
+const partialSegment={restrictions:[sdkReadback,publicRestriction]};
+assert.equal(a.restrictionSnapshot(partialSegment),null,
+ 'Partial diagnostics must not make an opaque snapshot comparable');
+const partialAudit=a.auditRestrictionPreservation(partialSegment);
+assert.equal(partialAudit.status,'UNKNOWN');
+assert.equal(partialAudit.writeReady,false);
+assert.equal(partialAudit.verified,false);
+assert.equal(preservationGetterCalls,0);
+assert.deepEqual(partialAudit.entries[0].issues.slice(0,5),[
+ {field:'[…].[…]',reason:'preservation_snapshot_undefined'},
+ {field:'description',reason:'preservation_snapshot_undefined'},
+ {field:'laneScope',reason:'preservation_snapshot_accessor'},
+ {field:'timeFrames[0].toTime',reason:'preservation_snapshot_undefined'},
+ {field:'vehicleRules.BLOCKED[0].minPassengers',reason:'preservation_snapshot_undefined'}
+]);
+assert.ok(!partialAudit.entries[0].issues.some(issue=>issue.field==='driveProfiles / vehicleRules'),
+ 'A partially unreadable current rule does not establish a difference from the previous one');
+assert.deepEqual(partialAudit.entries[1],{index:2,issues:[]});
+assert.doesNotMatch(JSON.stringify(partialAudit),/PRIVATE-|ENDS_WITH_7/);
+const withSdkAliases=(rule,aliases)=>{
+ for(const key of aliases)Object.defineProperty(rule,key,{enumerable:true, get(){
+  preservationGetterCalls++;throw new Error('PRIVATE-GETTER-ERROR');
+ }});
+ return rule;
+};
+const nativeAliasRule=()=>withSdkAliases({...publicSoleRule,vehicleTypes:['MOTORCYCLE']},
+ ['numPassengers','licensePlateNumber']);
+const dynamicAliases=withSdkAliases({
+ ...publicRestriction,vehicleRules:{BLOCKED:[nativeAliasRule()]},driveProfiles:{BLOCKED:[nativeAliasRule()]},
+ timeFrames:[withSdkAliases({...publicFrame},['daysOfMonth'])]
+},['disposition']);
+const aliasAudit=a.auditRestrictionPreservation({restrictions:[dynamicAliases]});
+assert.equal(a.restrictionSnapshot({restrictions:[dynamicAliases]}),null);
+const freshnessSnapshot=rule=>a.restrictionSnapshot({id:1,restrictions:[rule]},true);
+const wrappedAliases=withSdkAliases({
+ ...publicRestriction,vehicleRules:{BLOCKED:[nativeAliasRule()]},
+ timeFrames:[withSdkAliases({...publicFrame},['daysOfMonth'])]
+},['disposition','driveProfiles']);
+const initialFreshness=freshnessSnapshot(wrappedAliases);
+assert.equal(typeof initialFreshness,'string');
+const canonicalOnly={
+ ...publicRestriction,vehicleRules:{BLOCKED:[{...publicSoleRule,vehicleTypes:['MOTORCYCLE']}]},
+ timeFrames:[{...publicFrame}]
+};
+delete canonicalOnly.disposition;
+delete canonicalOnly.driveProfiles;
+delete canonicalOnly.timeFrames[0].daysOfMonth;
+assert.equal(freshnessSnapshot(canonicalOnly),initialFreshness,
+ 'Observed derived getters do not affect the SDK freshness projection');
+assert.notEqual(freshnessSnapshot({...canonicalOnly,disposition:'WHOLE_SEGMENT'}),initialFreshness,
+ 'An explicit legacy data property remains part of the comparison');
+assert.notEqual(freshnessSnapshot(withSdkAliases({
+ ...publicRestriction,vehicleRules:{BLOCKED:[withSdkAliases({
+  ...publicSoleRule,vehicleTypes:['MOTORCYCLE'],minPassengers:3
+ },['numPassengers','licensePlateNumber'])]},
+ timeFrames:[withSdkAliases({...publicFrame},['daysOfMonth'])]
+},['disposition','driveProfiles'])),initialFreshness,'A canonical condition change remains visible');
+assert.equal(freshnessSnapshot(withSdkAliases({direction:'FWD'},['disposition'])),null,
+ 'A deprecated getter cannot stand in for a missing canonical field');
+assert.equal(freshnessSnapshot(withSdkAliases({...publicRestriction,opaque:{}},['opaqueAlias'])),null,
+ 'Unrecognized getters remain opaque');
+assert.equal(freshnessSnapshot(Object.defineProperty({...publicRestriction},'disposition',{
+ get:()=>publicRestriction.laneScope,set(){throw Error('Do not call SDK accessors');}
+})),null,'Accessor with a setter is not the observed deprecated SDK getter');
+assert.equal(preservationGetterCalls,0,'Deprecation recognition must not evaluate native getters');
+assert.equal(aliasAudit.status,'UNKNOWN');
+assert.equal(aliasAudit.writeReady,false);
+assert.deepEqual(aliasAudit.entries[0].issues,[
+ {field:'disposition',reason:'preservation_snapshot_alias'},
+ {field:'driveProfiles.BLOCKED[0].licensePlateNumber',reason:'preservation_snapshot_alias'},
+ {field:'driveProfiles.BLOCKED[0].numPassengers',reason:'preservation_snapshot_alias'},
+ {field:'timeFrames[0].daysOfMonth',reason:'preservation_snapshot_alias'},
+ {field:'vehicleRules.BLOCKED[0].licensePlateNumber',reason:'preservation_snapshot_alias'},
+ {field:'vehicleRules.BLOCKED[0].numPassengers',reason:'preservation_snapshot_alias'},
+ {field:'vehicleRules.BLOCKED[0]',reason:'native_engine_review'}
+]);
+const unrelatedGetterAudit=a.auditRestrictionPreservation({restrictions:[withSdkAliases({
+ ...publicRestriction,disposition:'RIGHT_LANE',driveProfiles:{BLOCKED:[]}
+},['description'])]});
+assert.deepEqual(unrelatedGetterAudit.entries[0].issues,[
+ {field:'description',reason:'preservation_snapshot_accessor'},
+ {field:'disposition / laneScope',reason:'preservation_field_alias'},
+ {field:'driveProfiles / vehicleRules',reason:'preservation_field_alias'}
+]);
+
+class NativeRule {
+ constructor(fields){Object.assign(this,fields);}
+}
+const nativeWithPrototype={restrictions:[new NativeRule({...publicRestriction,editable:false})]};
+assert.equal(a.restrictionSnapshot(nativeWithPrototype),null);
+assert.deepEqual(a.auditRestrictionPreservation(nativeWithPrototype).entries[0].issues,[
+ {field:'SegmentRestriction',reason:'preservation_snapshot_object'},
+ {field:'editable',reason:'preservation_field_permission'}
+]);
+const sparseFrames={restrictions:[{...publicRestriction,timeFrames:Array(2)}]};
+assert.equal(a.restrictionSnapshot(sparseFrames),null);
+assert.deepEqual(a.auditRestrictionPreservation(sparseFrames).entries[0].issues,[
+ {field:'timeFrames',reason:'preservation_snapshot_array'}
+]);
+const opaqueRestriction={...publicRestriction,editable:false,disposition:'RIGHT_LANE',
+ 'PRIVATE-KEY-PAYLOAD':true,timeFrames:[{...publicFrame,weekdays:127,daysOfMonth:'EVEN_DAYS'}],
+ vehicleRules:{BLOCKED:[{...publicSoleRule,minPassengers:1,numPassengers:2,
+  licensePlateNumber:'ENDS_WITH_0',vehicleTypes:['HAZARDOUS_MATERIALS'],
+  engineType:'PRIVATE-ENGINE-TYPE'}]}};
+const opaqueBefore=JSON.stringify(opaqueRestriction);
+const opaqueAudit=a.auditRestrictionPreservation({restrictions:[publicRestriction,opaqueRestriction]});
+assert.deepEqual(opaqueAudit.entries[1].issues.map(issue=>issue.field),[
+ 'SegmentRestriction','editable','disposition / laneScope','driveProfiles / vehicleRules',
+ 'vehicleRules.BLOCKED[0]','vehicleRules.BLOCKED[0].minPassengers',
+ 'vehicleRules.BLOCKED[0].vehicleTypes','vehicleRules.BLOCKED[0].numPassengers / minPassengers',
+ 'vehicleRules.BLOCKED[0].licensePlateNumber / licensePlateRule',
+ 'timeFrames[0].weekdays','timeFrames[0].daysOfMonth / dayAlternation'
+]);
+assert.equal(JSON.stringify(opaqueRestriction),opaqueBefore);
+for(const secret of ['PRIVATE-KEY-PAYLOAD','PRIVATE-DESCRIPTION','PRIVATE-ENGINE-TYPE',
+ 'PRIVATE-SUBSCRIPTION-ID','ENDS_WITH_7','ENDS_WITH_0']){
+ assert.ok(!JSON.stringify(opaqueAudit).includes(secret),'Audit results should contain field paths only');
+}
+const mixedAudit=a.auditRestrictionPreservation({restrictions:[
+ circularSegment.restrictions[0],publicRestriction
+]});
+assert.equal(mixedAudit.status,'UNKNOWN');
+assert.deepEqual(mixedAudit.entries,[...circularAudit.entries,{index:2,issues:[]}]);
+const sampleReviewSchedule={startDate:'',endDate:'',weekdays:['MONDAY'],
+ allDay:true,slots:[]};
+const liveReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ untouchedNative,sampleReviewSchedule,{},[],{enabled:false,conditions:[]},
+ {id:1,name:'Italy'});
+assert.equal(liveReview.preservation.status,'REQUIRES_ROUNDTRIP');
+assert.ok(liveReview.blockers.includes('conversion_preservation_gate'));
+assert.ok(liveReview.blockers.includes('conversion_preserve'));
+assert.equal(liveReview.saveAllowed,false);
+assert.equal(liveReview.sdkWritePayload,null);
+const noNativeReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {id:25,isAtoB:true,restrictions:[]},sampleReviewSchedule,{},
+ [],{enabled:false,conditions:[]},{id:1,name:'Italy'});
+assert.equal(noNativeReview.preservation.status,'NO_EXISTING');
+assert.ok(!noNativeReview.blockers.includes('conversion_preservation_gate'));
+assert.equal(noNativeReview.saveAllowed,false,
+ 'No existing restrictions does NOT authorize SDK mutation');
+const unknownNativeReview=a.reviewSdkConversion({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {id:26,isAtoB:true,restrictions:null},sampleReviewSchedule,{},
+ [],{enabled:false,conditions:[]},{id:1,name:'Italy'});
+assert.equal(unknownNativeReview.preservation.status,'UNKNOWN');
+assert.ok(unknownNativeReview.blockers.includes('conversion_unknown'));
+assert.ok(unknownNativeReview.blockers.includes('conversion_preservation_gate'));
+assert.ok(src.includes('planBox.dataset.guidedPlanStatus="true";') &&
+ !src.includes('node("p",tr("preservation_warning"))'),
+ 'Step 6 shows structured per-restriction preservation status inside Before/After instead of the legacy conversion details');
+assertSingleGatedWriteEntry();
+// Alpha 20: show all existing restrictions and catch only defensible overlaps.
+const existingBase={id:77,isAtoB:true,isBtoA:true,isTwoWay:true,restrictions:[{
+ defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ description:'Evening rule',editable:true,isExpired:false,
+ timeFrames:[{startDate:'2026-12-01',endDate:'2026-12-31',
+  weekdays:['MONDAY','FRIDAY'],fromTime:'08:00',toTime:'11:00',timeZone:'Europe/Rome'}],
+ vehicleRules:{BLOCKED:[{vehicleTypes:['BUS']}]}
+}]};
+const beforeExisting=JSON.stringify(existingBase);
+const listed=a.listExistingRestrictions(existingBase);
+assert.equal(listed.available,true);
+assert.equal(listed.entries.length,1);
+assert.deepEqual(listed.entries[0],{
+ index:1,defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',
+ laneType:null,editable:true,expired:false,description:'Evening rule',
+ frames:[{startDate:'2026-12-01',endDate:'2026-12-31',
+  fromTime:'08:00',toTime:'11:00',weekdays:['MONDAY','FRIDAY'],
+  timeZone:'Europe/Rome',repeatYearly:null,dayAlternation:null,reviewRequired:false}],framesKnown:true,
+ ruleGroups:['BLOCKED'],verified:false
+});
+assert.equal(JSON.stringify(existingBase),beforeExisting,
+ 'Listing existing restrictions must not mutate the SDK segment');
+assert.deepEqual(a.listExistingRestrictions({id:77,restrictions:null}),
+ {available:false,entries:[],verified:false});
+assert.deepEqual(a.listExistingRestrictions({id:77,restrictions:[]}),
+ {available:true,entries:[],verified:false});
+const draftOverlap={direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'BLOCKED',vehicleTypes:[]};
+const scheduleOverlap={startDate:'2026-12-01',endDate:'2026-12-31',
+ weekdays:['MONDAY'],allDay:false,
+ slots:[{fromTime:'09:00',toTime:'10:00'}]};
+const verify=(segment,draft,schedule,status)=>{
+ const result=a.previewRestrictionConflicts(draft,segment,schedule);
+ assert.equal(result.status,status);
+ assert.equal(result.saveAllowed,false);
+ assert.equal(result.verified,false);
+ return result;
+};
+const overlap=verify(existingBase,draftOverlap,scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.equal(overlap.items[0].status,'POTENTIAL_CONFLICT');
+assert.equal(overlap.items[0].reason,'conflict_reason_common');
+verify({...existingBase,restrictions:[{...existingBase.restrictions[0],
+ defaultType:'BLOCKED'}]},draftOverlap,scheduleOverlap,'OVERLAP_REVIEW');
+const reverseOnly={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ direction:'REV'}]};
+assert.equal(verify(reverseOnly,draftOverlap,scheduleOverlap,'SEPARATE').items[0].reason,
+ 'conflict_reason_direction');
+const separateLane={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ laneScope:'LEFT_LANE'}]};
+assert.equal(verify(separateLane,{...draftOverlap,scope:'right'},
+ scheduleOverlap,'SEPARATE').items[0].reason,'conflict_reason_lane');
+verify({...separateLane,restrictions:[{...separateLane.restrictions[0],disposition:'RIGHT_LANE'}]},
+ {...draftOverlap,scope:'right'},scheduleOverlap,'UNKNOWN');
+const separateDates={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
+ startDate:'2026-11-01',endDate:'2026-11-30'}]}]};
+assert.equal(verify(separateDates,draftOverlap,scheduleOverlap,'SEPARATE').items[0].reason,
+ 'conflict_reason_time');
+const separateDays={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],weekdays:['TUESDAY']}]}]};
+verify(separateDays,draftOverlap,scheduleOverlap,'SEPARATE');
+const separateHours={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
+ fromTime:'11:00',toTime:'13:00'}]}]};
+verify(separateHours,draftOverlap,scheduleOverlap,'SEPARATE');
+const unknownWeekdays={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],weekdays:127}]}]};
+verify(unknownWeekdays,draftOverlap,scheduleOverlap,'UNKNOWN');
+const unknownDirection={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ direction:null}]};
+verify(unknownDirection,draftOverlap,scheduleOverlap,'UNKNOWN');
+const overnightTime={...existingBase,restrictions:[{...existingBase.restrictions[0],
+ timeFrames:[{...existingBase.restrictions[0].timeFrames[0],
+ fromTime:'22:00',toTime:'06:00'}]}]};
+verify(overnightTime,draftOverlap,scheduleOverlap,'UNKNOWN');
+const reviewFrame=(fields,schedule=scheduleOverlap,status='UNKNOWN')=>{
+ const native={...existingBase.restrictions[0].timeFrames[0],...fields};
+ const segment={...existingBase,restrictions:[{...existingBase.restrictions[0],timeFrames:[native]}]};
+ verify(segment,draftOverlap,schedule,status);
+ return a.listExistingRestrictions(segment).entries[0].frames[0];
+};
+const recurring=reviewFrame({startDate:'2024-12-01',endDate:'2024-12-31',repeatYearly:true});
+assert.equal(recurring.repeatYearly,true);
+assert.equal(recurring.reviewRequired,true,'Annual recurrence cannot be excluded by comparing absolute dates');
+for(const fields of [
+ {dayAlternation:'EVEN_DAYS'}, {daysOfMonth:'EVEN_DAYS'},
+ {dayAlternation:'EVEN_DAYS',daysOfMonth:'EVEN_DAYS'}
+]){
+ const alternation=reviewFrame(fields);
+ assert.equal(alternation.dayAlternation,'EVEN_DAYS');
+ assert.equal(alternation.reviewRequired,true);
+}
+assert.equal(reviewFrame({dayAlternation:'ODD_DAYS',daysOfMonth:'EVEN_DAYS'}).dayAlternation,null);
+assert.equal(reviewFrame({dayAlternation:null,daysOfMonth:'EVEN_DAYS'}).dayAlternation,null);
+assert.equal(reviewFrame({weekdays:127}).weekdays,'127');
+assert.equal(reviewFrame({weekdays:null}).reviewRequired,true);
+assert.equal(reviewFrame({fromTime:{hour:8},toTime:null}).reviewRequired,true);
+assert.equal(reviewFrame({someNewCalendarAttribute:true}).reviewRequired,true);
+assert.equal(reviewFrame({weekdays:['MONDAY'],fromTime:'22:00',toTime:'06:00'},
+ {...scheduleOverlap,weekdays:['TUESDAY'],slots:[{fromTime:'01:00',toTime:'02:00'}]}).reviewRequired,true,
+ 'A next-day portion of an overnight frame cannot be excluded by comparing weekday labels');
+assert.equal(reviewFrame({startDate:'2026-12-07',endDate:'2026-12-07',weekdays:['MONDAY'],
+ fromTime:'05:00',toTime:'07:00'},overnightDraft).reviewRequired,false,
+ 'A Sunday draft can overlap an existing Monday frame after the final start date');
+verify(reverseOnly,draftOverlap,overnightDraft,'SEPARATE');
+const nightConversion=a.reviewSdkConversion(draftOverlap,existingBase,overnightDraft,
+ {},[],{enabled:false,conditions:[]},{id:1,name:'Italy'});
+assert.equal(nightConversion.proposedFrameCount,1);
+assert.equal(nightConversion.status,'BLOCKED');
+assert.equal(nightConversion.saveAllowed,false);
+assert.equal(nightConversion.sdkWritePayload,null);
+assert.equal(reviewFrame({fromTime:'10:00',toTime:'13:00'}).reviewRequired,false,
+ 'Touching time boundaries remain uncertain even when both windows have a supported shape');
+assert.equal(reviewFrame({repeatYearly:false,dayAlternation:null,daysOfMonth:null},
+ scheduleOverlap,'POTENTIAL_CONFLICT').reviewRequired,false);
+verify({...existingBase,restrictions:[]},draftOverlap,scheduleOverlap,'NONE');
+verify({id:77,isAtoB:true,restrictions:null},draftOverlap,scheduleOverlap,'UNKNOWN');
+const mixedExisting={...existingBase,restrictions:[
+ reverseOnly.restrictions[0],existingBase.restrictions[0],unknownWeekdays.restrictions[0]
+]};
+const mixedResult=verify(mixedExisting,draftOverlap,scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.deepEqual(mixedResult.items.map(x=>x.status),
+ ['SEPARATE','POTENTIAL_CONFLICT','UNKNOWN']);
+assert.equal(JSON.stringify(existingBase),beforeExisting,
+ 'Conflict analysis cannot modify existing native restrictions');
+const greenOverlap=verify(existingBase,{...draftOverlap,
+ restrictionType:'ALLOWED',vehicleTypes:['PRIVATE']},
+ scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.equal(greenOverlap.saveAllowed,false);
+const tollOverlap=verify(existingBase,{...draftOverlap,
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},
+ scheduleOverlap,'POTENTIAL_CONFLICT');
+assert.equal(tollOverlap.saveAllowed,false);
+assert.ok(src.includes('function renderExistingRestrictionList(') &&
+ src.includes('root.append(renderExistingRestrictionList(context.segment,true));'),
+ 'Existing restrictions must be visible immediately in the guided sidebar');
+assert.ok(src.includes('dialog.append(renderExistingRestrictionList(current.segment,true));'),
+ 'Existing restrictions must be visible before filling in a new draft');
+assert.ok(src.includes('else details.append(renderExistingRestrictionList(current.segment,false,{allowGuidedActions:false}));') &&
+ src.includes('dialog.append(renderBeforeAfterPreview(schedule,conversion));'),
+ 'Existing restrictions remain accessible in the final review');
+assert.ok(src.includes('feedback.append(renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft}));'),
+ 'Conflict review must be visible on Step 7 before reaching the final summary');
+assert.ok(src.includes('nativeRestrictionAction(') &&
+ src.includes('anchor.click();') &&
+ src.includes('if(dialog?.open)dialog.close();'),
+ 'Existing restrictions must be edited only in the native WME panel after a user click');
+assert.ok(src.includes('restrictionSnapshot(context?.segment,true)'),
+ 'Sidebar must refresh after a restriction change even if count stays unchanged');
+assert.ok(src.includes('conflict_uncertain'),
+ 'Collision analysis must warn about unknown SDK rules and recurring calendars');
+assertSingleGatedWriteEntry();
+// Alpha 21: safe vehicle-by-vehicle effects, without assuming distinct SDK
+// classes are exclusive and without treating nested conditions as unconditional.
+const simpleMotoNative={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE']}]}
+};
+const simpleMotoSnapshot=JSON.stringify(simpleMotoNative);
+const draftSimple=type=>a.normalizeDraft({direction:'FWD',scope:'segment',
+ lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[type]},
+ {isAtoB:true});
+const sameMotor=a.reviewVehicleConflictEffects(
+ simpleMotoNative,draftSimple('MOTORCYCLE'));
+assert.deepEqual(sameMotor.rows.map(r=>[r.vehicleType,r.existingEffect,r.proposedEffect,r.relation]),[
+ ['PRIVATE','FREE','FREE','SAME'],
+ ['EV','FREE','FREE','SAME'],
+ ['MOTORCYCLE','UNKNOWN','BLOCKED','UNKNOWN'],
+ ['TAXI','FREE','FREE','SAME']
+]);
+assert.equal(sameMotor.status,'UNKNOWN','Public SDK cannot exclude an engine filter');
+assert.equal(sameMotor.verified,false);
+assert.equal(sameMotor.saveAllowed,false);
+const differentTaxi=a.reviewVehicleConflictEffects(simpleMotoNative,draftSimple('TAXI'));
+assert.equal(differentTaxi.status,'POSSIBLE_DIFFERENCE');
+assert.deepEqual(differentTaxi.rows.filter(r=>r.relation==='DIFFERENT').map(r=>r.vehicleType),
+ ['TAXI']);
+const sameDefaultExisting={...existingBase,restrictions:[{
+ ...existingBase.restrictions[0],vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE']}]}
+}]};
+const differentDraft={direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'BLOCKED',vehicleTypes:['TAXI']};
+const differentOverlap=a.previewRestrictionConflicts(differentDraft,sameDefaultExisting,
+ scheduleOverlap,{motorDraft:{enabled:false,conditions:[]}});
+assert.equal(differentOverlap.status,'POTENTIAL_CONFLICT');
+assert.equal(differentOverlap.items[0].reason,'conflict_reason_vehicle');
+assert.equal(differentOverlap.items[0].vehicleReview.status,'POSSIBLE_DIFFERENCE');
+const sameDraft={...differentDraft,vehicleTypes:['MOTORCYCLE']};
+const sameOverlap=a.previewRestrictionConflicts(sameDraft,sameDefaultExisting,
+ scheduleOverlap,{motorDraft:{enabled:false,conditions:[]}});
+assert.equal(sameOverlap.status,'OVERLAP_REVIEW');
+assert.equal(sameOverlap.items[0].vehicleReview.status,'UNKNOWN');
+assert.notEqual(sameOverlap.status,'SEPARATE','An unknown motor filter cannot exclude a conflict');
+const existingWithEV={defaultType:'BLOCKED',vehicleRules:{
+ FREE:[{vehicleTypes:['EV']}]}
+};
+const greenDesign=a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']},{isAtoB:true});
+const greenPerClass={PRIVATE:{requiresPass:true,requiresOccupancy:false,
+ permitIds:['residents'],minPassengers:null},
+ EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}};
+const greenReview=a.reviewVehicleConflictEffects(existingWithEV,greenDesign,
+ {vehicleRules:greenPerClass});
+assert.equal(greenReview.status,'CONDITIONAL');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='EV').proposedEffect,'FREE');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='EV').relation,'SAME');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='PRIVATE').proposedEffect,'CONDITIONAL');
+assert.equal(greenReview.rows.find(x=>x.vehicleType==='PRIVATE').relation,'CONDITIONAL');
+assert.equal(a.reviewVehicleConflictEffects(existingWithEV,greenDesign).rows
+ .find(x=>x.vehicleType==='PRIVATE').relation,'UNKNOWN',
+ 'Missing green vehicle-specific state must not become a direct authorization');
+const nativeWithConditions={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE'],licensePlateNumber:'ENDS_WITH_0'}]
+}};
+assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
+ draftSimple('MOTORCYCLE')).rows[2].existingEffect,'CONDITIONAL');
+assert.equal(a.reviewVehicleConflictEffects(nativeWithConditions,
+ draftSimple('MOTORCYCLE')).rows[2].relation,'CONDITIONAL');
+const nativeRepeated={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE']},
+          {vehicleTypes:['MOTORCYCLE']}]}
+};
+for(const rules of [
+ [{vehicleTypes:['MOTORCYCLE'],unrecognized:true},{vehicleTypes:['MOTORCYCLE']}],
+ [{vehicleTypes:['MOTORCYCLE']},{vehicleTypes:['MOTORCYCLE'],unrecognized:true}]
+]){
+ const result=a.reviewVehicleConflictEffects({...nativeRepeated,vehicleRules:{BLOCKED:rules}},
+  draftSimple('MOTORCYCLE'));
+ assert.equal(result.rows.find(row=>row.vehicleType==='MOTORCYCLE').relation,'UNKNOWN');
+ assert.equal(result.status,'UNKNOWN');
+}
+const repeated=a.reviewVehicleConflictEffects(nativeRepeated,
+ draftSimple('MOTORCYCLE'));
+assert.equal(repeated.rows.find(row=>row.vehicleType==='MOTORCYCLE').existingEffect,
+ 'UNKNOWN','Repeated motorcycle rules may have unreported motor filters');
+assert.equal(repeated.status,'UNKNOWN');
+const repeatedTaxi=a.reviewVehicleConflictEffects({defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['TAXI']},{vehicleTypes:['TAXI']}]
+}},draftSimple('TAXI'));
+assert.equal(repeatedTaxi.status,'CONDITIONAL','Multiple native rules for a category need precedence verification');
+const nativeUnsupported={defaultType:'FREE',vehicleRules:{
+ BLOCKED:[{vehicleTypes:['BUS']}]
+}};
+const unknownNative=a.reviewVehicleConflictEffects(nativeUnsupported,
+ draftSimple('MOTORCYCLE'));
+assert.equal(unknownNative.unmodeledNativeTypes,true);
+assert.equal(unknownNative.status,'UNKNOWN');
+assert.ok(unknownNative.rows.every(x=>x.existingEffect==='UNKNOWN'));
+const withLegacy={defaultType:'BLOCKED',vehicleRules:{},
+ driveProfiles:{FREE:[{vehicleTypes:['TAXI']}]}};
+assert.equal(a.reviewVehicleConflictEffects(withLegacy,
+ draftSimple('MOTORCYCLE')).status,'UNKNOWN');
+assert.equal(a.reviewVehicleConflictEffects({defaultType:'FREE'},
+ draftSimple('MOTORCYCLE')).status,'UNKNOWN');
+const blue=a.normalizeDraft({direction:'FWD',scope:'segment',lane:'lane_none',
+ restrictionType:'TOLL',vehicleTypes:['TAXI']},{isAtoB:true});
+const tollExisting={defaultType:'TOLL',vehicleRules:{
+ FREE:[{vehicleTypes:['TAXI']}]}
+};
+const tollReview=a.reviewVehicleConflictEffects(tollExisting,blue);
+assert.equal(tollReview.status,'SAME_EFFECT');
+assert.equal(tollReview.rows.find(x=>x.vehicleType==='TAXI').existingEffect,'FREE');
+assert.equal(tollReview.rows.find(x=>x.vehicleType==='PRIVATE').proposedEffect,'TOLL');
+const conditionalEngine=a.reviewVehicleConflictEffects(simpleMotoNative,
+ draftSimple('MOTORCYCLE'),{motorDraft:{enabled:true,conditions:[
+ {engineType:'FUEL',operator:'LT',capacityThreshold:125}]}});
+assert.equal(conditionalEngine.rows.find(x=>x.vehicleType==='MOTORCYCLE').proposedEffect,
+ 'CONDITIONAL');
+assert.equal(conditionalEngine.status,'UNKNOWN');
+const numericDaysVehicle=a.previewRestrictionConflicts(sameDraft,
+ unknownWeekdays,scheduleOverlap);
+assert.equal(numericDaysVehicle.status,'UNKNOWN',
+ 'Numeric SDK weekdays should still block the final conflict determination');
+assert.ok(numericDaysVehicle.items[0].vehicleReview,
+ 'Vehicle analysis can be displayed as partial evidence even with unknown dates');
+assert.equal(JSON.stringify(simpleMotoNative),simpleMotoSnapshot,
+ 'Vehicle inspection must not mutate the existing restriction');
+assert.ok(src.includes('reviewVehicleConflictEffects(') &&
+ src.includes('const vehicleReview=reviewVehicleConflictEffects('),
+ 'The conflict preflight must actually perform per-vehicle comparisons');
+assert.ok(src.includes('node("summary",tr("vehicle_conflict_title"))'),
+ 'Vehicle-level details must be visible in the conflict viewer');
+assert.ok(src.includes('tr("vehicle_compare_caution")'),
+ 'The UI must explain overlapping categories and unverified AND/OR and precedence');
+assert.ok(src.includes('tr("vehicle_compare_unmodeled")'),
+ 'Native categories outside the four-option shortlist must not be hidden');
+// Alpha 22: inspect native read-only conditions without leaking permit IDs
+// or license-plate values, and recognize identical legacy representations.
+const nativeSimple={vehicleTypes:['MOTORCYCLE'],subscriptions:[],
+ licensePlateNumber:'',engineCapacities:[]};
+assert.deepEqual(a.inspectNativeVehicleCondition(nativeSimple),{
+ status:'UNKNOWN',types:['MOTORCYCLE'],passCount:0,
+ minPassengers:null,occupancyFields:[],occupancyStatus:'NOT_REPORTED',
+ hasPlate:false,hasEngine:false,
+ unknownFields:[],conditions:[],verified:false
+});
+const nativeResident={vehicleTypes:['PRIVATE'],subscriptions:['SECRET-PASS-ID'],
+ numPassengers:3,licensePlateNumber:'ENDS_WITH_7'};
+const residentInspection=a.inspectNativeVehicleCondition(nativeResident);
+assert.equal(residentInspection.status,'CONDITIONAL');
+assert.equal(residentInspection.passCount,1);
+assert.equal(residentInspection.minPassengers,3);
+assert.deepEqual(residentInspection.occupancyFields,['numPassengers']);
+assert.equal(residentInspection.occupancyStatus,'MINIMUM');
+assert.equal(residentInspection.hasPlate,true);
+assert.deepEqual(residentInspection.conditions,['PASS','OCCUPANCY','PLATE']);
+assert.ok(!JSON.stringify(residentInspection).includes('SECRET-PASS-ID'));
+assert.ok(!JSON.stringify(residentInspection).includes('ENDS_WITH_7'));
+assert.equal(JSON.stringify(nativeResident).includes('SECRET-PASS-ID'),true,
+ 'The inspection must not modify the source data');
+const nativeEngine=a.inspectNativeVehicleCondition({
+ vehicleTypes:['MOTORCYCLE'],engineType:'UNKNOWN-NATIVE-ENGINE',
+ operator:'LTE',capacityThreshold:125
+});
+assert.equal(nativeEngine.status,'CONDITIONAL');
+assert.equal(nativeEngine.hasEngine,true);
+assert.deepEqual(nativeEngine.conditions,['ENGINE']);
+assert.ok(!JSON.stringify(nativeEngine).includes('UNKNOWN-NATIVE-ENGINE'),
+ 'Private engine values must not be disclosed in diagnostic output');
+const opaqueCondition=a.inspectNativeVehicleCondition({
+ vehicleTypes:['TAXI'],mysteryFlag:true,subscriptions:[]
+});
+assert.equal(opaqueCondition.status,'UNKNOWN');
+assert.deepEqual(opaqueCondition.unknownFields,['mysteryFlag']);
+for(const field of ['minPassengers','numPassengers']){
+ const zero=a.inspectNativeVehicleCondition({...nativeSimple,[field]:0});
+ assert.equal(zero.status,'UNKNOWN');
+ assert.equal(zero.occupancyStatus,'ZERO');
+ assert.equal(zero.minPassengers,null);
+ assert.deepEqual(zero.occupancyFields,[field]);
+ assert.deepEqual(zero.unknownFields,[]);
+ assert.deepEqual(zero.conditions,[],'Zero is reported without asserting an occupancy requirement');
+ for(const value of [2,3,4]){
+  const native=a.inspectNativeVehicleCondition({...nativeSimple,[field]:value});
+  assert.equal(native.status,'CONDITIONAL');
+  assert.equal(native.occupancyStatus,'MINIMUM');
+  assert.equal(native.minPassengers,value);
+  assert.deepEqual(native.occupancyFields,[field]);
+  assert.deepEqual(native.unknownFields,[]);
+  assert.deepEqual(native.conditions,['OCCUPANCY']);
+ }
+ for(const value of [1,5,-1,2.5,NaN,Infinity,null,undefined,'2','PRIVATE-VALUE']){
+  const invalid=a.inspectNativeVehicleCondition({...nativeSimple,[field]:value});
+  assert.equal(invalid.status,'UNKNOWN');
+  assert.equal(invalid.occupancyStatus,'UNKNOWN');
+  assert.equal(invalid.minPassengers,null);
+  assert.deepEqual(invalid.unknownFields,[]);
+  assert.deepEqual(invalid.conditions,[]);
+  assert.ok(!JSON.stringify(invalid).includes('PRIVATE-VALUE'));
+ }
+}
+const bothPassengerFields=['minPassengers','numPassengers'];
+for(const value of [0,3]){
+ const matching=a.inspectNativeVehicleCondition({...nativeSimple,numPassengers:value,minPassengers:value});
+ assert.deepEqual(matching.occupancyFields,bothPassengerFields);
+ assert.equal(matching.occupancyStatus,value===0?'ZERO':'MINIMUM');
+ assert.deepEqual(matching.conditions,value===0?[]:['OCCUPANCY']);
+}
+for(const [current,legacy] of [[3,4],[0,2],[2,0],[null,3],[3,undefined]]){
+ const disagreement=a.inspectNativeVehicleCondition({
+  ...nativeSimple,minPassengers:current,numPassengers:legacy
+ });
+ assert.equal(disagreement.status,'UNKNOWN');
+ assert.equal(disagreement.occupancyStatus,'UNKNOWN');
+ assert.equal(disagreement.minPassengers,null);
+ assert.deepEqual(disagreement.occupancyFields,bothPassengerFields);
+ assert.deepEqual(disagreement.conditions,[]);
+}
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:['TAXI'],subscriptions:[42]}).status,
+ 'UNKNOWN','Invalid native subscription representation must stay unknown');
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:[1024]}).status,'UNKNOWN',
+ 'Numeric vehicle types cannot be silently converted without an SDK mapping');
+assert.equal(a.inspectNativeVehicleCondition({vehicleTypes:[]}).status,'UNKNOWN');
+assert.equal(a.inspectNativeVehicleCondition(null).status,'UNKNOWN');
+const sameLegacyOriginal={FREE:[{vehicleTypes:['EV'],subscriptions:[]}]};
+const sameLegacyCopy={FREE:[{subscriptions:[],vehicleTypes:['EV']}]};
+assert.notEqual(sameLegacyOriginal,sameLegacyCopy);
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,sameLegacyCopy),'SAME',
+ 'Equivalent but separately allocated deprecated/current fields should compare equal');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,
+ {FREE:[{vehicleTypes:['TAXI']}]}),'DIFFERENT');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,null),'ABSENT');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,{}),'ABSENT');
+const legacyCycle={FREE:[]};legacyCycle.FREE.push(legacyCycle);
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,legacyCycle),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules(legacyCycle,legacyCycle),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,[]),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules(sameLegacyOriginal,false),'UNKNOWN');
+assert.equal(a.compareLegacyVehicleRules({FREE:[{field:null}]},{FREE:[{field:NaN}]}),'UNKNOWN');
+const sharedRow={vehicleTypes:['EV']};
+assert.equal(a.compareLegacyVehicleRules({FREE:[sharedRow,sharedRow]},
+ {FREE:[{vehicleTypes:['EV']},{vehicleTypes:['EV']}]}),'SAME');
+const legacyMatchingRestriction={defaultType:'BLOCKED',
+ vehicleRules:sameLegacyOriginal,driveProfiles:sameLegacyCopy};
+const legacyMatchingDraft=a.normalizeDraft({
+ direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',
+ vehicleTypes:['EV']},{isAtoB:true});
+const matchingReview=a.reviewVehicleConflictEffects(
+ legacyMatchingRestriction,legacyMatchingDraft,
+ {vehicleRules:{EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],
+  minPassengers:null}}});
+assert.equal(matchingReview.rows.find(row=>row.vehicleType==='EV').existingEffect,'FREE');
+assert.equal(matchingReview.rows.find(row=>row.vehicleType==='EV').relation,'SAME');
+assert.equal(matchingReview.status,'SAME_EFFECT');
+assert.deepEqual(a.inspectNativeVehicleRules(legacyMatchingRestriction),{
+ available:true,legacyComparison:'SAME',
+ rows:[{group:'FREE',index:1,status:'UNCONDITIONAL',types:['EV'],
+  passCount:0,minPassengers:null,occupancyFields:[],occupancyStatus:'NOT_REPORTED',
+  hasPlate:false,hasEngine:false,
+  unknownFields:[],conditions:[],verified:false}],verified:false
+});
+const nativeMotorcycleRule=Object.freeze({
+ vehicleTypes:Object.freeze(['MOTORCYCLE']),subscriptions:Object.freeze([]),minPassengers:0
+});
+const motorcycleGroups=Object.freeze({BLOCKED:Object.freeze([nativeMotorcycleRule])});
+const existingMotorcycleRestriction=Object.freeze({defaultType:'FREE',
+ vehicleRules:motorcycleGroups,driveProfiles:{BLOCKED:[{...nativeMotorcycleRule}]}});
+const motorcycleBefore=JSON.stringify(existingMotorcycleRestriction);
+const motorcycleInspection=a.inspectNativeVehicleRules(existingMotorcycleRestriction);
+assert.equal(motorcycleInspection.legacyComparison,'SAME');
+assert.equal(motorcycleInspection.rows[0].status,'UNKNOWN');
+assert.equal(motorcycleInspection.rows[0].occupancyStatus,'ZERO');
+assert.deepEqual(motorcycleInspection.rows[0].unknownFields,[]);
+const motorcycleReview=a.reviewVehicleConflictEffects(existingMotorcycleRestriction,{
+ defaultType:'FREE',restrictionIntent:'BLOCKED',vehicleTypes:['MOTORCYCLE']
+});
+assert.equal(motorcycleReview.rows.find(row=>row.vehicleType==='MOTORCYCLE').existingEffect,'UNKNOWN');
+assert.equal(motorcycleReview.status,'UNKNOWN');
+assert.equal(motorcycleReview.saveAllowed,false);
+assert.equal(JSON.stringify(existingMotorcycleRestriction),motorcycleBefore);
+assert.equal(a.compareLegacyVehicleRules(motorcycleGroups,{
+ BLOCKED:[{vehicleTypes:['MOTORCYCLE'],subscriptions:[],numPassengers:0}]
+}),'DIFFERENT','Structural comparison preserves differences between legacy and current SDK objects');
+assert.equal(a.inspectNativeVehicleRules({vehicleRules:null}).available,false);
+const diagnosticRules={defaultType:'BLOCKED',vehicleRules:{
+ FREE:[{vehicleTypes:['EV'],subscriptions:[]},
+       {vehicleTypes:['PRIVATE'],licensePlateRule:'ENDS_WITH_9'}]
+}};
+const conditionDetails=a.inspectNativeVehicleRules(diagnosticRules);
+assert.equal(conditionDetails.rows.length,2);
+assert.equal(conditionDetails.rows[1].hasPlate,true);
+assert.equal(conditionDetails.rows[1].status,'CONDITIONAL');
+assert.ok(!JSON.stringify(conditionDetails).includes('ENDS_WITH_9'),
+ 'Plate suffix must not appear in a diagnostic JSON object');
+for(const fields of [
+ {licensePlateRule:'ENDS_WITH_0'},
+ {licensePlateNumber:'ENDS_WITH_EVEN'},
+ {licensePlateRule:'ENDS_WITH_ODD',licensePlateNumber:'ENDS_WITH_ODD'}
+]){
+ const plate=a.inspectNativeVehicleCondition({vehicleTypes:['PRIVATE'],...fields});
+ assert.equal(plate.status,'CONDITIONAL');
+ assert.deepEqual(plate.conditions,['PLATE']);
+ assert.equal(plate.hasPlate,true);
+ assert.ok(!JSON.stringify(plate).includes('ENDS_WITH_'));
+}
+for(const fields of [
+ {licensePlateRule:{type:'SUFFIX',value:'PRIVATE-SUFFIX'}},
+ {licensePlateNumber:'7'},
+ {licensePlateRule:'ENDS_WITH_10'},
+ {licensePlateRule:'ENDS_WITH_ODD',licensePlateNumber:'ENDS_WITH_EVEN'},
+ {licensePlateRule:null,licensePlateNumber:'ENDS_WITH_0'}
+]){
+ const plate=a.inspectNativeVehicleCondition({vehicleTypes:['PRIVATE'],...fields});
+ assert.equal(plate.status,'UNKNOWN');
+ assert.equal(plate.hasPlate,true);
+ assert.ok(!JSON.stringify(plate).includes('PRIVATE-SUFFIX'));
+ assert.ok(!JSON.stringify(plate).includes('ENDS_WITH_'));
+}
+assert.equal(a.inspectNativeVehicleCondition({...nativeSimple,vehicleTypes:['TAXI'],licensePlateRule:null}).status,
+ 'UNCONDITIONAL','The documented null and legacy empty value indicate no observed plate condition');
+const diagExisting=a.reviewVehicleConflictEffects(
+ diagnosticRules,legacyMatchingDraft,
+ {vehicleRules:{EV:{requiresPass:false,requiresOccupancy:false,
+ permitIds:[],minPassengers:null}}});
+assert.equal(diagExisting.rows.find(row=>row.vehicleType==='EV').relation,'SAME');
+assert.equal(diagExisting.rows.find(row=>row.vehicleType==='PRIVATE').existingEffect,
+ 'CONDITIONAL');
+assert.ok(src.includes('const diagnostics=inspectNativeVehicleRules(') &&
+ !src.includes('item.append(nativeDetails);') &&
+ !src.includes('tr("native_engine_check")') &&
+ !src.includes('tr("edit_native_hint")'),
+ 'Existing restrictions must show concise vehicle/motor summaries without obsolete debug boxes or outdated read-only hints');
+assert.ok(src.includes('const nativeData=inspectNativeVehicleRules(') &&
+ src.includes('tr("native_conditions_title")'),
+ 'Conflict review must expose condition diagnostics where interpretation is incomplete');
+assertSingleGatedWriteEntry();
+// Alpha 40: read-only segment permissions, drivability and toll-state preflight.
+const headerVersion=/^\/\/ @version\s+(\S+)/m.exec(src)?.[1];
+assert.ok(headerVersion && src.includes(`const VERSION = "${headerVersion}";`),
+ 'Userscript @version header and runtime VERSION constant must match');
+const tollSegmentEmpty=Object.freeze({id:40,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:Object.freeze([])});
+const tollSegmentWithFree=Object.freeze({...tollSegmentEmpty,restrictions:Object.freeze([Object.freeze({defaultType:'FREE',editable:true})])});
+const tollSegmentWithToll=Object.freeze({...tollSegmentEmpty,restrictions:Object.freeze([Object.freeze({defaultType:'TOLL',editable:true})])});
+const tollSegmentIncomplete=Object.freeze({...tollSegmentEmpty,restrictions:[{defaultType:'UNKNOWN_TYPE'}]});
+const tollSegmentSparse={...tollSegmentEmpty,restrictions:Array(1)};
+const tollSegmentThrowing={...tollSegmentEmpty,restrictions:[Object.defineProperty({},'defaultType',{get(){throw Error('boom');}})]};
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentEmpty,false),{
+ status:'NOT_TOLL',isTollSegment:false,existingTollRestrictions:0,
+ rollbackVerified:false,writeReady:false,verified:false
+});
+assert.equal(a.inspectSegmentTollState(tollSegmentWithFree,false).status,'NOT_TOLL');
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentWithToll,false),{
+ status:'UNKNOWN',isTollSegment:false,existingTollRestrictions:1,
+ rollbackVerified:false,writeReady:false,verified:false
+},'isTollSegment=false contradicting an existing TOLL restriction must fail closed');
+assert.equal(a.inspectSegmentTollState({...tollSegmentEmpty,restrictions:null},false).status,'UNKNOWN');
+assert.equal(a.inspectSegmentTollState(tollSegmentSparse,false).status,'UNKNOWN');
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentEmpty,true),{
+ status:'TOLL_WITHOUT_TOLL_RESTRICTION',isTollSegment:true,existingTollRestrictions:0,
+ rollbackVerified:false,writeReady:false,verified:false
+});
+assert.equal(a.inspectSegmentTollState(tollSegmentWithFree,true).status,'TOLL_WITHOUT_TOLL_RESTRICTION');
+assert.deepEqual(a.inspectSegmentTollState(tollSegmentWithToll,true),{
+ status:'AMBIGUOUS_WITH_TOLL_RESTRICTION',isTollSegment:true,existingTollRestrictions:1,
+ rollbackVerified:false,writeReady:false,verified:false
+});
+for(const ambiguous of [{...tollSegmentEmpty,restrictions:null},tollSegmentIncomplete,tollSegmentSparse,tollSegmentThrowing]){
+ const state=a.inspectSegmentTollState(ambiguous,true);
+ assert.equal(state.status,'AMBIGUOUS_UNKNOWN_RESTRICTIONS');
+ assert.equal(state.existingTollRestrictions,null);
+ assert.equal(state.rollbackVerified,false);
+ assert.equal(state.writeReady,false);
+}
+for(const badToll of [null,undefined,1,'true',{}]){
+ const state=a.inspectSegmentTollState(tollSegmentEmpty,badToll);
+ assert.equal(state.status,'UNKNOWN');
+ assert.equal(state.isTollSegment,null);
+}
+assert.deepEqual(a.inspectSegmentEligibility(tollSegmentEmpty,{hasPermissions:false,isRoadTypeDrivable:true}),{
+ status:'BLOCKED_NO_PERMISSION',hasAnyPermission:false,drivable:true,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+});
+assert.deepEqual(a.inspectSegmentEligibility({...tollSegmentEmpty,isDrivable:undefined},{hasPermissions:true,isRoadTypeDrivable:false}),{
+ status:'BLOCKED_NON_DRIVABLE',hasAnyPermission:true,drivable:false,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+});
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,isDrivable:false},{hasPermissions:true,isRoadTypeDrivable:null}).status,'BLOCKED_NON_DRIVABLE');
+assert.deepEqual(a.inspectSegmentEligibility({...tollSegmentEmpty,isDrivable:true},{hasPermissions:true,isRoadTypeDrivable:false}),{
+ status:'UNKNOWN',hasAnyPermission:true,drivable:null,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+},'Conflicting segment.isDrivable and isRoadTypeDrivable readings must fail closed');
+assert.deepEqual(a.inspectSegmentEligibility(tollSegmentEmpty,{hasPermissions:true,isRoadTypeDrivable:true}),{
+ status:'NEEDS_NATIVE_PERMISSION_CHECK',hasAnyPermission:true,drivable:true,hasNonEditableRestrictions:false,
+ writeReady:false,verified:false
+},'General segment permission never proves restriction or toll write permission');
+assert.equal(a.inspectSegmentEligibility(tollSegmentEmpty,{}).status,'UNKNOWN');
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,restrictions:[{editable:true},{editable:false}]},{}).hasNonEditableRestrictions,true);
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,restrictions:[{editable:true},{editable:null}]},{}).hasNonEditableRestrictions,null);
+assert.equal(a.inspectSegmentEligibility(tollSegmentSparse,{}).hasNonEditableRestrictions,null);
+assert.equal(a.inspectSegmentEligibility({...tollSegmentEmpty,restrictions:null},{}).hasNonEditableRestrictions,null);
+const alpha40Schedule={startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]};
+const alpha40NoMotor={enabled:false,conditions:[]};
+const alpha40Country={id:1,name:'Italy'};
+const alpha40RedDraft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]};
+const alpha40TollDraft={direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'TOLL',vehicleTypes:['TAXI']};
+const noPermReview=a.reviewSdkConversion(alpha40RedDraft,tollSegmentEmpty,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:false,isRoadTypeDrivable:true},isTollSegment:false});
+assert.ok(noPermReview.blockers.includes('conversion_no_permission'));
+assert.ok(!noPermReview.blockers.includes('conversion_non_drivable'));
+assert.ok(!noPermReview.blockers.includes('conversion_toll_state_unknown'));
+assert.equal(noPermReview.saveAllowed,false);
+assert.equal(noPermReview.sdkWritePayload,null);
+const nonDrivableReview=a.reviewSdkConversion(alpha40RedDraft,{...tollSegmentEmpty,isDrivable:false},alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:false,isRoadTypeDrivable:false},isTollSegment:null});
+assert.ok(nonDrivableReview.blockers.includes('conversion_no_permission'));
+assert.ok(nonDrivableReview.blockers.includes('conversion_non_drivable'));
+assert.ok(!nonDrivableReview.blockers.includes('conversion_toll_state_unknown'));
+const tollNotTollReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentEmpty,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:false});
+assert.equal(tollNotTollReview.tollState.status,'NOT_TOLL');
+assert.ok(tollNotTollReview.blockers.includes('conversion_toll_atomic'));
+assert.ok(!tollNotTollReview.blockers.includes('conversion_toll_state_unknown'));
+const tollRoadOnlyReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentWithFree,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:true});
+assert.equal(tollRoadOnlyReview.tollState.status,'TOLL_WITHOUT_TOLL_RESTRICTION');
+assert.ok(tollRoadOnlyReview.blockers.includes('conversion_toll_atomic'));
+assert.ok(!tollRoadOnlyReview.blockers.includes('conversion_toll_state_unknown'));
+const tollAmbiguousReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentWithToll,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:true});
+assert.equal(tollAmbiguousReview.tollState.status,'AMBIGUOUS_WITH_TOLL_RESTRICTION');
+assert.ok(tollAmbiguousReview.blockers.includes('conversion_toll_atomic'));
+assert.ok(tollAmbiguousReview.blockers.includes('conversion_toll_state_unknown'));
+const tollUnknownReview=a.reviewSdkConversion(alpha40TollDraft,tollSegmentEmpty,alpha40Schedule,{},[],alpha40NoMotor,alpha40Country,
+ {access:{hasPermissions:true,isRoadTypeDrivable:true},isTollSegment:null});
+assert.equal(tollUnknownReview.tollState.status,'UNKNOWN');
+assert.ok(tollUnknownReview.blockers.includes('conversion_toll_state_unknown'));
+assert.ok(!src.includes('node("p",tr("inspection_permissions")+": "+tr(permissionLabel(eligibility)))') &&
+ src.includes('if(eligibility.hasAnyPermission===false)blockers.push("conversion_no_permission");'),
+ 'Permissions and drivability are enforced directly by the write gate instead of cluttering the sidebar');
+assert.ok(src.includes('if(conversion.plannedHasToll===true){') &&
+ src.includes('details.append(node("p",tr("inspection_toll_state")+": "+tr(tollStateLabel(conversion.tollState))));'),
+ 'Before/After preview must show baseline SDK toll state for blue toll drafts');
+assert.ok(src.includes('JSON.stringify(fresh.access)!==JSON.stringify(current.access)') &&
+ src.includes('fresh.isTollSegment!==current.isTollSegment'),
+ 'Draft context check must detect permission, drivability and toll-state changes');
+for(const key of ['conversion_no_permission','conversion_non_drivable','conversion_toll_state_unknown',
+ 'inspection_permissions','eligibility_no_permission','eligibility_some_permission',
+ 'inspection_drivable','eligibility_non_drivable','inspection_toll_state',
+ 'toll_state_not_toll','toll_state_road_only','toll_state_ambiguous_restriction','toll_state_ambiguous_unknown',
+ 'existing_alert_title','existing_alert_body','existing_alert_unknown','edit_or_delete_native',
+ 'conflict_gate_potential','conflict_gate_overlap','conflict_gate_unknown','conversion_conflict_blocked']){
+ const match=new RegExp(`\\b${key}:\\[([^\\]]+)\\]`).exec(src);
+ assert.ok(match,'Missing label key: '+key);
+ const entries=JSON.parse('['+match[1]+']');
+ assert.equal(entries.length,6,'Label key must provide 6 language translations: '+key);
+ assert.ok(entries.every(text=>typeof text==='string'&&text.trim().length>0),'Empty translation in key: '+key);
+}
+// Alpha 41: immediate existing-restriction warning and hard conflict gate.
+assert.deepEqual(a.inspectExistingRestrictionNotice({restrictions:[]}),{
+ present:false,unknown:false,count:0,verified:false
+});
+assert.deepEqual(a.inspectExistingRestrictionNotice({restrictions:[{defaultType:'BLOCKED'},{defaultType:'FREE'}]}),{
+ present:true,unknown:false,count:2,verified:false
+});
+assert.deepEqual(a.inspectExistingRestrictionNotice({restrictions:null}),{
+ present:true,unknown:true,count:null,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'NONE'}),{
+ blocked:false,status:'NONE',reason:null,editExistingRecommended:false,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'SEPARATE'}),{
+ blocked:false,status:'SEPARATE',reason:null,editExistingRecommended:false,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'POTENTIAL_CONFLICT'}),{
+ blocked:true,status:'POTENTIAL_CONFLICT',reason:'conflict_gate_potential',
+ editExistingRecommended:true,verified:false
+});
+assert.deepEqual(a.evaluateConflictGate({status:'OVERLAP_REVIEW'}),{
+ blocked:true,status:'OVERLAP_REVIEW',reason:'conflict_gate_overlap',
+ editExistingRecommended:true,verified:false
+});
+for(const uncertain of [{status:'UNKNOWN'},{status:'UNEXPECTED'},{},null,undefined]){
+ assert.deepEqual(a.evaluateConflictGate(uncertain),{
+  blocked:true,status:'UNKNOWN',reason:'conflict_gate_unknown',
+  editExistingRecommended:true,verified:false
+ });
+}
+const alpha41DaySchedule={startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'10:00'}]};
+const alpha41Frame={startDate:null,endDate:null,fromTime:'08:00',toTime:'10:00',weekdays:['MONDAY'],timeZone:'Europe/Rome',repeatYearly:false,dayAlternation:null};
+const alpha41BaseSegment={id:41,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true};
+const alpha41Separate=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:[{
+ defaultType:'BLOCKED',direction:'REV',laneScope:'WHOLE_SEGMENT',laneType:null,
+ editable:true,vehicleRules:{},timeFrames:[alpha41Frame]
+}]},alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41Separate.conflictStatus,'SEPARATE');
+assert.equal(alpha41Separate.conflictGate.blocked,false);
+assert.ok(!alpha41Separate.blockers.includes('conversion_conflict_blocked'));
+const alpha41OverlapSame=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:[{
+ defaultType:'BLOCKED',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ editable:true,vehicleRules:{},timeFrames:[alpha41Frame]
+}]},alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41OverlapSame.conflictStatus,'OVERLAP_REVIEW');
+assert.equal(alpha41OverlapSame.conflictGate.blocked,true);
+assert.equal(alpha41OverlapSame.conflictGate.reason,'conflict_gate_overlap');
+assert.ok(alpha41OverlapSame.blockers.includes('conversion_conflict_blocked'));
+assert.equal(alpha41OverlapSame.saveAllowed,false);
+assert.equal(alpha41OverlapSame.sdkWritePayload,null);
+const alpha41Potential=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:[{
+ defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ editable:true,vehicleRules:{BLOCKED:[{vehicleTypes:['TAXI']}]},timeFrames:[alpha41Frame]
+}]},alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41Potential.conflictStatus,'POTENTIAL_CONFLICT');
+assert.equal(alpha41Potential.conflictGate.blocked,true);
+assert.equal(alpha41Potential.conflictGate.reason,'conflict_gate_potential');
+assert.ok(alpha41Potential.blockers.includes('conversion_conflict_blocked'));
+const alpha41Unknown=a.reviewSdkConversion(alpha40RedDraft,{...alpha41BaseSegment,restrictions:null},
+ alpha41DaySchedule,{},[],alpha40NoMotor,alpha40Country);
+assert.equal(alpha41Unknown.conflictStatus,'UNKNOWN');
+assert.equal(alpha41Unknown.conflictGate.blocked,true);
+assert.equal(alpha41Unknown.conflictGate.reason,'conflict_gate_unknown');
+assert.ok(alpha41Unknown.blockers.includes('conversion_conflict_blocked'));
+assert.ok(src.includes('const existingAlert=renderExistingAlert(context.segment);') &&
+ src.includes('const existingAlert=renderExistingAlert(current.segment);'),
+ 'Existing restrictions must trigger an immediate warning in both sidebar and wizard step 0');
+assert.ok(src.includes('if(currentConflictGate().blocked)return;') &&
+ src.includes('if(step===7&&currentConflictGate(fresh.segment).blocked){current=fresh;render();return;}') &&
+ src.includes('(step===7&&currentConflictGate().blocked)'),
+ 'Conflicting, overlapping or unverifiable additional restrictions must be blocked at step 7');
+assert.ok(src.includes('button(tr("edit_or_delete_native"),openNativeEditRestrictions)'),
+ 'Warning and conflict-block UI must route edit/delete directly to the native WME panel');
+// Alpha 42: keep native edit shortcut available from script tab, isolate modal
+// keyboard events from WME map panning, and never re-render inputs while typing.
+{
+ const match=/\bedit_native_switch_tab:\[([^\]]+)\]/.exec(src);
+ assert.ok(match,'Missing label key: edit_native_switch_tab');
+ const entries=JSON.parse('['+match[1]+']');
+ assert.equal(entries.length,6,'edit_native_switch_tab must provide 6 language translations');
+ assert.ok(entries.every(text=>typeof text==='string'&&text.trim().length>0));
+}
+assert.ok(src.includes('function findNativeAnchor(allowHidden=false)') &&
+ src.includes('return search(true)||(allowHidden?search(false):null);') &&
+ src.includes('const anchor=findNativeAnchor(true);') &&
+ src.includes('const anchor = findNativeAnchor();'),
+ 'Hidden native Edit detection must be opt-in for edit actions while inline injection stays visible-only');
+assert.ok(src.includes('const canEditNative=nativeEditActionAvailable();') &&
+ src.includes('tr("edit_native_switch_tab")'),
+ 'Sidebar must track native edit availability and show switch-tab guidance if unmounted');
+assert.ok(src.includes('for(const eventType of ["keydown","keyup","keypress"]){') &&
+ src.includes('dialog.addEventListener(eventType,event=>event.stopPropagation());'),
+ 'Modal wizard must stop keyboard events from bubbling to WME map panning/shortcuts');
+assert.ok(src.includes('const renderScheduleFeedback=()=>{') &&
+ src.includes('const updateTime=()=>{') &&
+ src.includes('redSchedule.slots[index][prop]=input.value;') &&
+ src.includes('renderScheduleFeedback();') &&
+ !src.includes('redSchedule.slots[index][prop]=input.value;render();') &&
+ !src.includes('redSchedule[field]=input.value;render();'),
+ 'Typing in schedule date/time inputs must update feedback in-place without destroying the focused input');
+assert.ok(src.includes('if(step===7)next.disabled=!isScheduleValid()||currentConflictGate().blocked;'),
+ 'refreshNext must keep step 7 Next button state synced without full dialog re-render');
+assert.ok(src.includes('threshold.addEventListener("input",updateThreshold);') &&
+ src.includes('input.addEventListener("input",updateOccupancy);'),
+ 'Step 5 numeric inputs must update validation and Next button without destroying focus');
+// Alpha 43: complete 6-language i18n integrity, version alignment, and dead-code cleanup.
+const headerVersionMatch=src.match(/^\/\/\s*@version\s+([^\s]+)$/m);
+assert.ok(headerVersionMatch && headerVersionMatch[1]===a.VERSION,
+ '@version header must match exported VERSION constant');
+assert.deepEqual(a.LANGS,['it','en','fr','es','de','pt'],
+ 'Guided Alpha must preserve the six supported UI languages');
+for(const [tableName,table] of [['labels',a.labels],['vehicleLabels',a.vehicleLabels]]){
+ const keys=Object.keys(table);
+ assert.ok(keys.length>0,tableName+' must not be empty');
+ for(const key of keys){
+  const entry=table[key];
+  assert.ok(Array.isArray(entry)&&entry.length===a.LANGS.length,
+   `${tableName}.${key} must have exactly ${a.LANGS.length} translations`);
+  for(let i=0;i<a.LANGS.length;i++){
+   assert.ok(typeof entry[i]==='string'&&entry[i].trim().length>0,
+    `${tableName}.${key}[${a.LANGS[i]}] must be a non-empty string`);
+  }
+ }
+}
+const labelsBlockMatch=src.match(/const labels = \{([\s\S]*?)\n    \};/);
+const vehicleLabelsBlockMatch=src.match(/const vehicleLabels = \{([\s\S]*?)\n    \};/);
+assert.ok(labelsBlockMatch&&vehicleLabelsBlockMatch,'Must locate labels and vehicleLabels source blocks');
+for(const [blockName,blockBody] of [['labels',labelsBlockMatch[1]],['vehicleLabels',vehicleLabelsBlockMatch[1]]]){
+ const seen=new Set();
+ for(const match of blockBody.matchAll(/^\s*([A-Za-z0-9_]+)\s*:/gm)){
+  const key=match[1];
+  assert.ok(!seen.has(key),`Duplicate key ${key} in ${blockName}`);
+  seen.add(key);
+ }
+}
+for(const match of src.matchAll(/\btr\("([A-Za-z0-9_]+)"\)/g)){
+ const key=match[1];
+ assert.ok(Object.hasOwn(a.labels,key),`Missing translation key referenced by tr("${key}")`);
+}
+for(const removedKey of [
+ 'vehicle_step','allowed_preview','all_vehicle_types','vehicle_preview','no_exceptions',
+ 'occupancy','occupancy_help','occupancy_error',
+ 'motorcycle_engine','motorcycle_engine_hint','motorcycle_engine_error','motorcycle_unchecked'
+]){
+ assert.ok(!Object.hasOwn(a.labels,removedKey),`Dead label ${removedKey} must remain removed`);
+}
+assert.ok(!src.includes('const advanced={minPassengers:null,permitIds:[]};') &&
+ !src.includes('else normalizeAdvanced(advanced,current.permits);') &&
+ !src.includes('ID+"-permit-suggestion-"'),
+ 'Superseded unreachable Step 5 else UI branch must remain removed');
+// Alpha 44 (Fase 1): pure read-only SDK serializer, lossless round-trip and structured Before/After plan.
+const makeLiveSdkFrame=(overrides={})=>{
+ const frame={
+  startDate:null,endDate:null,fromTime:'08:00',toTime:'18:00',
+  weekdays:['MONDAY','TUESDAY'],timeZone:'Europe/Rome',
+  repeatYearly:null,dayAlternation:null,...overrides
+ };
+ Object.defineProperty(frame,'daysOfMonth',{enumerable:true,configurable:true,get(){return frame.dayAlternation;}});
+ return frame;
+};
+const makeLiveSdkRule=(overrides={})=>{
+ const rule={
+  vehicleTypes:['PRIVATE'],subscriptions:[],minPassengers:0,licensePlateRule:null,...overrides
+ };
+ Object.defineProperty(rule,'numPassengers',{enumerable:true,configurable:true,get(){return rule.minPassengers;}});
+ Object.defineProperty(rule,'licensePlateNumber',{enumerable:true,configurable:true,get(){return rule.licensePlateRule;}});
+ return rule;
+};
+const makeLiveSdkRestriction=(overrides={})=>{
+ const base={
+  editable:true,isExpired:false,defaultType:'BLOCKED',description:null,direction:'FWD',
+  laneScope:'WHOLE_SEGMENT',laneType:null,
+  timeFrames:[makeLiveSdkFrame()],
+  vehicleRules:{FREE:[makeLiveSdkRule({subscriptions:['sub-secret-1'],minPassengers:2})]},
+  ...overrides
+ };
+ Object.defineProperty(base,'disposition',{enumerable:true,configurable:true,get(){return base.laneScope;}});
+ Object.defineProperty(base,'driveProfiles',{enumerable:true,configurable:true,get(){return base.vehicleRules;}});
+ return base;
+};
+const liveExisting=makeLiveSdkRestriction();
+const rtOk=a.serializeExistingRestrictionForSdk(liveExisting);
+assert.equal(rtOk.status,'CANDIDATE_READY');
+assert.equal(rtOk.editable,true);
+assert.equal(rtOk.saveAllowed,false);
+assert.equal(rtOk.verified,false);
+assert.equal(rtOk.hasSensitiveValues,true);
+assert.deepEqual(rtOk.blockers,[]);
+assert.deepEqual(rtOk.candidateData,{
+ defaultType:'BLOCKED',description:null,direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ timeFrames:[{
+  dayAlternation:null,endDate:null,fromTime:'08:00',repeatYearly:null,
+  startDate:null,timeZone:'Europe/Rome',toTime:'18:00',weekdays:['MONDAY','TUESDAY']
+ }],
+ vehicleRules:{FREE:[{licensePlateRule:null,minPassengers:2,subscriptions:['sub-secret-1'],vehicleTypes:['PRIVATE']}]}
+});
+assert.ok(!('editable' in rtOk.candidateData) && !('isExpired' in rtOk.candidateData) &&
+ !('disposition' in rtOk.candidateData) && !('driveProfiles' in rtOk.candidateData),
+ 'Serialized SDK data must omit read-only flags and deprecated aliases');
+// Mutating candidateData must not mutate the input SDK object.
+rtOk.candidateData.timeFrames[0].weekdays.push('SUNDAY');
+assert.deepEqual(liveExisting.timeFrames[0].weekdays,['MONDAY','TUESDAY']);
+// Non-editable and unknown-editability existing restrictions must fail closed.
+const rtLocked=a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({editable:false}));
+assert.equal(rtLocked.status,'BLOCKED');
+assert.equal(rtLocked.editable,false);
+assert.equal(rtLocked.candidateData,null);
+assert.ok(rtLocked.blockers.includes('preservation_field_permission'));
+const rtEditUnknown=a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({editable:undefined}));
+assert.equal(rtEditUnknown.status,'BLOCKED');
+assert.equal(rtEditUnknown.candidateData,null);
+// Motorcycle existing restriction requires opt-in verified 0 engine conditions to pass.
+const motoExisting=makeLiveSdkRestriction({
+ defaultType:'FREE',
+ vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['MOTORCYCLE']})]}
+});
+const rtMotoUnchecked=a.serializeExistingRestrictionForSdk(motoExisting);
+assert.equal(rtMotoUnchecked.status,'BLOCKED');
+assert.ok(rtMotoUnchecked.blockers.includes('native_engine_review'));
+const rtMotoZero=a.serializeExistingRestrictionForSdk(motoExisting,{engineCheck:{status:'MATCH',count:0}});
+assert.equal(rtMotoZero.status,'CANDIDATE_READY');
+assert.deepEqual(rtMotoZero.candidateData.vehicleRules.BLOCKED[0].vehicleTypes,['MOTORCYCLE']);
+const rtMotoGap=a.serializeExistingRestrictionForSdk(motoExisting,{engineCheck:{status:'MATCH',count:2}});
+assert.equal(rtMotoGap.status,'BLOCKED');
+assert.ok(rtMotoGap.blockers.includes('serializer_engine_gap'));
+const rtMotoDiff=a.serializeExistingRestrictionForSdk(motoExisting,{engineCheck:{status:'DIFFERENT',count:0}});
+assert.equal(rtMotoDiff.status,'BLOCKED');
+assert.ok(rtMotoDiff.blockers.includes('native_engine_review'));
+// Special lane types, extra unknown fields, invalid occupancy, empty frames/types, bad dates/zones fail closed.
+assert.ok(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({laneType:'HOV'})).blockers.includes('serializer_special_lane'));
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({unexpectedField:1})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({minPassengers:5})]}
+})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:[]})]}
+})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({timeFrames:[]})).status,'BLOCKED');
+assert.equal(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({startDate:'2026-06-10',endDate:'2026-06-01'})]
+})).status,'BLOCKED');
+assert.ok(a.serializeExistingRestrictionForSdk(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({timeZone:'Mars/Olympus'})]
+})).blockers.includes('serializer_timezone_invalid'));
+assert.equal(a.serializeExistingRestrictionForSdk(null).status,'BLOCKED');
+// Draft serializer: red all-blocked, red selected vehicles, green per-vehicle rules, blockers.
+const f1Segment={id:44,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[]};
+const f1Permits=[{id:'ztl-a',name:'ZTL A'},{id:'ztl-b',name:'ZTL B'}];
+const f1DaySchedule={startDate:'2026-05-01',endDate:'2026-05-31',weekdays:['MONDAY','WEDNESDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'12:00'},{fromTime:'14:00',toTime:'18:00'}]};
+const f1RedAll=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,f1DaySchedule,{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1RedAll.status,'CANDIDATE_READY');
+assert.equal(f1RedAll.saveAllowed,false);
+assert.equal(f1RedAll.verified,false);
+assert.equal(f1RedAll.timeZoneMode,'UNSET_NULL');
+assert.ok(f1RedAll.warnings.includes('serializer_timezone_unset'));
+assert.equal(f1RedAll.candidateRestrictions.length,2);
+assert.deepEqual(f1RedAll.candidateRestrictions[0],{
+ defaultType:'BLOCKED',description:null,direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+ timeFrames:[{dayAlternation:null,endDate:'2026-05-31',fromTime:'08:00',repeatYearly:null,startDate:'2026-05-01',timeZone:null,toTime:'12:00',weekdays:['MONDAY','WEDNESDAY']}],
+ vehicleRules:{}
+});
+assert.equal(f1RedAll.candidateRestrictions[1].timeFrames[0].fromTime,'14:00');
+const f1RedSelected=a.serializeDraftForSdk(
+ {direction:'REV',scope:'right',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['PRIVATE','TAXI']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['FRIDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1RedSelected.status,'CANDIDATE_READY');
+assert.equal(f1RedSelected.candidateRestrictions[0].defaultType,'FREE');
+assert.equal(f1RedSelected.candidateRestrictions[0].laneScope,'RIGHT_LANE');
+assert.deepEqual(f1RedSelected.candidateRestrictions[0].vehicleRules,{
+ BLOCKED:[{licensePlateRule:null,minPassengers:0,subscriptions:[],vehicleTypes:['PRIVATE','TAXI']}]
+});
+const f1RedMotorFiltered=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,
+ {enabled:true,conditions:[{engineType:'FUEL',operator:'LTE',capacityThreshold:125}]}
+);
+assert.equal(f1RedMotorFiltered.status,'BLOCKED');
+assert.equal(f1RedMotorFiltered.candidateRestrictions,null);
+assert.ok(f1RedMotorFiltered.blockers.includes('serializer_engine_gap'));
+const f1Green=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV','TAXI']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},
+ {
+  PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['ztl-a'],minPassengers:3},
+  EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null},
+  TAXI:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:2}
+ },
+ f1Permits,{enabled:false,conditions:[]},{timeZone:'Europe/Rome'}
+);
+assert.equal(f1Green.status,'CANDIDATE_READY');
+assert.equal(f1Green.timeZoneMode,'EXPLICIT');
+assert.equal(f1Green.summary.hasSensitiveValues,true);
+assert.ok(f1Green.warnings.includes('conversion_conditions'));
+assert.deepEqual(f1Green.candidateRestrictions[0].vehicleRules,{
+ FREE:[
+  {licensePlateRule:null,minPassengers:3,subscriptions:['ztl-a'],vehicleTypes:['PRIVATE']},
+  {licensePlateRule:null,minPassengers:0,subscriptions:[],vehicleTypes:['EV']},
+  {licensePlateRule:null,minPassengers:2,subscriptions:[],vehicleTypes:['TAXI']}
+ ]
+});
+assert.equal(f1Green.candidateRestrictions[0].timeFrames[0].timeZone,'Europe/Rome');
+// Occupancy > 4 is outside SDK AddableVehicleRule.minPassengers (0|2|3|4) and must block.
+const f1GreenOcc5=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},
+ {PRIVATE:{requiresPass:false,requiresOccupancy:true,permitIds:[],minPassengers:5}},
+ f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1GreenOcc5.status,'BLOCKED');
+assert.ok(f1GreenOcc5.blockers.includes('serializer_occupancy_out_of_range'));
+// Overnight, blue TOLL, and special lanes must block in Fase 1 serializer.
+const f1Night=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'22:00',toTime:'06:00'}]},
+ {},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1Night.status,'BLOCKED');
+assert.ok(f1Night.blockers.includes('serializer_overnight_unverified'));
+const f1Toll=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'TOLL',vehicleTypes:['EV']},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1Toll.status,'BLOCKED');
+assert.ok(f1Toll.blockers.includes('serializer_toll_pending'));
+const f1SpecialLane=a.serializeDraftForSdk(
+ {direction:'FWD',scope:'left',lane:'hov',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1SpecialLane.status,'BLOCKED');
+assert.ok(f1SpecialLane.blockers.includes('serializer_special_lane'));
+// Structured Before/After plan combines existing round-trip, new draft, conflict gate, eligibility and SAFE12.
+const f1TwoWaySeg={id:45,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[makeLiveSdkRestriction({direction:'FWD'})]};
+const f1PlanSeparate=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['TAXI']},
+ f1TwoWaySeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {access:{hasPermissions:true,isRoadTypeDrivable:true}}
+);
+assert.equal(f1PlanSeparate.status,'CANDIDATE_COMPLETE');
+assert.equal(f1PlanSeparate.existingStatus,'ALL_READY');
+assert.equal(f1PlanSeparate.saveAllowed,false);
+assert.equal(f1PlanSeparate.verified,false);
+assert.equal(f1PlanSeparate.candidateRestrictions.length,2);
+assert.deepEqual(f1PlanSeparate.safe12,{restrictions:2,timeFrames:2,overLimit:false});
+const f1PlanConflict=a.buildStructuredBeforeAfterPlan(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['TAXI']},
+ f1TwoWaySeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {access:{hasPermissions:true,isRoadTypeDrivable:true}}
+);
+assert.equal(f1PlanConflict.status,'BLOCKED');
+assert.equal(f1PlanConflict.candidateRestrictions,null);
+assert.ok(f1PlanConflict.blockers.includes('conversion_conflict_blocked'));
+const f1PlanLockedExisting=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {...f1TwoWaySeg,restrictions:[makeLiveSdkRestriction({direction:'FWD',editable:false})]},
+ {startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1PlanLockedExisting.status,'BLOCKED');
+assert.equal(f1PlanLockedExisting.existingStatus,'BLOCKED');
+assert.ok(f1PlanLockedExisting.blockers.includes('preservation_field_permission'));
+const f1MotoSeg={id:46,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[motoExisting]};
+const f1MotoPlanDefault=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1MotoSeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1MotoPlanDefault.status,'BLOCKED');
+assert.ok(f1MotoPlanDefault.blockers.includes('native_engine_review'));
+const f1MotoPlanZero=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1MotoSeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {engineChecks:new Map([[1,{status:'MATCH',count:0}]])}
+);
+assert.equal(f1MotoPlanZero.status,'CANDIDATE_COMPLETE');
+const f1MotoPlanTwo=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1MotoSeg,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {engineChecks:new Map([[1,{status:'MATCH',count:2}]])}
+);
+assert.equal(f1MotoPlanTwo.status,'BLOCKED');
+assert.ok(f1MotoPlanTwo.blockers.includes('serializer_engine_gap'));
+const f1OverSafe12Seg={
+ id:47,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,
+ restrictions:Array.from({length:11},()=>makeLiveSdkRestriction({direction:'FWD'}))
+};
+const f1OverPlan=a.buildStructuredBeforeAfterPlan(
+ {direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1OverSafe12Seg,f1DaySchedule,{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1OverPlan.status,'BLOCKED');
+assert.equal(f1OverPlan.candidateRestrictions,null);
+assert.ok(f1OverPlan.blockers.includes('conversion_overbudget'));
+const f1NoPermPlan=a.buildStructuredBeforeAfterPlan(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ f1Segment,{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]},
+ {access:{hasPermissions:false,isRoadTypeDrivable:true}}
+);
+assert.equal(f1NoPermPlan.status,'BLOCKED');
+assert.ok(f1NoPermPlan.blockers.includes('conversion_no_permission'));
+const f1UnknownSegPlan=a.buildStructuredBeforeAfterPlan(
+ {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+ {id:48,isAtoB:true,restrictions:null},{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:true,slots:[]},{},f1Permits,{enabled:false,conditions:[]}
+);
+assert.equal(f1UnknownSegPlan.status,'BLOCKED');
+assert.equal(f1UnknownSegPlan.existingStatus,'UNKNOWN');
+assert.ok(f1UnknownSegPlan.blockers.includes('preservation_unknown'));
+// UI integration & read-only invariants for Fase 1 + Fase 4A automatic motor checks.
+assert.ok(src.includes('const initialEngineChecks=autoEngineChecksForSegment(current.segment,targetIndex);') &&
+ src.includes('const renderPlanStatus=(engineChecks=initialEngineChecks)=>{') &&
+ src.includes('planBox.dataset.guidedPlanStatus="true";'),
+ 'Before/After preview must render plan status with automatic internal motor preservation checks');
+// Alpha 45 (Fase 2): read-only guided edit preload, delete eligibility and DELETE / REPLACE action plans.
+assert.equal(a.canDeleteExistingRestrictionInWizard({editable:true}),true);
+assert.equal(a.canDeleteExistingRestrictionInWizard({editable:false}),false);
+assert.equal(a.canDeleteExistingRestrictionInWizard({}),false);
+assert.equal(a.canDeleteExistingRestrictionInWizard(null),false);
+const throwingEditable={};
+Object.defineProperty(throwingEditable,'editable',{get(){throw Error('boom');}});
+assert.equal(a.canDeleteExistingRestrictionInWizard(throwingEditable),false);
+const f2SegTwoWay={id:50,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,restrictions:[]};
+const f2SegOneWay={id:51,isAtoB:true,isBtoA:false,isTwoWay:false,isDrivable:true,restrictions:[]};
+const f2Permits=[{id:'sub-secret-1',name:'ZTL Residenti'},{id:'ztl-a',name:'ZTL A'}];
+// Preload Red all-blocked all-day.
+const f2RedAllRes=makeLiveSdkRestriction({
+ defaultType:'BLOCKED',vehicleRules:{},
+ timeFrames:[makeLiveSdkFrame({fromTime:null,toTime:null,weekdays:['MONDAY','FRIDAY']})]
+});
+const f2PreRedAll=a.preloadExistingRestrictionToWizard(f2RedAllRes,f2SegTwoWay,f2Permits);
+assert.equal(f2PreRedAll.editableInWizard,true);
+assert.equal(f2PreRedAll.saveAllowed,false);
+assert.equal(f2PreRedAll.verified,false);
+assert.deepEqual(f2PreRedAll.preloaded.draft,{
+ direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]
+});
+assert.equal(f2PreRedAll.preloaded.redSchedule.allDay,true);
+assert.deepEqual(f2PreRedAll.preloaded.redSchedule.weekdays,['MONDAY','FRIDAY']);
+assert.equal(f2PreRedAll.preloaded.recordedTimeZone,'Europe/Rome');
+// Preload Red selected vehicles with two daytime slots.
+const f2RedSelRes=makeLiveSdkRestriction({
+ defaultType:'FREE',direction:'REV',laneScope:'RIGHT_LANE',
+ vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['TAXI','PRIVATE']})]},
+ timeFrames:[
+  makeLiveSdkFrame({startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'08:00',toTime:'12:00',weekdays:['MONDAY','WEDNESDAY']}),
+  makeLiveSdkFrame({startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'14:00',toTime:'18:00',weekdays:['WEDNESDAY','MONDAY']})
+ ]
+});
+const f2PreRedSel=a.preloadExistingRestrictionToWizard(f2RedSelRes,f2SegTwoWay,f2Permits);
+assert.equal(f2PreRedSel.editableInWizard,true);
+assert.deepEqual(f2PreRedSel.preloaded.draft,{
+ direction:'REV',scope:'right',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['PRIVATE','TAXI']
+});
+assert.equal(f2PreRedSel.preloaded.redSchedule.allDay,false);
+assert.deepEqual(f2PreRedSel.preloaded.redSchedule.slots,[{fromTime:'08:00',toTime:'12:00'},{fromTime:'14:00',toTime:'18:00'}]);
+// Preload Green allowed with independent per-vehicle pass/occupancy (PRIVATE pass does NOT leak to EV).
+const f2GreenRes=makeLiveSdkRestriction({
+ defaultType:'BLOCKED',
+ vehicleRules:{
+  FREE:[
+   makeLiveSdkRule({vehicleTypes:['PRIVATE'],subscriptions:['sub-secret-1'],minPassengers:3}),
+   makeLiveSdkRule({vehicleTypes:['EV'],subscriptions:[],minPassengers:0})
+  ]
+ }
+});
+const f2PreGreen=a.preloadExistingRestrictionToWizard(f2GreenRes,f2SegTwoWay,f2Permits);
+assert.equal(f2PreGreen.editableInWizard,true);
+assert.equal(f2PreGreen.preloaded.draft.restrictionType,'ALLOWED');
+assert.deepEqual(f2PreGreen.preloaded.draft.vehicleTypes,['PRIVATE','EV']);
+assert.deepEqual(f2PreGreen.preloaded.vehicleRules.PRIVATE,{
+ requiresPass:true,requiresOccupancy:true,permitIds:['sub-secret-1'],minPassengers:3
+});
+assert.deepEqual(f2PreGreen.preloaded.vehicleRules.EV,{
+ requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null
+});
+// Preload fail-closed checks: editable:false, motorcycle, description, PUBLIC_TRANSPORTATION, unknown pass, TOLL, special lane, advanced schedule, overnight, unavailable direction.
+assert.equal(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({editable:false}),f2SegTwoWay,f2Permits).editableInWizard,false);
+assert.ok(a.preloadExistingRestrictionToWizard(motoExisting,f2SegTwoWay,f2Permits).blockers.includes('native_engine_review'));
+assert.equal(a.preloadExistingRestrictionToWizard(motoExisting,f2SegTwoWay,f2Permits,{engineCheck:{status:'MATCH',count:0}}).editableInWizard,true);
+assert.ok(a.preloadExistingRestrictionToWizard(motoExisting,f2SegTwoWay,f2Permits,{engineCheck:{status:'MATCH',count:2}}).blockers.includes('serializer_engine_gap'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({description:'Custom note'}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_description'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:['PUBLIC_TRANSPORTATION']})]}
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_vehicle_rules'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:['PRIVATE'],subscriptions:['missing-pass']})]}
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_unknown_permit'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({defaultType:'TOLL'}),f2SegTwoWay,f2Permits).blockers.includes('serializer_toll_pending'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({laneType:'HOV'}),f2SegTwoWay,f2Permits).blockers.includes('serializer_special_lane'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({repeatYearly:true})]
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_schedule'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({dayAlternation:'EVEN_DAYS'})]
+}),f2SegTwoWay,f2Permits).blockers.includes('edit_preload_schedule'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({
+ timeFrames:[makeLiveSdkFrame({fromTime:'22:00',toTime:'06:00'})]
+}),f2SegTwoWay,f2Permits).blockers.includes('serializer_overnight_unverified'));
+assert.ok(a.preloadExistingRestrictionToWizard(makeLiveSdkRestriction({direction:'REV'}),f2SegOneWay,f2Permits).blockers.includes('edit_preload_direction'));
+// buildExistingActionPlan — DELETE single restriction, DELETE keeping clean sibling, DELETE blocked by locked/moto sibling or locked target.
+const f2DelOnly=a.buildExistingActionPlan('DELETE',1,{...f2SegTwoWay,restrictions:[f2RedAllRes]},null,{access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2DelOnly.status,'CANDIDATE_COMPLETE');
+assert.equal(f2DelOnly.saveAllowed,false);
+assert.equal(f2DelOnly.verified,false);
+assert.deepEqual(f2DelOnly.candidateRestrictions,[]);
+assert.deepEqual(f2DelOnly.safe12,{restrictions:0,timeFrames:0,overLimit:false});
+assert.deepEqual(f2DelOnly.removed,[{index:1,action:'REMOVE',editable:true}]);
+const f2TwoSeg={...f2SegTwoWay,restrictions:[f2RedAllRes,f2RedSelRes]};
+const f2DelFirst=a.buildExistingActionPlan('DELETE',1,f2TwoSeg,null,{access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2DelFirst.status,'CANDIDATE_COMPLETE');
+assert.equal(f2DelFirst.retained.length,1);
+assert.equal(f2DelFirst.retained[0].index,2);
+assert.equal(f2DelFirst.candidateRestrictions.length,1);
+assert.equal(f2DelFirst.candidateRestrictions[0].direction,'REV');
+const f2DelBlockedByLockedSibling=a.buildExistingActionPlan('DELETE',1,{
+ ...f2SegTwoWay,restrictions:[f2RedAllRes,makeLiveSdkRestriction({editable:false,direction:'REV'})]
+});
+assert.equal(f2DelBlockedByLockedSibling.status,'BLOCKED');
+assert.equal(f2DelBlockedByLockedSibling.candidateRestrictions,null);
+assert.ok(f2DelBlockedByLockedSibling.blockers.includes('preservation_field_permission'));
+const f2DelLockedTarget=a.buildExistingActionPlan('DELETE',1,{
+ ...f2SegTwoWay,restrictions:[makeLiveSdkRestriction({editable:false})]
+});
+assert.equal(f2DelLockedTarget.status,'BLOCKED');
+assert.ok(f2DelLockedTarget.blockers.includes('edit_target_not_editable'));
+// buildExistingActionPlan — REPLACE (EDIT): modifying FWD row does NOT self-conflict, while colliding with REV sibling DOES block!
+const f2EditDraftState={
+ draft:{direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['PRIVATE']},
+ schedule:{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'09:00',toTime:'17:00'}]},
+ vehicleRules:{},permits:f2Permits,motorDraft:{enabled:false,conditions:[]}
+};
+const f2EditOk=a.buildExistingActionPlan('REPLACE',1,f2TwoSeg,f2EditDraftState,{mode:'EDIT',access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2EditOk.status,'CANDIDATE_COMPLETE');
+assert.equal(f2EditOk.mode,'EDIT');
+assert.equal(f2EditOk.saveAllowed,false);
+assert.equal(f2EditOk.verified,false);
+assert.equal(f2EditOk.conflictGate.blocked,false);
+assert.equal(f2EditOk.candidateRestrictions.length,2);
+assert.equal(f2EditOk.candidateRestrictions[0].direction,'FWD');
+assert.equal(f2EditOk.candidateRestrictions[1].direction,'REV');
+const f2EditConflictsSibling=a.buildExistingActionPlan('REPLACE',1,f2TwoSeg,{
+ ...f2EditDraftState,
+ draft:{...f2EditDraftState.draft,direction:'REV'},
+ schedule:{startDate:'2026-05-01',endDate:'2026-05-31',weekdays:['MONDAY'],allDay:true,slots:[]}
+},{mode:'EDIT',access:{hasPermissions:true,isRoadTypeDrivable:true}});
+assert.equal(f2EditConflictsSibling.status,'BLOCKED');
+assert.equal(f2EditConflictsSibling.candidateRestrictions,null);
+assert.ok(f2EditConflictsSibling.blockers.includes('conversion_conflict_blocked'));
+// DELETE_AND_RECREATE can replace an editable restriction that cannot be preloaded in-place (e.g. PUBLIC_TRANSPORTATION).
+const f2ComplexEditable=makeLiveSdkRestriction({
+ editable:true,vehicleRules:{FREE:[makeLiveSdkRule({vehicleTypes:['PUBLIC_TRANSPORTATION']})]}
+});
+const f2RecreateOk=a.buildExistingActionPlan('REPLACE',1,{...f2SegTwoWay,restrictions:[f2ComplexEditable]},f2EditDraftState,{mode:'DELETE_AND_RECREATE'});
+assert.equal(f2RecreateOk.status,'CANDIDATE_COMPLETE');
+assert.equal(f2RecreateOk.mode,'DELETE_AND_RECREATE');
+assert.equal(f2RecreateOk.candidateRestrictions.length,1);
+// REPLACE targeting locked editable:false or exceeding SAFE12 must block.
+assert.ok(a.buildExistingActionPlan('REPLACE',1,{
+ ...f2SegTwoWay,restrictions:[makeLiveSdkRestriction({editable:false})]
+},f2EditDraftState).blockers.includes('edit_target_not_editable'));
+assert.ok(a.buildExistingActionPlan('REPLACE',1,{
+ ...f2SegTwoWay,
+ restrictions:[f2RedAllRes,...Array.from({length:11},()=>makeLiveSdkRestriction({direction:'REV'}))]
+},{
+ ...f2EditDraftState,
+ schedule:{startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'10:00'},{fromTime:'12:00',toTime:'14:00'}]}
+}).blockers.includes('conversion_overbudget'));
+// UI wiring & read-only invariants for Fase 2.
+assert.ok(src.includes('async function openDeletePreview(targetIndex)') &&
+ src.includes('actionsBox.dataset.guidedExistingActions="true";') &&
+ src.includes('banner.dataset.guidedActionBanner=actionMode;') &&
+ src.includes('const remainingSegmentFor=seg=>{') &&
+ src.includes('renderConflictPreflight(draft,remainingSegmentFor(current.segment),redSchedule,{vehicleRules,motorDraft})'),
+ 'Fase 2 UI must expose guided edit/delete/recreate preview controls and exclude only targetIndex from conflict screening');
+// Alpha 46: dynamic launch button label (Create vs Edit) + runtime DOM regression checks.
+assert.equal(a.launchButtonLabelKey(null),'launch');
+assert.equal(a.launchButtonLabelKey({restrictions:[]}),'launch');
+assert.equal(a.launchButtonLabelKey({restrictions:[f2RedAllRes]}),'launch_existing');
+assert.equal(a.launchButtonLabelKey({restrictions:null}),'launch_existing');
+assert.equal(a.labels.launch_existing[0],'Modifica restrizione guidata');
+assert.equal(a.labels.launch_existing.length,6);
+(async()=>{
+ // Minimal fake-DOM VM harness executing the full UI path (no real timers/network/writes)
+ // to catch runtime ReferenceErrors like the Alpha 45 renderExistingRestrictionList bug.
+ const makeEl=(tag)=>{
+  const el={
+   tagName:tag.toUpperCase(),id:'',type:'',value:'',checked:false,disabled:false,open:false,
+   hidden:false,style:{},dataset:{},attrs:Object.create(null),listeners:Object.create(null),
+   children:[],parentElement:null,_text:'',
+   get textContent(){return this.children.length?this._text+this.children.map(c=>c.textContent).join(''):this._text;},
+   set textContent(v){this._text=String(v??'');this.children=[];},
+   get innerText(){return this.textContent;},
+   get isConnected(){let p=this;while(p){if(p===fakeDoc.body)return true;p=p.parentElement;}return false;},
+   get previousElementSibling(){
+    if(!this.parentElement)return null;
+    const i=this.parentElement.children.indexOf(this);
+    return i>0?this.parentElement.children[i-1]:null;
+   },
+   setAttribute(k,v){this.attrs[k]=String(v);},
+   getAttribute(k){return this.attrs[k]??null;},
+   removeAttribute(k){delete this.attrs[k];},
+   addEventListener(ev,fn){(this.listeners[ev]??=[]).push(fn);},
+   click(){for(const fn of (this.listeners.click||[]))fn({stopPropagation(){},preventDefault(){}});},
+   getClientRects(){return this.isConnected?[{}]:[];},
+   contains(other){if(other===this)return true;return this.children.some(c=>c.contains?.(other));},
+   closest(sel){
+    const parts=sel.split(',').map(s=>s.trim());
+    let p=this;
+    while(p){
+     for(const s of parts){
+      if(s.startsWith('#')&&p.id===s.slice(1))return p;
+      if(s==='dialog'&&p.tagName==='DIALOG')return p;
+      if(s==='[role="dialog"]'&&p.attrs.role==='dialog')return p;
+     }
+     p=p.parentElement;
+    }
+    return null;
+   },
+   append(...items){
+    for(const item of items){
+     if(!item)continue;
+     if(item.parentElement)item.remove();
+     item.parentElement=this;
+     this.children.push(item);
+    }
+   },
+   replaceChildren(...items){
+    for(const c of this.children)c.parentElement=null;
+    this.children=[];
+    this._text='';
+    this.append(...items);
+   },
+   remove(){
+    if(!this.parentElement)return;
+    const i=this.parentElement.children.indexOf(this);
+    if(i>=0)this.parentElement.children.splice(i,1);
+    this.parentElement=null;
+   },
+   insertAdjacentElement(pos,child){
+    if(pos==='afterend'&&this.parentElement){
+     if(child.parentElement)child.remove();
+     const i=this.parentElement.children.indexOf(this);
+     child.parentElement=this.parentElement;
+     this.parentElement.children.splice(i+1,0,child);
+    }
+   },
+   showModal(){this.open=true;},
+   close(){this.open=false;},
+   querySelectorAll(sel){
+    const out=[];
+    const selectors=sel.split(',').map(s=>s.trim());
+    const matches=n=>selectors.some(s=>{
+     if(s.startsWith('#'))return n.id===s.slice(1);
+     if(s==='[role="button"]')return n.attrs?.role==='button';
+     if(s==='[role="link"]')return n.attrs?.role==='link';
+     if(s==='[data-guided-next="true"]')return n.dataset?.guidedNext==='true';
+     if(s==='[data-guided-edit-step="6"]')return n.dataset?.guidedEditStep==='6';
+     return n.tagName===s.toUpperCase();
+    });
+    const walk=n=>{for(const c of (n.children||[])){if(matches(c))out.push(c);walk(c);}};
+    walk(this);
+    return out;
+   },
+   querySelector(sel){return this.querySelectorAll(sel)[0]||null;}
+  };
+  return el;
+ };
+ const fakeBody=makeEl('body');
+ const nativePanel=makeEl('div');
+ const nativeAnchor=makeEl('button');
+ nativeAnchor.textContent='Aggiungi restrizioni';
+ nativePanel.append(nativeAnchor);
+ const tabPane=makeEl('div');
+ const tabLabel=makeEl('span');
+ fakeBody.append(nativePanel,tabPane);
+ const fakeDoc={
+  hidden:false,body:fakeBody,
+  createElement:tag=>makeEl(tag),
+  createTextNode:text=>{const n=makeEl('#text');n._text=String(text??'');return n;},
+  getElementById:id=>fakeBody.querySelector('#'+id),
+  querySelectorAll:sel=>fakeBody.querySelectorAll(sel),
+  querySelector:sel=>fakeBody.querySelector(sel)
+ };
+ let activeSeg={id:101,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ let refreshCb=null;
+ const warnings=[];
+ const fakeSdk={
+  Settings:{getLocale:async()=>({localeCode:'it'})},
+  Sidebar:{registerScriptTab:async()=>({tabPane,tabLabel})},
+  Editing:{getSelection:async()=>({objectType:'segment',ids:[activeSeg.id]})},
+  DataModel:{
+   Segments:{
+    getById:async()=>activeSeg,
+    getAddress:async()=>({country:{id:106,name:'Italy'}}),
+    hasPermissions:async()=>true,
+    isRoadTypeDrivable:async()=>true,
+    isTollSegment:async()=>false
+   },
+   Countries:{getById:async()=>({restrictionSubscriptions:f2Permits})}
+  }
+ };
+ const fakeWin={getWmeSdk:()=>fakeSdk};
+ vm.runInNewContext(src,{
+  document:fakeDoc,window:fakeWin,unsafeWindow:fakeWin,
+  setInterval:fn=>{refreshCb=fn;return 1;},
+  setTimeout,clearTimeout,
+  console:{warn:(...args)=>warnings.push(args.join(' ')),log(){},error(){}}
+ });
+ await new Promise(r=>setTimeout(r,20));
+ assert.equal(warnings.length,0,'UI startup/refresh must not warn: '+warnings.join('; '));
+ const nativeBtnEmpty=fakeDoc.getElementById('rm-guided-alpha-native');
+ assert.ok(nativeBtnEmpty,'Native panel button must appear on empty segment');
+ assert.equal(nativeBtnEmpty.textContent,'Crea restrizione guidata');
+ const rootEl=fakeDoc.getElementById('rm-guided-alpha-root');
+ const sideButtonsEmpty=rootEl.querySelectorAll('button');
+ assert.ok(sideButtonsEmpty.some(b=>b.textContent==='Crea restrizione guidata'),
+  'Sidebar launch button must show Crea restrizione guidata when no restrictions exist');
+ // Switch to a segment WITH existing restrictions (editable:true + editable:false).
+ activeSeg={
+  id:102,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,
+  restrictions:[f2RedAllRes,makeLiveSdkRestriction({editable:false,direction:'REV'})]
+ };
+ nativeAnchor.textContent='Modifica restrizioni';
+ assert.equal(typeof refreshCb,'function');
+ await refreshCb();
+ assert.equal(warnings.length,0,'Refresh on segment with existing restrictions must not throw/warn: '+warnings.join('; '));
+ const nativeBtnExisting=fakeDoc.getElementById('rm-guided-alpha-native');
+ assert.ok(nativeBtnExisting,'Native panel button must stay visible on segment with existing restrictions');
+ assert.equal(nativeBtnExisting.textContent,'Modifica restrizione guidata');
+ const sideButtonsExisting=rootEl.querySelectorAll('button');
+ assert.ok(sideButtonsExisting.some(b=>b.textContent==='Modifica restrizione guidata'),
+  'Sidebar launch button must switch to Modifica restrizione guidata when existing restrictions are present');
+ const editBtn=sideButtonsExisting.find(b=>b.textContent===a.labels.edit_guided_btn[0]);
+ const recreateBtn=sideButtonsExisting.find(b=>b.textContent===a.labels.delete_recreate_btn[0]);
+ const deleteBtn=sideButtonsExisting.find(b=>b.textContent===a.labels.delete_preview_btn[0]);
+ assert.ok(editBtn&&recreateBtn&&deleteBtn,
+  'Per-restriction Fase 2 buttons must render for editable:true rows');
+ assert.ok(rootEl.textContent.includes(a.labels.edit_locked_note[0]),
+  'Locked editable:false row must show non-editable note instead of edit buttons');
+ // Exercise clicking "Modifica guidata (anteprima)" and "Elimina (anteprima)" live in fake DOM.
+ editBtn.click();
+ await new Promise(r=>setTimeout(r,20));
+ const editDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(editDialog&&editDialog.open,'Clicking Modifica guidata must open wizard dialog');
+ assert.equal(editDialog.querySelector('h2').textContent,'Modifica restrizione guidata');
+ assert.ok(editDialog.children.some(c=>c.dataset?.guidedActionBanner==='EDIT'),
+  'Guided edit dialog must display EDIT action banner');
+ deleteBtn.click();
+ await new Promise(r=>setTimeout(r,20));
+ const delDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(delDialog&&delDialog.open,'Clicking Elimina (anteprima) must open delete preview dialog');
+ assert.ok(delDialog.children.some(c=>c.dataset?.guidedDeletePlan==='true'),
+  'Delete preview dialog must render structured Before/After plan');
+ // Switching back to a segment without restrictions must restore "Crea restrizione guidata" in-place.
+ activeSeg={id:103,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ nativeAnchor.textContent='Aggiungi restrizioni';
+ await refreshCb();
+ assert.equal(fakeDoc.getElementById('rm-guided-alpha-native').textContent,'Crea restrizione guidata');
+ // Phase 3 fake-DOM end-to-end check: on segment with single editable restriction,
+ // open Delete modal, check explicit confirmation, click Apply, verify updateSegment + UI refresh.
+ const vmUpdates=[];
+ fakeSdk.DataModel.Segments.updateSegment=async({segmentId,restrictions})=>{
+  vmUpdates.push({segmentId,restrictions});
+  activeSeg={...activeSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+  if(!restrictions.length)nativeAnchor.textContent='Aggiungi restrizioni';
+ };
+ fakeSdk.Editing.undo=async()=>{throw Error('Undo must not run on successful apply');};
+ activeSeg={id:104,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[f2RedAllRes]};
+ nativeAnchor.textContent='Modifica restrizioni';
+ await refreshCb();
+ const delBtnSingle=rootEl.querySelectorAll('button').find(b=>b.textContent===a.labels.delete_preview_btn[0]);
+ assert.ok(delBtnSingle,'Delete button must appear on single editable restriction');
+ delBtnSingle.click();
+ await new Promise(r=>setTimeout(r,20));
+ const delApplyDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ const confirmBox=delApplyDialog.querySelectorAll('input').find(i=>i.dataset?.guidedWriteConfirm==='true');
+ const applyDeleteBtn=delApplyDialog.querySelectorAll('button').find(b=>b.dataset?.guidedApplyBtn==='true');
+ assert.ok(confirmBox&&applyDeleteBtn,'Delete dialog must include explicit confirmation checkbox and apply button');
+ assert.equal(applyDeleteBtn.disabled,true,'Apply button must stay disabled until editor checks confirmation');
+ confirmBox.checked=true;
+ for(const fn of (confirmBox.listeners.change||[]))fn({});
+ assert.equal(applyDeleteBtn.disabled,false,'Apply button enables only after explicit confirmation');
+ applyDeleteBtn.click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(vmUpdates.length,1,'Clicking Apply must invoke updateSegment exactly once');
+ assert.deepEqual(JSON.parse(JSON.stringify(vmUpdates[0])),{segmentId:104,restrictions:[]});
+ assert.ok(delApplyDialog.querySelectorAll('div').some(d=>d.dataset?.guidedWriteOutcome==='APPLIED_PENDING'),
+  'Delete dialog must report APPLIED_PENDING after post-write verification');
+ assert.equal(fakeDoc.getElementById('rm-guided-alpha-native').textContent,'Crea restrizione guidata',
+  'After deleting the last restriction, refresh must switch the launch button back to Crea restrizione guidata');
+ // Alpha 48 fake-DOM end-to-end check: Guided Edit must NOT bury controls under the
+ // amber existing-restrictions alert or expanded list, must expose direct quick-jump
+ // buttons, and must allow changing a field and applying the pending edit in WME.
+ vmUpdates.length=0;
+ activeSeg={id:105,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[f2RedAllRes]};
+ nativeAnchor.textContent='Modifica restrizioni';
+ await refreshCb();
+ const editBtnSingle=rootEl.querySelectorAll('button').find(b=>b.textContent===a.labels.edit_guided_btn[0]);
+ assert.ok(editBtnSingle,'Guided edit button must appear on editable restriction');
+ editBtnSingle.click();
+ await new Promise(r=>setTimeout(r,20));
+ const geDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(geDialog&&geDialog.open,'Guided edit must open dialog');
+ assert.ok(!geDialog.textContent.includes(a.labels.existing_alert_title[0]),
+  'Guided edit Step 0 must not show the redundant amber existing-restriction alert');
+ const geOuterDetails=geDialog.children.filter(c=>c.tagName==='DETAILS');
+ assert.ok(geOuterDetails.length===1&&!geOuterDetails[0].open,
+  'Existing restriction list must stay collapsed on Guided Edit Step 0 so controls stay visible');
+ const revRadio=geDialog.querySelectorAll('input').find(i=>i.type==='radio'&&i.value==='REV');
+ assert.ok(revRadio,'Direction radio options must be immediately visible on Guided Edit Step 0');
+ revRadio.checked=true;
+ for(const fn of (revRadio.listeners.change||[]))fn({});
+ const jumpSchedule=geDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='7');
+ assert.ok(jumpSchedule,'Guided Edit quick-nav must expose direct jump to Dates & times');
+ jumpSchedule.click();
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(geDialog.querySelectorAll('h3').some(h=>h.textContent===a.labels.red_schedule[0]),
+  'Clicking Dates & times shortcut must jump directly to Step 7');
+ const jumpSummary=geDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='6');
+ assert.ok(jumpSummary&&!jumpSummary.disabled,'Summary & apply shortcut must be enabled when edit draft is valid');
+ jumpSummary.click();
+ await new Promise(r=>setTimeout(r,30));
+ const editConfirm=geDialog.querySelectorAll('input').find(i=>i.dataset?.guidedWriteConfirm==='true');
+ const editApplyBtn=geDialog.querySelectorAll('button').find(b=>b.dataset?.guidedApplyBtn==='true');
+ assert.ok(editConfirm&&editApplyBtn,'Guided Edit Step 6 must show controlled apply box');
+ editConfirm.checked=true;
+ for(const fn of (editConfirm.listeners.change||[]))fn({});
+ editApplyBtn.click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(vmUpdates.length,1,'Guided Edit apply must invoke updateSegment exactly once');
+ assert.equal(vmUpdates[0].segmentId,105);
+ assert.equal(vmUpdates[0].restrictions.length,1,'Guided Edit must replace without duplicating');
+ assert.equal(vmUpdates[0].restrictions[0].direction,'REV','Edited direction must be written');
+ assert.ok(geDialog.querySelectorAll('div').some(d=>d.dataset?.guidedWriteOutcome==='APPLIED_PENDING'),
+  'Guided Edit must verify and report APPLIED_PENDING');
+ assert.equal(warnings.length,0,'No warnings allowed during Phase 3 guided edit & delete apply flows');
+
+ // Alpha 47 (Fase 3): evaluateControlledWriteGate, verifyAppliedSegmentRestrictions,
+ // and executeControlledSegmentWrite (success, abort, surgical rollback, manual-undo fallback).
+ const f3AccessOk={hasPermissions:true,isRoadTypeDrivable:true};
+ const f3PlanCreate=a.buildStructuredBeforeAfterPlan(
+  {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]},
+  {...f2SegTwoWay,restrictions:[]},
+  {startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'18:00'}]},
+  {},f2Permits,{enabled:false,conditions:[]},{access:f3AccessOk}
+ );
+ const f3GateOk=a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,restrictions:[]},f3AccessOk);
+ assert.equal(f3GateOk.allowed,true);
+ assert.deepEqual(f3GateOk.blockers,[]);
+ assert.equal(f3GateOk.restrictionCount,1);
+ assert.equal(f3GateOk.frameCount,1);
+ // Gate must fail closed if permissions or drivability are false OR unverified (null).
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,restrictions:[]},{hasPermissions:false,isRoadTypeDrivable:true}).blockers.includes('conversion_no_permission'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,restrictions:[]},{hasPermissions:null,isRoadTypeDrivable:true}).blockers.includes('write_permission_unverified'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,isDrivable:false,restrictions:[]},{hasPermissions:true,isRoadTypeDrivable:false}).blockers.includes('conversion_non_drivable'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,isDrivable:undefined,restrictions:[]},{hasPermissions:true,isRoadTypeDrivable:null}).blockers.includes('write_drivable_unverified'));
+ assert.ok(a.evaluateControlledWriteGate(f3PlanCreate,{...f2SegTwoWay,isDrivable:true,restrictions:[]},{hasPermissions:true,isRoadTypeDrivable:false}).blockers.includes('write_drivable_unverified'));
+ // Gate allows deleting the last restriction (0 remaining rows) and blocks special lanes/TOLL/overnight/conflicts.
+ assert.equal(a.evaluateControlledWriteGate(f2DelOnly,{...f2SegTwoWay,restrictions:[f2RedAllRes]},f3AccessOk).allowed,true);
+ assert.equal(a.evaluateControlledWriteGate(f2DelBlockedByLockedSibling,{...f2SegTwoWay,restrictions:[f2RedAllRes,makeLiveSdkRestriction({editable:false,direction:'REV'})]},f3AccessOk).allowed,false);
+ assert.equal(a.evaluateControlledWriteGate(f2EditOk,f2TwoSeg,f3AccessOk).allowed,true);
+ assert.equal(a.evaluateControlledWriteGate(f2EditConflictsSibling,f2TwoSeg,f3AccessOk).allowed,false);
+ const f3TamperedSpecialLane={...f3PlanCreate,candidateRestrictions:[{...f3PlanCreate.candidateRestrictions[0],laneType:'HOV'}]};
+ assert.ok(a.evaluateControlledWriteGate(f3TamperedSpecialLane,{...f2SegTwoWay,restrictions:[]},f3AccessOk).blockers.includes('serializer_special_lane'));
+ const f3TamperedToll={...f3PlanCreate,candidateRestrictions:[{...f3PlanCreate.candidateRestrictions[0],defaultType:'TOLL'}]};
+ assert.ok(a.evaluateControlledWriteGate(f3TamperedToll,{...f2SegTwoWay,restrictions:[]},f3AccessOk).blockers.includes('serializer_toll_pending'));
+ const f3TamperedNight={...f3PlanCreate,candidateRestrictions:[{...f3PlanCreate.candidateRestrictions[0],timeFrames:[{...f3PlanCreate.candidateRestrictions[0].timeFrames[0],fromTime:'22:00',toTime:'06:00'}]}]};
+ assert.ok(a.evaluateControlledWriteGate(f3TamperedNight,{...f2SegTwoWay,restrictions:[]},f3AccessOk).blockers.includes('serializer_overnight_unverified'));
+ // verifyAppliedSegmentRestrictions: tolerates WME canonical normalizations (empty rule groups,
+ // description '' vs null, repeatYearly false vs null, auto-populated timeZone, reordered arrays)
+ // while catching any genuine mismatch.
+ const f3ExpectedGreen=a.serializeDraftForSdk(
+  {direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'ALLOWED',vehicleTypes:['PRIVATE','EV']},
+  f2SegTwoWay,
+  {startDate:'2026-06-01',endDate:'2026-06-30',weekdays:['MONDAY','WEDNESDAY'],allDay:false,slots:[{fromTime:'08:00',toTime:'12:00'}]},
+  {PRIVATE:{requiresPass:true,requiresOccupancy:true,permitIds:['sub-secret-1'],minPassengers:3},
+   EV:{requiresPass:false,requiresOccupancy:false,permitIds:[],minPassengers:null}},
+  f2Permits,{enabled:false,conditions:[]}
+ ).candidateRestrictions;
+ const f3WmeNormalizedActual={
+  id:50,restrictions:[{
+   defaultType:'BLOCKED',description:'',direction:'FWD',laneScope:'WHOLE_SEGMENT',laneType:null,
+   editable:true,isExpired:false,
+   timeFrames:[{
+    startDate:'2026-06-01',endDate:'2026-06-30',fromTime:'08:00',toTime:'12:00',
+    weekdays:['WEDNESDAY','MONDAY'],repeatYearly:false,dayAlternation:null,timeZone:'Europe/Rome'
+   }],
+   vehicleRules:{
+    BLOCKED:[],
+    FREE:[
+     {vehicleTypes:['EV'],subscriptions:[],minPassengers:0,licensePlateRule:''},
+     {vehicleTypes:['PRIVATE'],subscriptions:['sub-secret-1'],minPassengers:3,licensePlateRule:null}
+    ]
+   }
+  }]
+ };
+ assert.deepEqual(a.verifyAppliedSegmentRestrictions(f3ExpectedGreen,f3WmeNormalizedActual),{ok:true,mismatches:[]});
+ assert.deepEqual(a.verifyAppliedSegmentRestrictions([],{id:50,restrictions:[]}),{ok:true,mismatches:[]});
+ const f3MismatchTime=a.verifyAppliedSegmentRestrictions(f3ExpectedGreen,{
+  ...f3WmeNormalizedActual,
+  restrictions:[{...f3WmeNormalizedActual.restrictions[0],timeFrames:[{...f3WmeNormalizedActual.restrictions[0].timeFrames[0],toTime:'13:00'}]}]
+ });
+ assert.equal(f3MismatchTime.ok,false);
+ assert.ok(f3MismatchTime.mismatches.some(m=>m.includes('toTime')));
+ const f3MismatchRules=a.verifyAppliedSegmentRestrictions(f3ExpectedGreen,{
+  ...f3WmeNormalizedActual,
+  restrictions:[{...f3WmeNormalizedActual.restrictions[0],vehicleRules:{FREE:[{vehicleTypes:['EV'],subscriptions:[],minPassengers:0,licensePlateRule:null}]}}]
+ });
+ assert.equal(f3MismatchRules.ok,false);
+ assert.ok(f3MismatchRules.mismatches.some(m=>m.includes('vehicleRules')));
+ // executeControlledSegmentWrite: APPLIED_PENDING (never calls Editing.save).
+ let f3SegState={id:901,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3BaseSnap=a.restrictionSnapshot(f3SegState,true);
+ let saveCalled=false,undoCalled=0;
+ const f3MockSdk={
+  Editing:{undo:async()=>{undoCalled++;},save:async()=>{saveCalled=true;}},
+  DataModel:{Segments:{
+   getById:async()=>f3SegState,
+   updateSegment:async({restrictions})=>{f3SegState={...f3SegState,restrictions};}
+  }}
+ };
+ const f3OkRes=await a.executeControlledSegmentWrite(
+  f3MockSdk,{},901,f3PlanCreate.candidateRestrictions,f3BaseSnap,
+  {plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3OkRes.status,'APPLIED_PENDING');
+ assert.equal(f3OkRes.verified,true);
+ assert.equal(f3OkRes.undone,false);
+ assert.equal(saveCalled,false,'WME Save must NEVER be invoked automatically');
+ assert.equal(undoCalled,0);
+ // executeControlledSegmentWrite: ABORTED when segment changes before write.
+ const f3StaleRes=await a.executeControlledSegmentWrite(
+  f3MockSdk,{},901,f3PlanCreate.candidateRestrictions,f3BaseSnap,
+  {plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3StaleRes.status,'ABORTED');
+ assert.equal(f3StaleRes.reason,'inspection_changed');
+ // executeControlledSegmentWrite: ABORTED when updateSegment is missing.
+ const f3NoSdk=await a.executeControlledSegmentWrite(
+  {DataModel:{Segments:{getById:async()=>f3SegState}}},{},901,f3PlanCreate.candidateRestrictions,a.restrictionSnapshot(f3SegState,true)
+ );
+ assert.equal(f3NoSdk.status,'ABORTED');
+ assert.equal(f3NoSdk.reason,'write_sdk_unavailable');
+ // executeControlledSegmentWrite: ROLLED_BACK via surgical W.model.actionManager check on post-write mismatch.
+ function UpdateSegmentsRestrictions(segId){this.subActions=[{object:{getID:()=>segId}}];}
+ let f3CorruptSeg={id:902,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3CorruptBase=a.restrictionSnapshot(f3CorruptSeg,true);
+ const f3Actions=[{constructor:{name:'OtherAction'}}];
+ let f3UndoCount=0;
+ const f3CorruptSdk={
+  Editing:{undo:async()=>{f3UndoCount++;f3Actions.pop();f3CorruptSeg={...f3CorruptSeg,restrictions:[]};}},
+  DataModel:{Segments:{
+   getById:async()=>f3CorruptSeg,
+   updateSegment:async({restrictions})=>{
+    f3Actions.push(new UpdateSegmentsRestrictions(902));
+    // Simulate WME writing a corrupted time frame so post-write verification fails.
+    f3CorruptSeg={...f3CorruptSeg,restrictions:[{...restrictions[0],direction:'REV'}]};
+   }
+  }}
+ };
+ const f3RollbackRes=await a.executeControlledSegmentWrite(
+  f3CorruptSdk,{W:{model:{actionManager:{getActions:()=>f3Actions}}}},
+  902,f3PlanCreate.candidateRestrictions,f3CorruptBase,{plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3RollbackRes.status,'ROLLED_BACK');
+ assert.equal(f3RollbackRes.undone,true);
+ assert.equal(f3UndoCount,1);
+ // Surgical rollback must NOT call undo if actionManager shows a foreign action (protect user's own history!).
+ let f3ForeignUndo=0;
+ let f3ForeignSeg={id:903,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3ForeignBase=a.restrictionSnapshot(f3ForeignSeg,true);
+ const f3ForeignActions=[];
+ const f3ForeignSdk={
+  Editing:{undo:async()=>{f3ForeignUndo++;}},
+  DataModel:{Segments:{
+   getById:async()=>f3ForeignSeg,
+   updateSegment:async({restrictions})=>{
+    f3ForeignActions.push({constructor:{name:'UnrelatedAction'},subActions:[]});
+    f3ForeignSeg={...f3ForeignSeg,restrictions:[{...restrictions[0],direction:'REV'}]};
+   }
+  }}
+ };
+ const f3ForeignRes=await a.executeControlledSegmentWrite(
+  f3ForeignSdk,{W:{model:{actionManager:{getActions:()=>f3ForeignActions}}}},
+  903,f3PlanCreate.candidateRestrictions,f3ForeignBase,{plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3ForeignRes.status,'MISMATCH_MANUAL_UNDO');
+ assert.equal(f3ForeignRes.undone,false);
+ assert.equal(f3ForeignUndo,0,'Rollback must never undo an unrelated action');
+ // Pure SDK fallback rollback (when W.model.actionManager is unavailable) works when snapshot mutated.
+ let f3PureSeg={id:904,isAtoB:true,isBtoA:true,isTwoWay:true,roadType:3,restrictions:[]};
+ const f3PureBase=a.restrictionSnapshot(f3PureSeg,true);
+ let f3PureUndo=0;
+ const f3PureSdk={
+  Editing:{undo:async()=>{f3PureUndo++;f3PureSeg={...f3PureSeg,restrictions:[]};}},
+  DataModel:{Segments:{
+   getById:async()=>f3PureSeg,
+   updateSegment:async({restrictions})=>{f3PureSeg={...f3PureSeg,restrictions:[{...restrictions[0],direction:'REV'}]};}
+  }}
+ };
+ const f3PureRes=await a.executeControlledSegmentWrite(
+  f3PureSdk,{},904,f3PlanCreate.candidateRestrictions,f3PureBase,{plan:f3PlanCreate,access:f3AccessOk}
+ );
+ assert.equal(f3PureRes.status,'ROLLED_BACK');
+ assert.equal(f3PureRes.undone,true);
+ assert.equal(f3PureUndo,1);
+ // Alpha 49 (Fase 4A): cleaned-up sidebar check + safe internal preservation of
+ // existing motorcycle engine conditions via ActionManager + restriction.with().
+ assert.ok(!rootEl.textContent.includes(a.labels.inspection_title[0]),
+  'Cleaned-up sidebar must not display the obsolete technical inspection box');
+ assert.ok(!rootEl.textContent.includes(a.labels.anchor[0]),
+  'Cleaned-up sidebar must not display the obsolete native-anchor technical row');
+ const makeInternalMotoRow=(direction,engineCaps)=>{
+  const rawJson={
+   defaultType:'FREE',description:null,direction,laneScope:'WHOLE_SEGMENT',laneType:null,
+   timeFrames:[{startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'08:00',toTime:'18:00',
+    weekdays:['MONDAY'],timeZone:'Europe/Rome',repeatYearly:false,dayAlternation:null}],
+   driveProfiles:{BLOCKED:[{vehicleTypes:['MOTORCYCLE'],subscriptions:[],minPassengers:0,
+    licensePlateRule:null,engineCapacities:engineCaps.map(c=>({...c}))}]}
+  };
+  return {
+   getDriveProfileList(group){
+    if(group!=='BLOCKED')return {getDriveProfiles:()=>[]};
+    return {getDriveProfiles:()=>[{getEngineCapacities:()=>engineCaps.map(c=>({attributes:{...c}}))}]};
+   },
+   toJSON(){return JSON.parse(JSON.stringify(rawJson));},
+   with(patch){
+    const nextCaps=(patch.driveProfiles?.BLOCKED?.[0]?.engineCapacities)||[];
+    return makeInternalMotoRow(patch.direction??direction,nextCaps);
+   }
+  };
+ };
+ const f4MotoCaps=[
+  {vehicleType:'MOTORCYCLE',engineType:'FUEL',operator:'LT',capacityThreshold:150},
+  {vehicleType:'MOTORCYCLE',engineType:'ELECTRIC',operator:'LT',capacityThreshold:11}
+ ];
+ const f4MotoSdkRow=makeLiveSdkRestriction({
+  defaultType:'FREE',direction:'FWD',
+  timeFrames:[makeLiveSdkFrame({startDate:'2026-05-01',endDate:'2026-05-31',fromTime:'08:00',toTime:'18:00',weekdays:['MONDAY'],timeZone:'Europe/Rome'})],
+  vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['MOTORCYCLE']})]}
+ });
+ let f4RawRestrictions=[makeInternalMotoRow('FWD',f4MotoCaps)];
+ let f4SdkSeg={id:950,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[f4MotoSdkRow]};
+ const f4Actions=[];
+ const f4ActionManager={
+  getActions:()=>f4Actions,
+  add(action){
+   f4Actions.push(action);
+   const target=action.subActions.find(s=>s.object.getID()===950);
+   if(target)f4RawRestrictions=target.newAttributes.restrictions;
+  }
+ };
+ const f4Page={
+  W:{model:{
+   actionManager:f4ActionManager,
+   segments:{getObjectById:id=>id===950?{attributes:{restrictions:f4RawRestrictions}}:null}
+  }}
+ };
+ const f4Captured=a.captureInternalMotorPreservation(f4Page,f4SdkSeg);
+ assert.equal(f4Captured.get(1).status,'MATCH');
+ assert.equal(f4Captured.get(1).count,2);
+ assert.ok(f4Captured.get(1).rawJson&&f4Captured.get(1).motorStamp);
+ const f4NewDraft={direction:'REV',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:[]};
+ const f4NewSched={startDate:'',endDate:'',weekdays:['MONDAY'],allDay:false,slots:[{fromTime:'09:00',toTime:'12:00'}]};
+ const f4BlockedWithoutOptIn=a.buildStructuredBeforeAfterPlan(
+  f4NewDraft,f4SdkSeg,f4NewSched,{},f2Permits,{enabled:false,conditions:[]},
+  {access:f3AccessOk,engineChecks:f4Captured}
+ );
+ assert.equal(f4BlockedWithoutOptIn.status,'BLOCKED');
+ assert.ok(f4BlockedWithoutOptIn.blockers.includes('serializer_engine_gap'));
+ const f4PlanWithMotors=a.buildStructuredBeforeAfterPlan(
+  f4NewDraft,f4SdkSeg,f4NewSched,{},f2Permits,{enabled:false,conditions:[]},
+  {access:f3AccessOk,engineChecks:f4Captured,preserveMotorsWithInternal:true}
+ );
+ assert.equal(f4PlanWithMotors.status,'CANDIDATE_COMPLETE');
+ assert.equal(f4PlanWithMotors.usesInternalMotorPreservation,true);
+ assert.equal(f4PlanWithMotors.internalMotorSpecs.length,2);
+ assert.ok(f4PlanWithMotors.internalMotorSpecs[0]&&f4PlanWithMotors.internalMotorSpecs[1]===null);
+ // Gate must pass with ActionManager and block without it.
+ assert.equal(a.evaluateControlledWriteGate(f4PlanWithMotors,f4SdkSeg,f3AccessOk,{pageWindow:f4Page}).allowed,true);
+ assert.ok(a.evaluateControlledWriteGate(f4PlanWithMotors,f4SdkSeg,f3AccessOk,{pageWindow:{}}).blockers.includes('motor_internal_unavailable'));
+ // Execute controlled write with ActionManager interception preserving the 2 motorcycle engine conditions.
+ const f4BaseSnap=a.restrictionSnapshot(f4SdkSeg,true);
+ const f4OrigAdd=f4ActionManager.add;
+ let f4SaveCalled=false;
+ const f4Sdk={
+  Editing:{undo:async()=>{throw Error('Undo must not run on successful Phase 4A write');},save:async()=>{f4SaveCalled=true;}},
+  DataModel:{Segments:{
+   getById:async()=>f4SdkSeg,
+   updateSegment:async({restrictions})=>{
+    // Simulate WME SDK creating stripped internal rows (0 engine capacities) and passing them to ActionManager.add
+    const strippedInternal=restrictions.map(r=>makeInternalMotoRow(r.direction,[]));
+    const action=new UpdateSegmentsRestrictions(950);
+    action.subActions[0].newAttributes={restrictions:strippedInternal};
+    f4ActionManager.add(action);
+    f4SdkSeg={...f4SdkSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+   }
+  }}
+ };
+ const f4WriteRes=await a.executeControlledSegmentWrite(
+  f4Sdk,f4Page,950,f4PlanWithMotors.candidateRestrictions,f4BaseSnap,
+  {plan:f4PlanWithMotors,access:f3AccessOk,internalMotorSpecs:f4PlanWithMotors.internalMotorSpecs}
+ );
+ assert.equal(f4WriteRes.status,'APPLIED_PENDING');
+ assert.equal(f4WriteRes.verified,true);
+ assert.equal(f4WriteRes.preservedInternalMotors,true);
+ assert.equal(f4SaveCalled,false,'Phase 4A must never auto-save');
+ assert.equal(f4ActionManager.add,f4OrigAdd,'ActionManager.add must always be restored');
+ assert.equal(f4RawRestrictions.length,2);
+ assert.equal(a.extractNormalizedMotorStamp(f4RawRestrictions[0]),f4Captured.get(1).motorStamp,
+  'Retained motorcycle restriction must keep both engine conditions intact after pending apply');
+ // Failure case: if internal model drops motor conditions after apply, executeControlledSegmentWrite rolls back via undo.
+ let f4UndoCount=0;
+ let f4FailSeg={id:951,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[f4MotoSdkRow]};
+ const f4FailBase=a.restrictionSnapshot(f4FailSeg,true);
+ let f4FailRaw=[makeInternalMotoRow('FWD',f4MotoCaps)];
+ const f4FailActions=[];
+ const f4FailMgr={
+  getActions:()=>f4FailActions,
+  add(action){
+   f4FailActions.push(action);
+   // Simulate WME losing engine conditions even after interception
+   f4FailRaw=action.subActions[0].newAttributes.restrictions.map(r=>makeInternalMotoRow('FWD',[]));
+  }
+ };
+ const f4FailPage={W:{model:{actionManager:f4FailMgr,segments:{getObjectById:id=>id===951?{attributes:{restrictions:f4FailRaw}}:null}}}};
+ const f4FailSdk={
+  Editing:{undo:async()=>{f4UndoCount++;f4FailActions.pop();f4FailSeg={...f4FailSeg,restrictions:[f4MotoSdkRow]};f4FailRaw=[makeInternalMotoRow('FWD',f4MotoCaps)];}},
+  DataModel:{Segments:{
+   getById:async()=>f4FailSeg,
+   updateSegment:async({restrictions})=>{
+    const action=new UpdateSegmentsRestrictions(951);
+    action.subActions[0].newAttributes={restrictions:restrictions.map(r=>makeInternalMotoRow(r.direction,[]))};
+    f4FailMgr.add(action);
+    f4FailSeg={...f4FailSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+   }
+  }}
+ };
+ const f4FailRes=await a.executeControlledSegmentWrite(
+  f4FailSdk,f4FailPage,951,f4PlanWithMotors.candidateRestrictions,f4FailBase,
+  {plan:f4PlanWithMotors,access:f3AccessOk,internalMotorSpecs:f4PlanWithMotors.internalMotorSpecs}
+ );
+ assert.equal(f4FailRes.status,'ROLLED_BACK');
+ assert.equal(f4FailRes.undone,true);
+ assert.equal(f4UndoCount,1);
+ assert.ok(f4FailRes.mismatches.includes('motor_preservation_mismatch'));
+
+ // Alpha 50: Guided Edit directly on existing editable motorcycle restrictions
+ // with engine conditions + cleaned-up UI (amber alert, restriction cards, Step 7).
+ const makeInternalMotoRowV2=(direction,laneScope,timeFrames,engineCaps)=>{
+  const rawJson={
+   defaultType:'FREE',description:null,direction,laneScope,laneType:null,
+   timeFrames:JSON.parse(JSON.stringify(timeFrames)),
+   driveProfiles:{BLOCKED:[{vehicleTypes:['MOTORCYCLE'],subscriptions:[],minPassengers:0,
+    licensePlateRule:null,engineCapacities:engineCaps.map(c=>({...c}))}]}
+  };
+  return {
+   getDriveProfileList(group){
+    if(group!=='BLOCKED')return {getDriveProfiles:()=>[]};
+    return {getDriveProfiles:()=>[{getEngineCapacities:()=>engineCaps.map(c=>({attributes:{...c}}))}]};
+   },
+   toJSON(){return JSON.parse(JSON.stringify(rawJson));},
+   with(patch){
+    const nextCaps=(patch.driveProfiles?.BLOCKED?.[0]?.engineCapacities)||[];
+    return makeInternalMotoRowV2(
+     patch.direction??direction,
+     patch.laneScope??laneScope,
+     patch.timeFrames??timeFrames,
+     nextCaps
+    );
+   }
+  };
+ };
+ const a50Caps=[{vehicleType:'MOTORCYCLE',engineType:'FUEL',operator:'LT',capacityThreshold:125}];
+ const a50BaseFrames=[makeLiveSdkFrame({
+  startDate:null,endDate:null,fromTime:'14:00',toTime:'19:00',
+  weekdays:[...a.WEEKDAYS],timeZone:'Europe/Rome'
+ })];
+ const a50SdkRow=makeLiveSdkRestriction({
+  defaultType:'FREE',direction:'FWD',laneScope:'WHOLE_SEGMENT',
+  timeFrames:a50BaseFrames,
+  vehicleRules:{BLOCKED:[makeLiveSdkRule({vehicleTypes:['MOTORCYCLE']})]}
+ });
+ let a50Raw=[makeInternalMotoRowV2('FWD','WHOLE_SEGMENT',a50BaseFrames,a50Caps)];
+ let a50Seg={id:960,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[a50SdkRow]};
+ const a50Actions=[];
+ const a50Mgr={
+  getActions:()=>a50Actions,
+  add(action){
+   a50Actions.push(action);
+   const target=action.subActions.find(s=>s.object.getID()===960);
+   if(target)a50Raw=target.newAttributes.restrictions;
+  }
+ };
+ const a50Page={W:{model:{actionManager:a50Mgr,segments:{getObjectById:id=>id===960?{attributes:{restrictions:a50Raw}}:null}}}};
+ const a50Captured=a.captureInternalMotorPreservation(a50Page,a50Seg);
+ const a50Check1=a50Captured.get(1);
+ assert.equal(a50Check1.status,'MATCH');
+ assert.equal(a50Check1.count,1);
+ // Preload without opt-in still fails closed; with preserveMotorsWithInternal:true unlocks Guided Edit!
+ assert.equal(
+  a.preloadExistingRestrictionToWizard(a50SdkRow,a50Seg,f2Permits,{engineCheck:a50Check1}).editableInWizard,
+  false
+ );
+ const a50Pre=a.preloadExistingRestrictionToWizard(
+  a50SdkRow,a50Seg,f2Permits,{engineCheck:a50Check1,preserveMotorsWithInternal:true}
+ );
+ assert.equal(a50Pre.editableInWizard,true);
+ assert.deepEqual(a50Pre.preloaded.draft,{
+  direction:'FWD',scope:'segment',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']
+ });
+ assert.equal(a50Pre.preloaded.preservedMotorSpec.count,1);
+ assert.equal(a50Pre.preloaded.preservedMotorSpec.motorStamp,a50Check1.motorStamp);
+ assert.deepEqual(a50Pre.preloaded.preservedVehicleTypes,['MOTORCYCLE']);
+ // buildExistingActionPlan REPLACE editing direction + laneScope + hours preserves replacementMotorSpec.
+ const a50EditDraft={
+  draft:{direction:'REV',scope:'right',lane:'lane_none',restrictionType:'BLOCKED',vehicleTypes:['MOTORCYCLE']},
+  schedule:{startDate:'',endDate:'',weekdays:[...a.WEEKDAYS],allDay:false,slots:[{fromTime:'08:00',toTime:'20:00'}]},
+  vehicleRules:{},permits:f2Permits,motorDraft:{enabled:false,conditions:[]}
+ };
+ const a50EditPlan=a.buildExistingActionPlan('REPLACE',1,a50Seg,a50EditDraft,{
+  mode:'EDIT',access:f3AccessOk,preserveMotorsWithInternal:true,
+  replacementMotorSpec:a50Pre.preloaded.preservedMotorSpec
+ });
+ assert.equal(a50EditPlan.status,'CANDIDATE_COMPLETE');
+ assert.equal(a50EditPlan.usesInternalMotorPreservation,true);
+ assert.equal(a50EditPlan.internalMotorSpecs.length,1);
+ assert.equal(a50EditPlan.internalMotorSpecs[0].motorStamp,a50Check1.motorStamp);
+ assert.equal(a50EditPlan.candidateRestrictions[0].direction,'REV');
+ assert.equal(a50EditPlan.candidateRestrictions[0].laneScope,'RIGHT_LANE');
+ assert.equal(a50EditPlan.candidateRestrictions[0].timeFrames[0].fromTime,'08:00');
+ // Defensive check: if user removed MOTORCYCLE from draft, replacementMotorSpec is ignored.
+ const a50ChangedVehPlan=a.buildExistingActionPlan('REPLACE',1,a50Seg,{
+  ...a50EditDraft,
+  draft:{...a50EditDraft.draft,vehicleTypes:['TAXI']}
+ },{
+  mode:'EDIT',access:f3AccessOk,preserveMotorsWithInternal:true,
+  replacementMotorSpec:a50Pre.preloaded.preservedMotorSpec
+ });
+ assert.equal(a50ChangedVehPlan.status,'CANDIDATE_COMPLETE');
+ assert.equal(a50ChangedVehPlan.usesInternalMotorPreservation,false);
+ assert.deepEqual(a50ChangedVehPlan.internalMotorSpecs,[null]);
+ // Execute controlled write for Guided Edit changing direction, laneScope & hours while preserving 125cc rule!
+ const a50BaseSnap=a.restrictionSnapshot(a50Seg,true);
+ const a50OrigAdd=a50Mgr.add;
+ const a50Sdk={
+  Editing:{undo:async()=>{throw Error('Undo must not run on successful Alpha 50 Guided Edit');}},
+  DataModel:{Segments:{
+   getById:async()=>a50Seg,
+   updateSegment:async({restrictions})=>{
+    const stripped=restrictions.map(r=>makeInternalMotoRowV2(r.direction,r.laneScope,r.timeFrames,[]));
+    const action=new UpdateSegmentsRestrictions(960);
+    action.subActions[0].newAttributes={restrictions:stripped};
+    a50Mgr.add(action);
+    a50Seg={...a50Seg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+   }
+  }}
+ };
+ const a50WriteRes=await a.executeControlledSegmentWrite(
+  a50Sdk,a50Page,960,a50EditPlan.candidateRestrictions,a50BaseSnap,
+  {plan:a50EditPlan,access:f3AccessOk,internalMotorSpecs:a50EditPlan.internalMotorSpecs}
+ );
+ assert.equal(a50WriteRes.status,'APPLIED_PENDING');
+ assert.equal(a50WriteRes.verified,true);
+ assert.equal(a50WriteRes.preservedInternalMotors,true);
+ assert.equal(a50Mgr.add,a50OrigAdd);
+ assert.equal(a50Raw[0].toJSON().direction,'REV');
+ assert.equal(a50Raw[0].toJSON().laneScope,'RIGHT_LANE');
+ assert.equal(a50Raw[0].toJSON().timeFrames[0].fromTime,'08:00');
+ assert.equal(a.extractNormalizedMotorStamp(a50Raw[0]),a50Check1.motorStamp,
+  'Guided Edit on motorcycle restriction must preserve real engine condition alongside updated direction/lane/hours');
+ // Fake-DOM end-to-end test reproducing the user screenshot: segment with 1 editable
+ // motorcycle restriction + 1 engine condition in W.model.
+ let vmMotoRaw=[makeInternalMotoRowV2('FWD','WHOLE_SEGMENT',a50BaseFrames,a50Caps)];
+ const vmMotoActions=[];
+ const vmMotoMgr={
+  getActions:()=>vmMotoActions,
+  add(action){
+   vmMotoActions.push(action);
+   const target=action.subActions.find(s=>String(s.object.getID())==='106');
+   if(target)vmMotoRaw=target.newAttributes.restrictions;
+  }
+ };
+ fakeWin.W={model:{
+  actionManager:vmMotoMgr,
+  segments:{getObjectById:id=>String(id)==='106'?{attributes:{restrictions:vmMotoRaw}}:null}
+ }};
+ vmUpdates.length=0;
+ fakeSdk.DataModel.Segments.updateSegment=async({segmentId,restrictions})=>{
+  vmUpdates.push({segmentId,restrictions});
+  const stripped=restrictions.map(r=>makeInternalMotoRowV2(r.direction,r.laneScope,r.timeFrames,[]));
+  const action=new UpdateSegmentsRestrictions(segmentId);
+  action.subActions[0].newAttributes={restrictions:stripped};
+  vmMotoMgr.add(action);
+  activeSeg={...activeSeg,restrictions:restrictions.map(r=>({...r,editable:true,isExpired:false}))};
+ };
+ activeSeg={id:106,isAtoB:true,isBtoA:true,isTwoWay:true,isDrivable:true,roadType:3,restrictions:[a50SdkRow]};
+ nativeAnchor.textContent='Modifica restrizioni';
+ await refreshCb();
+ // Verify cleaned-up sidebar UI on motorcycle restriction segment.
+ const alertBox=rootEl.querySelectorAll('div').find(d=>d.attrs?.role==='alert');
+ assert.ok(alertBox,'Amber existing-restriction alert must still warn the editor');
+ assert.equal(
+  alertBox.querySelectorAll('button').filter(b=>b.textContent===a.labels.edit_or_delete_native[0]).length,
+  0,
+  'Amber alert must NOT duplicate the native WME panel button when restrictions are readable'
+ );
+ assert.ok(!rootEl.textContent.includes(a.labels.native_conditions_title[0]),
+  'Cleaned-up restriction card must not render obsolete native diagnostic accordion');
+ assert.ok(!rootEl.textContent.includes(a.labels.native_engine_check[0]),
+  'Cleaned-up restriction card must not render obsolete manual engine count button');
+ assert.ok(!rootEl.textContent.includes(a.labels.edit_native_hint[0]),
+  'Cleaned-up restriction list must not display outdated read-only hint');
+ assert.ok(rootEl.querySelectorAll('p').some(p=>p.dataset?.guidedMotorSummary==='true'),
+  'Motorcycle restriction card must show concise auto-preserved engine summary');
+ const motoEditBtn=rootEl.querySelectorAll('button').find(b=>b.textContent===a.labels.edit_guided_btn[0]);
+ assert.ok(motoEditBtn,'Guided edit button must appear directly on editable motorcycle restriction with engine conditions');
+ motoEditBtn.click();
+ await new Promise(r=>setTimeout(r,20));
+ const motoDialog=fakeDoc.getElementById('rm-guided-alpha-dialog');
+ assert.ok(motoDialog&&motoDialog.open,'Clicking Guided Edit on motorcycle restriction must open EDIT dialog');
+ // Jump to Step 5 (Conditions) and verify blue preserved-motor notice replaces motor_ban_all.
+ const jumpCond=motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='5');
+ assert.ok(jumpCond,'Quick-nav must include Conditions step for motorcycle restriction');
+ jumpCond.click();
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(motoDialog.querySelectorAll('p').some(p=>p.dataset?.guidedMotorEditPreserve==='true'),
+  'Step 5 must explain that existing motorcycle engine conditions will be preserved automatically');
+ assert.ok(!motoDialog.textContent.includes(a.labels.motor_ban_all[0]),
+  'Step 5 must not falsely tell editor that all motorcycles will be banned when preserving engine conditions');
+ // Jump to Step 7 (Dates & times) and verify compact green conflict status without 4-line red disclaimer.
+ const jumpSchedMoto=motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='7');
+ jumpSchedMoto.click();
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(motoDialog.textContent.includes(a.labels.conflict_absent[0]),
+  'Step 7 must display compact green no-conflict confirmation');
+ assert.ok(!motoDialog.textContent.includes(a.labels.conflict_uncertain[0]),
+  'Step 7 must not display the verbose red read-only disclaimer when there are no conflicts');
+ // Jump to Step 0, switch direction FWD -> REV, jump to Step 6, confirm and apply pending edit!
+ motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='0').click();
+ await new Promise(r=>setTimeout(r,20));
+ const motoRevRadio=motoDialog.querySelectorAll('input').find(i=>i.type==='radio'&&i.value==='REV');
+ motoRevRadio.checked=true;
+ for(const fn of (motoRevRadio.listeners.change||[]))fn({});
+ motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedEditStep==='6').click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.ok(motoDialog.querySelectorAll('p').some(p=>p.dataset?.guidedMotorEditPreserve==='true'),
+  'Step 6 summary must confirm existing motorcycle engine conditions are preserved');
+ assert.ok(motoDialog.querySelectorAll('p').some(p=>p.dataset?.guidedMotorPreserveNotice==='true'),
+  'Controlled apply box must display internal motor preservation notice');
+ const motoConfirm=motoDialog.querySelectorAll('input').find(i=>i.dataset?.guidedWriteConfirm==='true');
+ const motoApplyBtn=motoDialog.querySelectorAll('button').find(b=>b.dataset?.guidedApplyBtn==='true');
+ motoConfirm.checked=true;
+ for(const fn of (motoConfirm.listeners.change||[]))fn({});
+ motoApplyBtn.click();
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(vmUpdates.length,1);
+ assert.equal(vmUpdates[0].segmentId,106);
+ assert.equal(vmUpdates[0].restrictions[0].direction,'REV');
+ assert.ok(motoDialog.querySelectorAll('div').some(d=>d.dataset?.guidedWriteOutcome==='APPLIED_PENDING'),
+  'Guided Edit on motorcycle restriction must verify and report APPLIED_PENDING');
+ assert.equal(a.extractNormalizedMotorStamp(vmMotoRaw[0]),a50Check1.motorStamp,
+  'Live-simulated Guided Edit must keep the 125cc motorcycle engine condition intact in W.model');
+ assert.equal(warnings.length,0,'No warnings allowed during Alpha 50 motorcycle guided edit flow');
+
+ const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
+ let requestedCountryId=null;
+ const countrySdk={DataModel:{Countries:{getById:async ({countryId})=>{
+   requestedCountryId=countryId;
+   return {restrictionSubscriptions:[...mockPermits,{id:'pass1',name:'Duplicate'},{name:'Invalid'}]};
+ }}}};
+ assert.deepEqual(await a.readPermits(countrySdk,{id:77,name:'Any Country'}),mockPermits);
+ assert.equal(requestedCountryId,77);
+ assert.equal(await a.readPermits(countrySdk,null),null);
+ assert.equal(await a.readPermits({DataModel:{}},{id:77}),null);
+ assert.deepEqual(await a.readPermits({DataModel:{Countries:{getById:async()=>({restrictionSubscriptions:[]})}}},{id:77}),[]);
+ assert.equal(await a.readPermits({DataModel:{Countries:{getById:async()=>{throw Error('Unavailable')}}}},{id:77}),null);
+ const segment={id:1,isAtoB:true,roadType:3,restrictions:[]};
+ const sdk={Editing:{getSelection:async()=>({objectType:'segment',ids:[1]})},DataModel:{Segments:{getById:async()=>segment,getAddress:async()=>({country:{id:1,name:'Italy'}})}}};
+ assert.equal((await a.readContext(sdk)).country.name,'Italy');
+ assert.equal((await a.readContext(sdk)).permits,null);
+ assert.deepEqual((await a.readContext(sdk)).access,{hasPermissions:null,isRoadTypeDrivable:null});
+ assert.equal((await a.readContext(sdk)).isTollSegment,null);
+ let permArgs=null,tollArgs=null,drivableArgs=null;
+ sdk.DataModel.Segments.hasPermissions=async args=>{permArgs=args;return true;};
+ sdk.DataModel.Segments.isTollSegment=async args=>{tollArgs=args;return false;};
+ sdk.DataModel.Segments.isRoadTypeDrivable=async args=>{drivableArgs=args;return true;};
+ const fullCtx=await a.readContext(sdk);
+ assert.deepEqual(permArgs,{segmentId:1});
+ assert.deepEqual(tollArgs,{segmentId:1});
+ assert.deepEqual(drivableArgs,{roadType:3});
+ assert.deepEqual(fullCtx.access,{hasPermissions:true,isRoadTypeDrivable:true});
+ assert.equal(fullCtx.isTollSegment,false);
+ sdk.DataModel.Segments.hasPermissions=async()=>{throw Error('denied');};
+ sdk.DataModel.Segments.isTollSegment=async()=>'not-a-boolean';
+ sdk.DataModel.Segments.isRoadTypeDrivable=async()=>{throw Error('unsupported');};
+ const degradedCtx=await a.readContext(sdk);
+ assert.deepEqual(degradedCtx.access,{hasPermissions:null,isRoadTypeDrivable:null});
+ assert.equal(degradedCtx.isTollSegment,null);
+ let drivableCalled=false;
+ sdk.DataModel.Segments.getById=async()=>({id:1,isAtoB:true,restrictions:[]});
+ sdk.DataModel.Segments.isRoadTypeDrivable=async()=>{drivableCalled=true;return true;};
+ await a.readContext(sdk);
+ assert.equal(drivableCalled,false,'isRoadTypeDrivable must not be called when segment.roadType is missing');
+ sdk.DataModel.Segments.getById=async()=>segment;
+ sdk.DataModel.Countries=countrySdk.DataModel.Countries;
+ assert.deepEqual((await a.readContext(sdk)).permits,mockPermits);
+ sdk.DataModel.Segments.getAddress=async()=>{throw Error('unknown')};
+ assert.equal((await a.readContext(sdk)).country,null);
+ sdk.Editing.getSelection=async()=>({objectType:'venue',ids:[1]});
+ assert.equal(await a.readContext(sdk),null);
+ sdk.Editing.getSelection=async()=>({objectType:'segment',ids:[1,2]});
+ assert.equal(await a.readContext(sdk),null);
+ console.log('PASS: guided alpha vehicle requirement, alphabetic permit autocomplete and read-only guards');
+})().catch(e=>{console.error(e);process.exitCode=1;});
