@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Restriction Manager — Guided Creator Alpha
 // @namespace    https://github.com/1cman/wme-restriction-manager/alpha
-// @version      4.0.0-alpha.41
+// @version      4.0.0-alpha.42
 // @description  Read-only prototype for guided segment and lane restrictions. Separate from the stable script.
 // @match        https://www.waze.com/editor*
 // @match        https://www.waze.com/*/editor*
@@ -18,7 +18,7 @@
 
 (function () {
     "use strict";
-    const VERSION = "4.0.0-alpha.41";
+    const VERSION = "4.0.0-alpha.42";
     const ID = "rm-guided-alpha";
     // Design vocabulary only: these are NOT SDK enum values or country permissions.
     const SCOPES = ["left", "center", "right", "segment"];
@@ -123,6 +123,7 @@
         existing_alert_body:["Prima di crearne di nuove, valuta di modificare o eliminare quelle esistenti nel pannello WME: non sarà consentito aggiungere restrizioni in conflitto o sovrapposte.","Before creating new ones, consider editing or deleting existing rules in the native WME panel: conflicting or overlapping additions will be blocked.","Avant d’en créer de nouvelles, envisagez de modifier ou supprimer les règles existantes dans WME : les ajouts en conflit ou en chevauchement seront bloqués.","Antes de crear nuevas, considera editarlas o eliminarlas en el panel nativo de WME: se bloquearán las reglas adicionales en conflicto o solapadas.","Prüfe zuerst, ob du bestehende Regeln im WME-Panel ändern oder löschen solltest: widersprüchliche oder überlappende Zusätze werden blockiert.","Antes de criar novas, considere editar ou eliminar as regras existentes no painel nativo do WME: adições em conflito ou sobrepostas serão bloqueadas."],
         existing_alert_unknown:["Impossibile leggere le restrizioni esistenti dallo SDK: verifica nel pannello WME prima di procedere. Non sarà consentito aggiungere nuove restrizioni senza poter escludere conflitti.","Existing restrictions could not be read from the SDK: inspect the native WME panel first. Adding new restrictions is blocked unless conflicts can be ruled out.","Impossible de lire les restrictions existantes via le SDK : vérifiez dans WME. L’ajout est bloqué tant que les conflits ne peuvent pas être exclus.","No se pudieron leer las restricciones existentes desde el SDK: revisa el panel nativo de WME. No se permite añadir nuevas restricciones sin descartar conflictos.","Vorhandene Beschränkungen konnten nicht über das SDK gelesen werden: prüfe zuerst das WME-Panel. Neue Regeln bleiben blockiert, solange Konflikte nicht ausgeschlossen sind.","Não foi possível ler as restrições existentes no SDK: verifique no painel nativo do WME. Novas restrições ficam bloqueadas enquanto não for possível excluir conflitos."],
         edit_or_delete_native:["Modifica o elimina nel pannello WME","Edit or delete in native WME panel","Modifier ou supprimer dans WME","Editar o eliminar en el panel WME","Im WME-Panel bearbeiten oder löschen","Editar ou eliminar no painel WME"],
+        edit_native_switch_tab:["Per modificare o eliminare le restrizioni esistenti, apri la scheda del segmento in WME e clicca «Modifica restrizioni» (oppure avvia la procedura dal pannello del segmento).","To edit or delete existing restrictions, open the segment tab in WME and click “Edit restrictions” (or launch the wizard from the segment panel).","Pour modifier ou supprimer les restrictions existantes, ouvrez l’onglet du segment dans WME et cliquez sur « Modifier les restrictions » (ou lancez l’assistant depuis le panneau du segment).","Para editar o eliminar las restricciones existentes, abre la pestaña del segmento en WME y haz clic en «Editar restricciones» (o inicia el asistente desde el panel del segmento).","Um bestehende Beschränkungen zu bearbeiten oder zu löschen, öffne den Segment-Tab in WME und klicke auf „Beschränkungen bearbeiten“ (oder starte den Assistenten im Segment-Panel).","Para editar ou eliminar as restrições existentes, abra o separador do segmento no WME e clique em «Editar restrições» (ou inicie o assistente a partir do painel do segmento)."],
         conflict_gate_potential:["Creazione aggiuntiva bloccata: possibile conflitto con una restrizione già presente. Modifica o elimina prima le restrizioni esistenti nel pannello WME, oppure scegli direzione, corsia o orari separati.","Additional restriction blocked: potential conflict with an existing restriction. Edit or delete existing rules in the WME panel first, or choose a separate direction, lane or schedule.","Ajout bloqué : conflit potentiel avec une restriction existante. Modifiez ou supprimez d’abord la règle dans WME, ou choisissez un sens, une voie ou un horaire distinct.","Creación adicional bloqueada: posible conflicto con una restricción existente. Edita o elimina primero las existentes en WME, o elige dirección, carril u horario separados.","Zusätzliche Beschränkung blockiert: möglicher Konflikt mit einer vorhandenen Regel. Bearbeite oder lösche diese zuerst im WME-Panel oder wähle eine getrennte Richtung, Spur oder Zeit.","Criação adicional bloqueada: possível conflito com uma restrição existente. Edite ou elimine primeiro as existentes no painel WME, ou escolha sentido, via ou horário separados."],
         conflict_gate_overlap:["Creazione aggiuntiva bloccata: sovrapposizione con una restrizione già presente. È preferibile modificare o eliminare prima la restrizione esistente nel pannello WME.","Additional restriction blocked: overlaps an existing restriction. Edit or delete the existing restriction in the WME panel first.","Ajout bloqué : chevauchement avec une restriction existante. Modifiez ou supprimez d’abord la restriction existante dans WME.","Creación adicional bloqueada: se solapa con una restricción existente. Es mejor editar o eliminar primero la restricción existente en WME.","Zusätzliche Beschränkung blockiert: Überlappung mit einer vorhandenen Beschränkung. Bearbeite oder lösche zuerst die bestehende Regel im WME-Panel.","Criação adicional bloqueada: sobreposição com uma restrição existente. É preferível editar ou eliminar primeiro a restrição existente no painel WME."],
         conflict_gate_unknown:["Creazione aggiuntiva bloccata: impossibile escludere conflitti con le restrizioni esistenti (dati, orari notturni o ricorrenze non verificabili). Modifica o verifica prima le restrizioni esistenti nel pannello WME.","Additional restriction blocked: conflicts with existing restrictions cannot be ruled out (unverifiable data, overnight spillover or recurrences). Review or edit existing rules in the WME panel first.","Ajout bloqué : impossible d’exclure un conflit avec les restrictions existantes (données, plages nocturnes ou récurrences non vérifiables). Vérifiez ou modifiez d’abord dans WME.","Creación adicional bloqueada: no se pueden descartar conflictos con las restricciones existentes (datos, horarios nocturnos o recurrencias sin verificar). Revisa o edita primero en WME.","Zusätzliche Beschränkung blockiert: Konflikte mit bestehenden Regeln können nicht ausgeschlossen werden (ungeprüfte Daten, Nachtzeiten oder Wiederholungen). Prüfe oder bearbeite zuerst im WME-Panel.","Criação adicional bloqueada: não é possível excluir conflitos com as restrições existentes (dados, horários noturnos ou recorrências não verificáveis). Verifique ou edite primeiro no painel WME."],
@@ -1756,29 +1757,32 @@
     const node = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; return n; };
     function button(text, handler) { const b = node("button",text); b.type="button"; b.addEventListener("click",handler); b.style.cssText="padding:8px 12px;border:1px solid #9ca3af;border-radius:6px;background:#eff6ff;color:#174c86;cursor:pointer;font:inherit;"; return b; }
     function removeNative() { nativeButton?.remove(); nativeButton = null; }
-    function findNativeAnchor() {
+    function findNativeAnchor(allowHidden=false) {
         // The native panel uses "Add restrictions" when empty, "Edit restrictions"
         // when the segment has existing rules. Never invoke the native action.
         // Match exact localized labels only, and fail closed on ambiguous matches.
-        const visible=el=>!el.closest("#"+ID+"-root,#"+ID+"-dialog") &&
+        const eligible=(el,requireVisible)=>!el.closest("#"+ID+"-root,#"+ID+"-dialog") &&
             el.id!==ID+"-native"&&!el.closest('[role="dialog"],dialog') &&
-            el.getClientRects().length>0 &&
+            (!requireVisible||el.getClientRects().length>0) &&
             !el.disabled&&el.getAttribute("aria-disabled")!=="true";
         const recognized=el=>nativeRestrictionAction(
             el.innerText||el.getAttribute("aria-label")||el.textContent);
-        const controls=[...document.querySelectorAll(
-            'button,[role="button"],wz-button,a,[role="link"]'
-        )].filter(el=>visible(el)&&recognized(el));
-        const outer=controls.filter(el=>!controls.some(other=>
-            other!==el&&other.contains(el)));
-        if(outer.length===1)return outer[0];
-        if(outer.length>1)return null;
-        // Some WME builds render "Modifica restrizioni" as a click target
-        // without an explicit button role. Anchor beside its exact text leaf.
-        const textLeaves=[...document.querySelectorAll('span,strong,div,p')]
-            .filter(el=>visible(el)&&recognized(el)&&
-                ![...el.children].some(child=>recognized(child)));
-        return textLeaves.length===1?textLeaves[0]:null;
+        const search=requireVisible=>{
+            const controls=[...document.querySelectorAll(
+                'button,[role="button"],wz-button,a,[role="link"]'
+            )].filter(el=>eligible(el,requireVisible)&&recognized(el));
+            const outer=controls.filter(el=>!controls.some(other=>
+                other!==el&&other.contains(el)));
+            if(outer.length===1)return outer[0];
+            if(outer.length>1)return null;
+            // Some WME builds render "Modifica restrizioni" as a click target
+            // without an explicit button role. Anchor beside its exact text leaf.
+            const textLeaves=[...document.querySelectorAll('span,strong,div,p')]
+                .filter(el=>eligible(el,requireVisible)&&recognized(el)&&
+                    ![...el.children].some(child=>recognized(child)));
+            return textLeaves.length===1?textLeaves[0]:null;
+        };
+        return search(true)||(allowHidden?search(false):null);
     }
     function placeNative() {
         if (!context || !availableDirections(context.segment).length) { removeNative(); return false; }
@@ -1804,14 +1808,14 @@
         return true;
     }
     function nativeEditActionAvailable(){
-        const anchor=findNativeAnchor();
-        return anchor&&nativeRestrictionAction(
+        const anchor=findNativeAnchor(true);
+        return Boolean(anchor&&nativeRestrictionAction(
             anchor.innerText||anchor.getAttribute("aria-label")||anchor.textContent
-        )==="edit";
+        )==="edit");
     }
     function openNativeEditRestrictions(){
         // A direct, explicit user gesture only; never simulate a map edit.
-        const anchor=findNativeAnchor();
+        const anchor=findNativeAnchor(true);
         if(!anchor||nativeRestrictionAction(
             anchor.innerText||anchor.getAttribute("aria-label")||anchor.textContent
         )!=="edit")return;
@@ -2069,6 +2073,10 @@
             const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
             edit.style.marginTop="4px";
             box.append(edit);
+        }else{
+            const hint=node("p",tr("edit_native_switch_tab"));
+            hint.style.cssText="font-size:12px;margin:6px 0 0;";
+            box.append(hint);
         }
         return box;
     }
@@ -2128,9 +2136,10 @@
             lang=LANGS.includes(candidate)?candidate:"en";
             context=await readContext(sdk);
             const injected=placeNative();
+            const canEditNative=nativeEditActionAvailable();
             const key=JSON.stringify([lang,context?.segment.id,context?.country,context?.access,
                 context?.isTollSegment,availableDirections(context?.segment),
-                restrictionSnapshot(context?.segment,true),injected]);
+                restrictionSnapshot(context?.segment,true),injected,canEditNative]);
             if (key!==lastKey) { lastKey=key; renderPanel(); }
         } catch (_) { context=null; removeNative(); if(lastKey!=="error"){lastKey="error";renderPanel();} }
         finally { refreshing=false; }
@@ -2143,6 +2152,11 @@
         dialog?.remove();
         dialog=node("dialog"); dialog.id=ID+"-dialog";
         dialog.style.cssText="width:min(480px,90vw);max-height:85vh;overflow:auto;border:1px solid #9ca3af;border-radius:14px;padding:20px;background:#fff;color:#202938;font:14px/1.5 system-ui;";
+        for(const eventType of ["keydown","keyup","keypress"]){
+            // Keep keyboard input (including numpad digits/arrows) inside the
+            // modal wizard so WME map panning/shortcuts cannot hijack typing.
+            dialog.addEventListener(eventType,event=>event.stopPropagation());
+        }
         document.body.append(dialog);
         let step=0;
         const baselineSnapshot=restrictionSnapshot(current.segment,true);
@@ -2293,7 +2307,9 @@
         }
         function refreshNext(){
             const next=dialog.querySelector('[data-guided-next="true"]');
-            if(next&&step===5)next.disabled=!isAdvancedValid();
+            if(!next)return;
+            if(step===5)next.disabled=!isAdvancedValid();
+            if(step===7)next.disabled=!isScheduleValid()||currentConflictGate().blocked;
         }
         // Separate picker instance for each vehicle that actually requires a pass.
         // It keeps the same alphabetic, accent-insensitive autocomplete semantics.
@@ -2627,20 +2643,22 @@
                                         String(match.capacityThreshold);
                                     threshold.style.cssText="width:125px;padding:7px;"+
                                         "border:1px solid #fca5a5;border-radius:6px;";
-                                    threshold.addEventListener("change",()=>{
+                                    const error=node("p",tr("motor_threshold_required"));
+                                    error.setAttribute("role","alert");
+                                    error.style.cssText="color:#991b1b;font-weight:600;";
+                                    const updateThreshold=()=>{
                                         match.capacityThreshold=threshold.value.trim()===""?
                                             null:Number(threshold.value);
-                                        render();
-                                    });
-                                    card.append(threshold);
-                                    if(!Number.isFinite(match.capacityThreshold)||
-                                        match.capacityThreshold<=0||
-                                        (engine==="FUEL"&&!Number.isSafeInteger(match.capacityThreshold))){
-                                        const error=node("p",tr("motor_threshold_required"));
-                                        error.setAttribute("role","alert");
-                                        error.style.cssText="color:#991b1b;font-weight:600;";
-                                        card.append(error);
-                                    }
+                                        const invalid=!Number.isFinite(match.capacityThreshold)||
+                                            match.capacityThreshold<=0||
+                                            (engine==="FUEL"&&!Number.isSafeInteger(match.capacityThreshold));
+                                        error.hidden=!invalid;
+                                        refreshNext();
+                                    };
+                                    threshold.addEventListener("input",updateThreshold);
+                                    threshold.addEventListener("change",updateThreshold);
+                                    card.append(threshold,error);
+                                    updateThreshold();
                                 }
                             }
                             dialog.append(card);
@@ -2700,17 +2718,18 @@
                             input.value=rule.minPassengers===null?"":String(rule.minPassengers);
                             input.style.cssText="display:block;width:115px;padding:7px;"+
                                 "margin:5px 0;border:1px solid #9ca3af;border-radius:6px;";
-                            input.addEventListener("change",()=>{
+                            const warning=node("p",tr("missing_vehicle_occupancy"));
+                            warning.style.cssText="color:#b91c1c;font-weight:600;";
+                            warning.setAttribute("role","alert");
+                            const updateOccupancy=()=>{
                                 rule.minPassengers=input.value.trim()===""?null:Number(input.value);
-                                render();
-                            });
-                            label.append(input);card.append(label);
-                            if(!Number.isSafeInteger(rule.minPassengers)||rule.minPassengers<2){
-                                const warning=node("p",tr("missing_vehicle_occupancy"));
-                                warning.style.cssText="color:#b91c1c;font-weight:600;";
-                                warning.setAttribute("role","alert");
-                                card.append(warning);
-                            }
+                                warning.hidden=Number.isSafeInteger(rule.minPassengers)&&rule.minPassengers>=2;
+                                refreshNext();
+                            };
+                            input.addEventListener("input",updateOccupancy);
+                            input.addEventListener("change",updateOccupancy);
+                            label.append(input);card.append(label,warning);
+                            updateOccupancy();
                         }
                         if(rule.requiresPass&&rule.requiresOccupancy)
                             card.append(node("p",tr("both_conditions")));
@@ -2857,6 +2876,40 @@
                 const scheduleIntro=draft.restrictionType==="ALLOWED"?"green_schedule_intro":
                     draft.restrictionType==="TOLL"?"toll_schedule_intro":"red_schedule_intro";
                 dialog.append(node("h3",tr(scheduleTitle)),node("p",tr(scheduleIntro)));
+                const feedback=node("div");
+                feedback.dataset.guidedScheduleFeedback="true";
+                const renderScheduleFeedback=()=>{
+                    feedback.replaceChildren();
+                    if(!redSchedule.allDay&&redSchedule.slots.some(crossesMidnight))
+                        feedback.append(node("p",tr("schedule_overnight")));
+                    if(isScheduleValid()){
+                        feedback.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
+                        const gate=currentConflictGate();
+                        if(gate.blocked){
+                            const blockBox=node("div");
+                            blockBox.setAttribute("role","alert");
+                            blockBox.style.cssText="margin-top:10px;padding:10px 12px;border:2px solid #dc2626;"+
+                                "border-radius:8px;background:#fef2f2;color:#991b1b;font-weight:600;";
+                            blockBox.append(node("p",tr(gate.reason)));
+                            if(nativeEditActionAvailable()){
+                                const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
+                                edit.style.marginTop="4px";
+                                blockBox.append(edit);
+                            }else{
+                                const hint=node("p",tr("edit_native_switch_tab"));
+                                hint.style.cssText="font-size:12px;font-weight:400;margin:6px 0 0;";
+                                blockBox.append(hint);
+                            }
+                            feedback.append(blockBox);
+                        }
+                    }else{
+                        const error=node("p",tr("schedule_invalid"));
+                        error.setAttribute("role","alert");
+                        error.style.cssText="color:#b91c1c;font-weight:600;";
+                        feedback.append(error);
+                    }
+                    refreshNext();
+                };
                 const dates=node("div");
                 dates.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;";
                 for(const field of ["startDate","endDate"]){
@@ -2865,7 +2918,9 @@
                     const input=node("input");input.type="date";input.value=redSchedule[field];
                     input.style.cssText="display:block;box-sizing:border-box;width:100%;"+
                         "padding:7px;border:1px solid #9ca3af;border-radius:6px;";
-                    input.addEventListener("change",()=>{redSchedule[field]=input.value;render();});
+                    const updateDate=()=>{redSchedule[field]=input.value;renderScheduleFeedback();};
+                    input.addEventListener("input",updateDate);
+                    input.addEventListener("change",updateDate);
                     label.append(input);dates.append(label);
                 }
                 dialog.append(dates,node("h4",tr("schedule_days")));
@@ -2880,7 +2935,7 @@
                         redSchedule.weekdays=input.checked?[...redSchedule.weekdays,day]:
                             redSchedule.weekdays.filter(value=>value!==day);
                         redSchedule.weekdays=WEEKDAYS.filter(value=>redSchedule.weekdays.includes(value));
-                        render();
+                        renderScheduleFeedback();
                     });
                     label.append(input,document.createTextNode(tr(day)));days.append(label);
                 }
@@ -2900,9 +2955,12 @@
                             const input=node("input");input.type="time";input.value=slot[prop];
                             input.style.cssText="display:block;padding:7px;"+
                                 "border:1px solid #9ca3af;border-radius:6px;";
-                            input.addEventListener("change",()=>{
-                                redSchedule.slots[index][prop]=input.value;render();
-                            });
+                            const updateTime=()=>{
+                                redSchedule.slots[index][prop]=input.value;
+                                renderScheduleFeedback();
+                            };
+                            input.addEventListener("input",updateTime);
+                            input.addEventListener("change",updateTime);
                             field.append(input);row.append(field);
                         }
                         if(redSchedule.slots.length>1)
@@ -2919,32 +2977,9 @@
                     });
                     add.disabled=redSchedule.slots.length>=MAX_DRAFT_TIME_FRAMES;
                     dialog.append(add);
-                    if(redSchedule.slots.some(crossesMidnight))
-                        dialog.append(node("p",tr("schedule_overnight")));
                 }
-                if(isScheduleValid()){
-                    dialog.append(renderConflictPreflight(draft,current.segment,redSchedule,{vehicleRules,motorDraft}));
-                    const gate=currentConflictGate();
-                    if(gate.blocked){
-                        const blockBox=node("div");
-                        blockBox.setAttribute("role","alert");
-                        blockBox.style.cssText="margin-top:10px;padding:10px 12px;border:2px solid #dc2626;"+
-                            "border-radius:8px;background:#fef2f2;color:#991b1b;font-weight:600;";
-                        blockBox.append(node("p",tr(gate.reason)));
-                        if(nativeEditActionAvailable()){
-                            const edit=button(tr("edit_or_delete_native"),openNativeEditRestrictions);
-                            edit.style.marginTop="4px";
-                            blockBox.append(edit);
-                        }
-                        dialog.append(blockBox);
-                    }
-                }
-                if(!isScheduleValid()){
-                    const error=node("p",tr("schedule_invalid"));
-                    error.setAttribute("role","alert");
-                    error.style.cssText="color:#b91c1c;font-weight:600;";
-                    dialog.append(error);
-                }
+                dialog.append(feedback);
+                renderScheduleFeedback();
             }
             if(step===6) {
                 const schedule=normalizeRedSchedule(redSchedule);

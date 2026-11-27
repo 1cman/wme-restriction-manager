@@ -2005,6 +2005,38 @@ assert.ok(src.includes('if(currentConflictGate().blocked)return;') &&
  'Conflicting, overlapping or unverifiable additional restrictions must be blocked at step 7');
 assert.ok(src.includes('button(tr("edit_or_delete_native"),openNativeEditRestrictions)'),
  'Warning and conflict-block UI must route edit/delete directly to the native WME panel');
+// Alpha 42: keep native edit shortcut available from script tab, isolate modal
+// keyboard events from WME map panning, and never re-render inputs while typing.
+{
+ const match=/\bedit_native_switch_tab:\[([^\]]+)\]/.exec(src);
+ assert.ok(match,'Missing label key: edit_native_switch_tab');
+ const entries=JSON.parse('['+match[1]+']');
+ assert.equal(entries.length,6,'edit_native_switch_tab must provide 6 language translations');
+ assert.ok(entries.every(text=>typeof text==='string'&&text.trim().length>0));
+}
+assert.ok(src.includes('function findNativeAnchor(allowHidden=false)') &&
+ src.includes('return search(true)||(allowHidden?search(false):null);') &&
+ src.includes('const anchor=findNativeAnchor(true);') &&
+ src.includes('const anchor = findNativeAnchor();'),
+ 'Hidden native Edit detection must be opt-in for edit actions while inline injection stays visible-only');
+assert.ok(src.includes('const canEditNative=nativeEditActionAvailable();') &&
+ src.includes('tr("edit_native_switch_tab")'),
+ 'Sidebar must track native edit availability and show switch-tab guidance if unmounted');
+assert.ok(src.includes('for(const eventType of ["keydown","keyup","keypress"]){') &&
+ src.includes('dialog.addEventListener(eventType,event=>event.stopPropagation());'),
+ 'Modal wizard must stop keyboard events from bubbling to WME map panning/shortcuts');
+assert.ok(src.includes('const renderScheduleFeedback=()=>{') &&
+ src.includes('const updateTime=()=>{') &&
+ src.includes('redSchedule.slots[index][prop]=input.value;') &&
+ src.includes('renderScheduleFeedback();') &&
+ !src.includes('redSchedule.slots[index][prop]=input.value;render();') &&
+ !src.includes('redSchedule[field]=input.value;render();'),
+ 'Typing in schedule date/time inputs must update feedback in-place without destroying the focused input');
+assert.ok(src.includes('if(step===7)next.disabled=!isScheduleValid()||currentConflictGate().blocked;'),
+ 'refreshNext must keep step 7 Next button state synced without full dialog re-render');
+assert.ok(src.includes('threshold.addEventListener("input",updateThreshold);') &&
+ src.includes('input.addEventListener("input",updateOccupancy);'),
+ 'Step 5 numeric inputs must update validation and Next button without destroying focus');
 (async()=>{
  const mockPermits=[{id:'pass1',name:'Local Pass'},{id:'pass2',name:'Area Pass'}];
  let requestedCountryId=null;
